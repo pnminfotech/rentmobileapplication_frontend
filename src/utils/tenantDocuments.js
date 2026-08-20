@@ -18,7 +18,20 @@ const RULES = {
 };
 
 function normalizeRelation(value) {
-  return String(value || "").trim().toLowerCase();
+  const relation = String(value || "").trim().toLowerCase().replace(/[.\-_]+/g, " ").replace(/\s+/g, " ");
+  const aliases = {
+    self: "self aadhaar card",
+    aadhaar: "self aadhaar card",
+    "self aadhaar": "self aadhaar card",
+    "tenant aadhaar": "self aadhaar card",
+    "tenant aadhaar card": "self aadhaar card",
+    "parent/relative aadhaar": "parent aadhaar card",
+    "parent relative aadhaar": "parent aadhaar card",
+    "partner aadhaar": "partner aadhaar card",
+    "tenant photograph": "tenant photo",
+    photo: "tenant photo",
+  };
+  return aliases[relation] || relation;
 }
 
 export function requiredDocumentsForTenant(tenant) {
@@ -28,7 +41,11 @@ export function requiredDocumentsForTenant(tenant) {
 
 export function documentStatusForTenant(tenant) {
   const documents = Array.isArray(tenant?.documents) ? tenant.documents : [];
-  const uploadedRelations = new Set(documents.filter((document) => document?.url).map((document) => normalizeRelation(document.relation)));
+  const uploadedRelations = new Set(
+    documents
+      .filter((document) => document?.url || document?.filePath || document?.fileId)
+      .map((document) => normalizeRelation(document.relation))
+  );
   const required = requiredDocumentsForTenant(tenant).map((rule) => ({
     ...rule,
     uploaded: uploadedRelations.has(normalizeRelation(rule.relation)),

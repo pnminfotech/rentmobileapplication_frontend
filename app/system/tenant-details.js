@@ -54,9 +54,9 @@ function tenantPhotoUrl(tenant) {
   const documents = Array.isArray(tenant?.documents) ? tenant.documents : [];
   const photo = documents.find((document) => {
     const label = `${document?.relation || ""} ${document?.fileName || ""} ${document?.storedName || ""}`.toLowerCase();
-    return document?.url && (label.includes("photo") || label.includes("selfie") || label.includes("photograph"));
+    return (document?.url || document?.filePath) && (label.includes("photo") || label.includes("selfie") || label.includes("photograph"));
   });
-  return photo?.url || "";
+  return photo?.url || photo?.filePath || "";
 }
 
 function currentMonthKey() {
@@ -413,25 +413,25 @@ export default function TenantDetailsScreen() {
             {documents.map((document, index) => (
               <Pressable
                 key={document._id || `${document.relation}-${index}`}
-                onPress={() => document.url && router.push({
+                onPress={() => (document.url || document.filePath) && router.push({
                   pathname: "/system/document-preview",
                   params: {
-                    url: document.url,
+                    url: document.url || document.filePath,
                     title: document.relation || "Document",
                     fileName: document.fileName || document.storedName || document.relation || "document",
                     returnTo: `/system/tenant-details?id=${tenant._id}&returnTo=${encodeURIComponent(String(returnTo))}`,
                   },
                 })}
-                disabled={!document.url}
+                disabled={!document.url && !document.filePath}
                 style={styles.document}
               >
-                {document.url ? <Image source={{ uri: document.url }} style={styles.documentImage} contentFit="cover" transition={150} /> : <View style={styles.documentPlaceholder}><FileText size={27} color={colors.muted} /></View>}
+                {document.url || document.filePath ? <Image source={{ uri: document.url || document.filePath }} style={styles.documentImage} contentFit="cover" transition={150} /> : <View style={styles.documentPlaceholder}><FileText size={27} color={colors.muted} /></View>}
                 <View style={styles.documentFooter}>
                   <View style={styles.documentText}>
                     <Text style={styles.documentTitle} numberOfLines={1}>{document.relation || "Document"}</Text>
                     <Text style={styles.documentMeta} numberOfLines={1}>{document.fileName || document.storedName || (document.url ? "Tap to preview" : "Missing file")}</Text>
                   </View>
-                  {document.url ? <ExternalLink size={15} color={colors.primary} /> : null}
+                  {document.url || document.filePath ? <ExternalLink size={15} color={colors.primary} /> : null}
                 </View>
               </Pressable>
             ))}

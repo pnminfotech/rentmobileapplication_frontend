@@ -98,7 +98,11 @@ export default function TenantEditScreen() {
       ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
       : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
-    const image = await ImageManipulator.manipulateAsync(result.assets[0].uri, [], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG });
+    const image = await ImageManipulator.manipulateAsync(
+      result.assets[0].uri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG }
+    );
     setDocumentUpdates((current) => ({ ...current, [key]: { uri: image.uri, name: `${key}.jpg` } }));
   }
 

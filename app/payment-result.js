@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { CheckCircle2, Clock3, XCircle } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +28,7 @@ export default function PaymentResultScreen() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
+  const [transactionId, setTransactionId] = useState(String(params.transactionId || ""));
 
   const goToLogin = useCallback(async () => {
     await clearAuthSession();
@@ -34,10 +36,31 @@ export default function PaymentResultScreen() {
   }, [router]);
 
   useEffect(() => {
+    const syncTransactionFromUrl = (url) => {
+      if (!url) return;
+      try {
+        const parsed = new URL(url);
+        const nextTransactionId = parsed.searchParams.get("transactionId");
+        if (nextTransactionId) setTransactionId(nextTransactionId);
+      } catch (_err) {
+        const queryString = url.split("?")[1] || "";
+        const searchParams = new URLSearchParams(queryString);
+        const nextTransactionId = searchParams.get("transactionId");
+        if (nextTransactionId) setTransactionId(nextTransactionId);
+      }
+    };
+
+    const handleUrl = ({ url }) => syncTransactionFromUrl(url);
+    Linking.getInitialURL().then(syncTransactionFromUrl);
+    const subscription = Linking.addEventListener("url", handleUrl);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
     let active = true;
     async function verifyPayment() {
-      const transactionId = params.transactionId;
-      if (!transactionId) {
+      const activeTransactionId = transactionId || params.transactionId;
+      if (!activeTransactionId) {
         setError("Payment transaction was not found. Please login and check your subscription.");
         setLoading(false);
         return;
@@ -48,7 +71,7 @@ export default function PaymentResultScreen() {
         setError("");
         let latest = null;
         for (let attempt = 0; attempt < 8; attempt += 1) {
-          latest = await getSaasPaymentStatus(transactionId);
+          latest = await getSaasPaymentStatus(activeTransactionId);
           const transactionStatus = String(latest?.transaction?.status || "").toLowerCase();
           if (["success", "failed", "cancelled", "canceled"].includes(transactionStatus)) break;
           await new Promise((resolve) => setTimeout(resolve, 2500));
@@ -64,6 +87,9 @@ export default function PaymentResultScreen() {
             `Subscription activated.\nAmount: ${money(latest?.transaction?.amount)}\nValid till: ${formatDate(subscription.endDate)}\n\nPlease login to start your system.`,
             [{ text: "Login", onPress: goToLogin }]
           );
+          setTimeout(() => {
+            goToLogin();
+          }, 400);
         }
       } catch (err) {
         if (active) setError(err.response?.data?.message || err.message || "Unable to verify payment.");
@@ -75,7 +101,7 @@ export default function PaymentResultScreen() {
     return () => {
       active = false;
     };
-  }, [goToLogin, params.transactionId]);
+  }, [goToLogin, params.transactionId, transactionId]);
 
   const transactionStatus = String(status?.transaction?.status || "").toLowerCase();
   const isSuccess = transactionStatus === "success";

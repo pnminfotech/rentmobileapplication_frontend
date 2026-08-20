@@ -196,7 +196,7 @@ export default function TenantsScreen() {
   const tenantRows = useMemo(() => {
     const dueMap = new Map((dues.tenants || []).map((item) => [String(item.tenantId), item]));
     return tenants.filter(isActiveTenant).map((tenant) => {
-      const awaitingForm = tenant.intakeStatus === "pending_tenant";
+      const awaitingForm = false;
       const monthSummary = rentSummary.get(String(tenant._id));
       const rentEntry = (tenant.rents || []).find((rent) => rent.month === key);
       const expected = awaitingForm ? 0 : Number(monthSummary?.totalExpected ?? monthSummary?.expected ?? tenant.baseRent ?? 0);
@@ -245,6 +245,8 @@ export default function TenantsScreen() {
         title: "Tenant registration form",
         message: `Please update your tenant registration form using this secure link:\n${result.url}`,
         url: result.url,
+      }, {
+        dialogTitle: "Share tenant registration link",
       });
     } catch (err) {
       Alert.alert("Unable to share form", err.response?.data?.message || err.message || "Please try again.");

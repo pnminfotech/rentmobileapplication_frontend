@@ -1,4 +1,5 @@
 import { api } from "./client";
+import { Platform } from "react-native";
 
 export async function getTenants() {
   const { data } = await api.get("/forms");
@@ -124,16 +125,21 @@ export async function restoreTenant(tenantId, allocation) {
 export async function updateTenantDocuments(tenantId, documents) {
   const formData = new FormData();
   formData.append("formId", tenantId);
-  Object.entries(documents).forEach(([field, document]) => {
-    if (!document) return;
-    formData.append(field, {
-      uri: document.uri,
-      name: document.name || `${field}.jpg`,
-      type: "image/jpeg",
-    });
-  });
+  for (const [field, document] of Object.entries(documents)) {
+    if (!document) continue;
+    if (Platform.OS === "web") {
+      const response = await fetch(document.uri);
+      const blob = await response.blob();
+      formData.append(field, blob, document.name || `${field}.jpg`);
+    } else {
+      formData.append(field, {
+        uri: document.uri,
+        name: document.name || `${field}.jpg`,
+        type: "image/jpeg",
+      });
+    }
+  }
   const { data } = await api.post("/tenant-docs/with-docs", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
     timeout: 60000,
   });
   return data;
@@ -166,9 +172,13 @@ export async function submitTenantInvite(token, payload) {
 
 export async function uploadTenantInviteDocuments(documents, inviteToken) {
   const body = new FormData();
-  documents.forEach((document, index) => {
+  for (const [index, document] of documents.entries()) {
     if (document.file) {
       body.append("documents", document.file);
+    } else if (Platform.OS === "web") {
+      const response = await fetch(document.uri);
+      const blob = await response.blob();
+      body.append("documents", blob, document.name || `tenant-document-${index + 1}.jpg`);
     } else {
       body.append("documents", {
         uri: document.uri,
@@ -176,7 +186,7 @@ export async function uploadTenantInviteDocuments(documents, inviteToken) {
         type: document.mimeType || "image/jpeg",
       });
     }
-  });
+  }
   body.append("source", "tenant-intake");
   if (inviteToken) body.append("inviteToken", String(inviteToken).trim());
 
@@ -184,12 +194,11 @@ export async function uploadTenantInviteDocuments(documents, inviteToken) {
   const { data } = await api.post("/uploads/docs", body, {
     params: token ? { inviteToken: token } : undefined,
     headers: {
-      "Content-Type": "multipart/form-data",
       ...(token ? { "X-Invite-Token": token } : {}),
     },
     timeout: 60000,
   });
-  return data.files || [];
+  return data.files || data.data?.files || [];
 }
 
 export async function createTenantWithDocuments(fields, documents) {

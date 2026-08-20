@@ -17,6 +17,11 @@ export const api = create({
 api.interceptors.request.use(async (config) => {
   const token = await getAuthToken();
 
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+    delete config.headers["content-type"];
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

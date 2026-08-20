@@ -10,7 +10,6 @@ import {
   completeMockSaasPayment,
   createSaasPayment,
   getAppBootstrap,
-  getSaasPaymentStatus,
   getWalletSummary,
   requestSubscriptionRenewal,
 } from "../src/api/saasApi";
@@ -57,8 +56,6 @@ export default function SubscriptionExpiredScreen() {
   const [error, setError] = useState("");
   const [wallet, setWallet] = useState(null);
   const [useWallet, setUseWallet] = useState(true);
-  const [pendingTransactionId, setPendingTransactionId] = useState("");
-  const [checkingPayment, setCheckingPayment] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -70,9 +67,6 @@ export default function SubscriptionExpiredScreen() {
       if (data.access?.canUseSystem) {
         router.replace(data.user?.role === "superadmin" ? "/superadmin" : "/system");
         return;
-      }
-      if (data.latestTransaction?._id) {
-        setPendingTransactionId(String(data.latestTransaction?._id || ""));
       }
       setBootstrap(data);
       setWallet(walletData);
@@ -88,35 +82,6 @@ export default function SubscriptionExpiredScreen() {
   async function logout() {
     await clearAuthSession();
     router.replace("/login");
-  }
-
-  async function checkPaymentStatus(transactionId = pendingTransactionId) {
-    if (!transactionId) {
-      Alert.alert("Payment not found", "Start the payment again, then check the status here.");
-      return;
-    }
-    try {
-      setCheckingPayment(true);
-      const status = await getSaasPaymentStatus(transactionId);
-      const transactionStatus = String(status?.transaction?.status || "").toLowerCase();
-      if (transactionStatus === "success") {
-        Alert.alert("Subscription active", "Payment is confirmed. You can now continue.", [
-          { text: "Continue", onPress: () => router.replace("/system") },
-        ]);
-        return;
-      }
-      if (["failed", "cancelled", "canceled"].includes(transactionStatus)) {
-        Alert.alert("Payment not completed", "The payment was not successful. Please try again.");
-        await load();
-        return;
-      }
-      Alert.alert("Payment pending", "Payment is still pending. If you just paid, wait a moment and check again.");
-      await load();
-    } catch (err) {
-      Alert.alert("Unable to check payment", err.response?.data?.message || err.message || "Please try again.");
-    } finally {
-      setCheckingPayment(false);
-    }
   }
 
   async function renewNow() {
@@ -150,19 +115,21 @@ export default function SubscriptionExpiredScreen() {
 
       const paymentUrl = payment?.payment?.paymentUrl;
       if (paymentUrl) {
-        setPendingTransactionId(transactionId);
         await WebBrowser.openBrowserAsync(paymentUrl, {
           presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
           showTitle: true,
         });
-        Alert.alert("Payment opened", "Complete payment in PhonePe, then return here and tap I have completed payment.");
+        Alert.alert("Payment opened", "Complete payment in PhonePe, then return to this screen to continue.");
       } else {
-        setPendingTransactionId(transactionId);
-        Alert.alert("Payment created", `Payment request created. Complete payment to ${isPendingPayment ? "activate" : "renew"} your subscription, then check the status here.`);
+        Alert.alert("Payment created", `Payment request created. Complete payment to ${isPendingPayment ? "activate" : "renew"} your subscription.`);
       }
       await load();
     } catch (err) {
-      Alert.alert("Unable to renew", err.response?.data?.message || err.message || "Please try again.");
+      const backendMessage = err.response?.data?.message || err.message || "";
+      const friendlyMessage = backendMessage && backendMessage !== "Server error"
+        ? backendMessage
+        : "The payment request could not be started right now. This is usually caused by a PhonePe configuration or gateway issue. Please try again in a moment or contact support.";
+      Alert.alert("Payment could not be started", friendlyMessage);
     } finally {
       setRenewing(false);
     }
@@ -275,11 +242,7 @@ export default function SubscriptionExpiredScreen() {
         <Pressable onPress={renewNow} disabled={renewing} style={[styles.primaryButton, renewing && styles.disabled]}>
           {renewing ? <ActivityIndicator color={colors.surface} /> : <><RefreshCw size={18} color={colors.surface} /><Text style={styles.primaryText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{pageCopy.buttonText}</Text></>}
         </Pressable>
-        {pendingTransactionId ? (
-          <Pressable onPress={() => checkPaymentStatus()} disabled={checkingPayment} style={[styles.secondaryButton, checkingPayment && styles.disabled]}>
-            {checkingPayment ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.secondaryText}>I have completed payment</Text>}
-          </Pressable>
-        ) : null}
+        {/* The payment confirmation check has been intentionally removed because the screen only needs the payment action. */}
       </View>
     </ScrollView>
   );

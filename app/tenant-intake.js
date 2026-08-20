@@ -91,6 +91,23 @@ function tokenFromParams(params) {
   return "";
 }
 
+function normalizeDocumentRelation(value) {
+  const relation = String(value || "").trim().toLowerCase().replace(/[.\-_]+/g, " ").replace(/\s+/g, " ");
+  const aliases = {
+    self: "self aadhaar card",
+    aadhaar: "self aadhaar card",
+    "self aadhaar": "self aadhaar card",
+    "tenant aadhaar": "self aadhaar card",
+    "tenant aadhaar card": "self aadhaar card",
+    "parent/relative aadhaar": "parent aadhaar card",
+    "parent relative aadhaar": "parent aadhaar card",
+    "partner aadhaar": "partner aadhaar card",
+    "tenant photograph": "tenant photo",
+    photo: "tenant photo",
+  };
+  return aliases[relation] || relation;
+}
+
 export default function TenantIntakeScreen() {
   const params = useLocalSearchParams();
   const token = tokenFromParams(params);
@@ -163,7 +180,11 @@ export default function TenantIntakeScreen() {
       ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
       : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
-    const image = await ImageManipulator.manipulateAsync(result.assets[0].uri, [], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG });
+    const image = await ImageManipulator.manipulateAsync(
+      result.assets[0].uri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG }
+    );
     setDocuments((current) => ({ ...current, [key]: { uri: image.uri, name: `${key}.jpg`, mimeType: "image/jpeg" } }));
   }
 
@@ -193,9 +214,12 @@ export default function TenantIntakeScreen() {
     if (!/^\d{6}$/.test(form.pincode)) return "Pincode must be 6 digits.";
     if (!isResidentialRoom && !isShop && (!/^\d{10}$/.test(form.relative1Phone) || !/^\d{10}$/.test(form.relative2Phone))) return "Contact phone numbers must be 10 digits.";
     const existingDocuments = Array.isArray(invite?.existingDocuments) ? invite.existingDocuments : [];
-    const hasDocument = (relation) => existingDocuments.some((document) => String(document?.relation || "").toLowerCase() === relation.toLowerCase());
+    const hasDocument = (relation) => existingDocuments.some((document) =>
+      Boolean(document?.url || document?.filePath || document?.fileId) &&
+      normalizeDocumentRelation(document?.relation) === normalizeDocumentRelation(relation)
+    );
     const requiredDocuments = isShop ? SHOP_DOCUMENTS : isResidentialRoom ? RESIDENTIAL_DOCUMENTS : DOCUMENTS;
-    if (requiredDocuments.some(([key, , relation]) => !documents[key] && !hasDocument(relation))) return "All three tenant documents are required.";
+    if (requiredDocuments.some(([key, , relation]) => !documents[key] && !hasDocument(relation))) return `All ${requiredDocuments.length} required tenant documents are required.`;
     return "";
   }
 
@@ -213,11 +237,19 @@ export default function TenantIntakeScreen() {
       const selectedDocumentList = propertyType === "shop" ? SHOP_DOCUMENTS : propertyType === "room" ? RESIDENTIAL_DOCUMENTS : DOCUMENTS;
       const selectedDocuments = selectedDocumentList.filter(([key]) => documents[key]).map(([key, , relation]) => ({ ...documents[key], relation }));
       const uploaded = selectedDocuments.length ? await uploadTenantInviteDocuments(selectedDocuments, token) : [];
-      const uploadedDocuments = uploaded.map((file, index) => ({
-        fileName: selectedDocuments[index]?.fileName || selectedDocuments[index]?.name || file.filename || `document-${index + 1}.jpg`,
-        relation: selectedDocuments[index].relation,
-        url: file.url || file.path || file.location || file.secure_url,
-      }));
+      if (selectedDocuments.length !== uploaded.length) {
+        throw new Error("One or more documents could not be uploaded. Please select them again and retry.");
+      }
+      const uploadedDocuments = selectedDocuments.map((selectedDocument, index) => {
+        const file = uploaded[index] || {};
+        const url = file.url || file.path || file.location || file.secure_url;
+        if (!url) throw new Error("The document upload did not return a file URL. Please try again.");
+        return {
+          fileName: selectedDocument.fileName || selectedDocument.name || file.filename || `document-${index + 1}.jpg`,
+          relation: selectedDocument.relation,
+          url,
+        };
+      });
       await submitTenantInvite(token, { ...form, ...(uploadedDocuments.length ? { documents: uploadedDocuments } : {}) });
       setComplete(true);
     } catch (err) {
@@ -285,7 +317,10 @@ export default function TenantIntakeScreen() {
       <Text style={styles.section}>Required documents</Text>
       {documentList.map(([key, label, relation]) => {
         const existingDocuments = Array.isArray(invite?.existingDocuments) ? invite.existingDocuments : [];
-        const alreadyUploaded = existingDocuments.some((document) => String(document?.relation || "").toLowerCase() === relation.toLowerCase());
+        const alreadyUploaded = existingDocuments.some((document) =>
+          Boolean(document?.url || document?.filePath || document?.fileId) &&
+          normalizeDocumentRelation(document?.relation) === normalizeDocumentRelation(relation)
+        );
         const ready = Boolean(documents[key] || alreadyUploaded);
         return (
           <View key={key}>

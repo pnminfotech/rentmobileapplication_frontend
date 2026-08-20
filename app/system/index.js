@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -397,9 +397,9 @@ export default function SystemAdminScreen() {
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     loadDashboard();
-  }, [loadDashboard]);
+  }, [loadDashboard]));
 
   const loadUnreadNotifications = useCallback(async () => {
     try {

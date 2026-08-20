@@ -316,7 +316,7 @@ export default function RegisterBusinessScreen() {
     const transaction = status?.transaction || result?.transaction || {};
     Alert.alert(
       "Payment successful",
-      `Your subscription is active.\nAmount: ${money(transaction.amount || subscription.amount)}\nValid till: ${formatDate(subscription.endDate)}\n\nPlease login to start your system.`,
+      `Your subscription is active.\nAmount: ${money(transaction.amount || subscription.amount)}\nValid till: ${formatDate(subscription.endDate)}\n\nPlease start your system.`,
       [
         {
           text: "Go to login",
@@ -330,6 +330,13 @@ export default function RegisterBusinessScreen() {
         },
       ]
     );
+    setTimeout(async () => {
+      await clearAuthSession();
+      router.replace({
+        pathname: "/login",
+        params: { subscription: "active" },
+      });
+    }, 500);
   }
 
   if (result) {

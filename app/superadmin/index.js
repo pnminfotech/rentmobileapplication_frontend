@@ -99,6 +99,20 @@ function formatDate(value) {
     : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : date.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
 function statusLabel(value) {
   const label = String(value || "unknown").replace(/_/g, " ");
   return label.charAt(0).toUpperCase() + label.slice(1);
@@ -331,36 +345,65 @@ function TransactionRow({ transaction }) {
   const success = transaction.status === "success";
   const pending = transaction.status === "pending" || transaction.status === "created";
   const created = transaction.status === "created";
-  const statusColor = success ? COLORS.green : created ? COLORS.blue : COLORS.orange;
-  const statusBg = success ? COLORS.greenSoft : created ? COLORS.blueSoft : COLORS.orangeSoft;
+  const failed = transaction.status === "failed" || transaction.status === "cancelled";
+  const statusColor = success ? COLORS.green : failed ? COLORS.red : created ? COLORS.blue : COLORS.orange;
+  const statusBg = success ? COLORS.greenSoft : failed ? COLORS.redSoft : created ? COLORS.blueSoft : COLORS.orangeSoft;
   const wallet = getWalletPricing(transaction);
+  const customer = transaction.organizationId?.ownerName || transaction.organizationId?.name || "Organization";
+  const txnId = transaction.providerTransactionId || transaction.merchantTransactionId || transaction._id || "-";
+
   return (
     <View style={styles.transactionRow}>
-      <IconBox
-        Icon={Building2}
-        color={COLORS.blue}
-        bg={COLORS.blueSoft}
-        size={48}
-      />
-      <View style={styles.transactionInfo}>
-        <Text style={styles.transactionTitle} numberOfLines={1}>
-          {transaction.organizationId?.name || "Organization"}
-        </Text>
-        <Text style={styles.transactionMeta} numberOfLines={1}>
-          {formatDate(transaction.createdAt)}
-        </Text>
-      </View>
-      <View style={styles.transactionRight}>
-        <Text style={[styles.transactionAmount, success && styles.amountSuccess, pending && styles.amountPending]} numberOfLines={1}>
-          {money(transaction.amount)}
-        </Text>
-        {wallet.hasWalletDiscount ? (
-          <Text style={styles.transactionWalletText} numberOfLines={1}>
-            Wallet -{money(wallet.walletCoinsUsed)}
+      <View style={styles.transactionMainRow}>
+        <IconBox
+          Icon={Building2}
+          color={COLORS.blue}
+          bg={COLORS.blueSoft}
+          size={48}
+        />
+        <View style={styles.transactionInfo}>
+          <Text style={styles.transactionTitle} numberOfLines={1}>
+            {transaction.organizationId?.name || "Organization"}
           </Text>
-        ) : null}
-        <View style={[styles.transactionStatusPill, { backgroundColor: statusBg }]}>
-          <Text style={[styles.transactionStatusText, { color: statusColor }]} numberOfLines={1}>{statusLabel(transaction.status)}</Text>
+          <Text style={styles.transactionMeta} numberOfLines={1}>
+            {formatDate(transaction.createdAt)}
+          </Text>
+        </View>
+        <View style={styles.transactionRight}>
+          <Text style={[styles.transactionAmount, success && styles.amountSuccess, failed && styles.amountFailed, pending && styles.amountPending]} numberOfLines={1}>
+            {money(transaction.amount)}
+          </Text>
+          {wallet.hasWalletDiscount ? (
+            <Text style={styles.transactionWalletText} numberOfLines={1}>
+              Wallet -{money(wallet.walletCoinsUsed)}
+            </Text>
+          ) : null}
+          <View style={[styles.transactionStatusPill, { backgroundColor: statusBg }]}>
+            <Text style={[styles.transactionStatusText, { color: statusColor }]} numberOfLines={1}>{statusLabel(transaction.status)}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.transactionDetailsCard}>
+        <View style={styles.transactionDetailRow}>
+          <Text style={styles.transactionDetailLabel}>Status</Text>
+          <Text style={[styles.transactionDetailValue, failed && styles.detailDanger, success && styles.detailSuccess]}>{statusLabel(transaction.status)}</Text>
+        </View>
+        <View style={styles.transactionDetailRow}>
+          <Text style={styles.transactionDetailLabel}>From</Text>
+          <Text style={styles.transactionDetailValue} numberOfLines={1}>{customer}</Text>
+        </View>
+        <View style={styles.transactionDetailRow}>
+          <Text style={styles.transactionDetailLabel}>Amount</Text>
+          <Text style={styles.transactionDetailValue}>{money(transaction.amount)}</Text>
+        </View>
+        <View style={styles.transactionDetailRow}>
+          <Text style={styles.transactionDetailLabel}>Time</Text>
+          <Text style={styles.transactionDetailValue}>{formatDateTime(transaction.paidAt || transaction.createdAt)}</Text>
+        </View>
+        <View style={styles.transactionDetailRow}>
+          <Text style={styles.transactionDetailLabel}>Txn ID</Text>
+          <Text style={styles.transactionDetailValue} numberOfLines={1}>{String(txnId)}</Text>
         </View>
       </View>
     </View>
@@ -1001,7 +1044,8 @@ const styles = StyleSheet.create({
   transactionPanelHeader: { minHeight: 42, marginBottom: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   transactionPanelTitle: { flex: 1, color: COLORS.text, fontSize: 18, fontWeight: "900" },
   transactionRefresh: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: COLORS.blueSoft },
-  transactionRow: { minHeight: 76, marginBottom: 10, padding: 10, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  transactionRow: { marginBottom: 10, padding: 10, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  transactionMainRow: { minHeight: 76, flexDirection: "row", alignItems: "center" },
   transactionInfo: { flex: 1, minWidth: 0, paddingHorizontal: 9 },
   transactionTitle: { color: COLORS.text, fontSize: 13.5, fontWeight: "900" },
   transactionMeta: { marginTop: 4, color: COLORS.muted, fontSize: 11, fontWeight: "700" },
@@ -1011,7 +1055,14 @@ const styles = StyleSheet.create({
   transactionAmount: { width: "100%", color: COLORS.text, fontSize: 13.5, fontWeight: "900", textAlign: "right" },
   transactionWalletText: { marginTop: 3, width: "100%", color: COLORS.blue, fontSize: 9.5, fontWeight: "900", textAlign: "right" },
   amountSuccess: { color: COLORS.green },
+  amountFailed: { color: COLORS.red },
   amountPending: { color: COLORS.text },
+  transactionDetailsCard: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.soft },
+  transactionDetailRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
+  transactionDetailLabel: { flex: 1, minWidth: 0, color: COLORS.muted, fontSize: 10.5, fontWeight: "800" },
+  transactionDetailValue: { flex: 1.4, minWidth: 0, color: COLORS.text, fontSize: 10.5, fontWeight: "800", textAlign: "right" },
+  detailSuccess: { color: COLORS.green },
+  detailDanger: { color: COLORS.red },
   viewAll: { color: COLORS.blue, fontSize: 13, fontWeight: "800" },
   morePanel: { marginTop: 8, gap: 10 },
   moreRow: { minHeight: 72, padding: 10, flexDirection: "row", alignItems: "center", gap: 13, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
