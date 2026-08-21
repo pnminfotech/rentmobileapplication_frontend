@@ -256,7 +256,7 @@ export default function FormerTenantsScreen() {
         <div class="item"><div class="label">Date of birth</div><div class="value">${escapeHtml(formatDate(tenant.dob))}</div></div>
         <div class="item"><div class="label">Tenant joining date</div><div class="value">${escapeHtml(formatDate(tenant.joiningDate))}</div></div>
         <div class="item"><div class="label">Leave date</div><div class="value">${escapeHtml(formatDate(tenant.leaveDate))}</div></div>
-        <div class="item"><div class="label">Payment cycle</div><div class="value">${tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid - joining cycle paid" : "Normal cycle - payable after month completes"}</div></div>
+        <div class="item"><div class="label">Payment cycle</div><div class="value">${tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid - Pay at Joining" : "Normal cycle - Pay at Month End"}</div></div>
         <div class="item"><div class="label">Unit</div><div class="value">${escapeHtml(tenant.category || "-")} | Floor ${escapeHtml(tenant.floorNo || "-")} | ${escapeHtml(formatTenantUnit(tenant))}</div></div>
         <div class="item"><div class="label">Monthly rent / Deposit</div><div class="value">${escapeHtml(money(tenant.baseRent || tenant.rentAmount))} / ${escapeHtml(money(tenant.depositAmount))}</div></div>
       </div>
@@ -324,7 +324,7 @@ export default function FormerTenantsScreen() {
       ["Personal", "Date of birth", formatDate(tenant.dob)],
       ["Stay", "Tenant joining date", formatDate(tenant.joiningDate)],
       ["Stay", "Leave date", formatDate(tenant.leaveDate)],
-      ["Stay", "Payment cycle", tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid - joining cycle paid" : "Normal cycle - payable after month completes"],
+      ["Stay", "Payment cycle", tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid - Pay at Joining" : "Normal cycle - Pay at Month End"],
       ["Unit", "Category", tenant.category, "Floor", tenant.floorNo],
       ["Unit", "Assignment", formatTenantUnit(tenant), "Internal slot", tenant.bedNo],
       ["Financial", "Monthly rent", tenant.baseRent || tenant.rentAmount],

@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { CreditCard, LogOut, RefreshCw, WalletCards } from "lucide-react-native";
@@ -10,6 +11,7 @@ import {
   completeMockSaasPayment,
   createSaasPayment,
   getAppBootstrap,
+  getSaasPaymentStatus,
   getWalletSummary,
   requestSubscriptionRenewal,
 } from "../src/api/saasApi";
@@ -64,6 +66,34 @@ export default function SubscriptionExpiredScreen() {
         getAppBootstrap(),
         getWalletSummary().catch(() => null),
       ]);
+
+      const latestTransactionId = data?.latestTransaction?._id;
+      const latestTransactionStatus = String(data?.latestTransaction?.status || "").toLowerCase();
+      const needsPayment =
+        isPendingPaymentStatus(data?.subscription?.status) ||
+        isPendingPaymentStatus(data?.organization?.status);
+
+      if (latestTransactionId && needsPayment && ["created", "pending", "pending_payment"].includes(latestTransactionStatus)) {
+        try {
+          const paymentStatus = await getSaasPaymentStatus(latestTransactionId);
+          const refreshedTransactionStatus = String(paymentStatus?.transaction?.status || "").toLowerCase();
+          const refreshedSubscriptionStatus = String(paymentStatus?.subscription?.status || "").toLowerCase();
+
+          if (refreshedTransactionStatus === "success" || refreshedSubscriptionStatus === "active") {
+            const refreshedBootstrap = await getAppBootstrap();
+            if (refreshedBootstrap?.access?.canUseSystem) {
+              router.replace(refreshedBootstrap.user?.role === "superadmin" ? "/superadmin" : "/system");
+              return;
+            }
+            setBootstrap(refreshedBootstrap);
+            setWallet(walletData);
+            return;
+          }
+        } catch (_statusError) {
+          // Keep the pending screen visible if the status refresh is not ready yet.
+        }
+      }
+
       if (data.access?.canUseSystem) {
         router.replace(data.user?.role === "superadmin" ? "/superadmin" : "/system");
         return;
@@ -76,6 +106,15 @@ export default function SubscriptionExpiredScreen() {
       setLoading(false);
     }
   }, [router]);
+
+  useEffect(() => {
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      if (!String(url || "").includes("payment-result")) return;
+      WebBrowser.dismissBrowser().catch(() => {});
+      load();
+    });
+    return () => subscription.remove();
+  }, [load]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 

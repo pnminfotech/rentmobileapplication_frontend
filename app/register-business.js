@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -100,6 +100,7 @@ export default function RegisterBusinessScreen() {
   const [error, setError] = useState("");
   const [paymentOpenError, setPaymentOpenError] = useState("");
   const [result, setResult] = useState(null);
+  const [appState, setAppState] = useState(AppState.currentState);
   const latestTransactionIdRef = useRef(null);
   const paymentPollRef = useRef(null);
 
@@ -137,6 +138,7 @@ export default function RegisterBusinessScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
+      setAppState(nextState);
       const transactionId = latestTransactionIdRef.current;
       if (nextState === "active" && transactionId) {
         paymentPollRef.current?.(transactionId);
@@ -155,6 +157,7 @@ export default function RegisterBusinessScreen() {
   const canOfferCanteen = form.businessType === "hostel" || form.businessType === "mixed" || units.beds > 0;
   latestTransactionIdRef.current = result?.transaction?._id || null;
   paymentPollRef.current = pollRegistrationPayment;
+  const paymentStatus = String(result?.transaction?.status || "").toLowerCase();
   const selectedPlan = useMemo(() => plans.find((plan) => String(plan._id) === String(form.planId)) || null, [form.planId, plans]);
   const pricing = selectedPlan?.unitPricing || {};
   const amountBreakdown = useMemo(() => {
@@ -239,7 +242,9 @@ export default function RegisterBusinessScreen() {
         referralCode: referralQuote?.referral?.code || form.referralCode.trim().toUpperCase(),
         units,
       });
-      setResult(data);
+      startTransition(() => {
+        setResult(data);
+      });
       const firstPaymentUrl = data?.payment?.directPaymentUrl || data?.payment?.paymentUrl || data?.payment?.checkoutPageUrl;
       if (firstPaymentUrl) {
         await openCheckoutUrl(firstPaymentUrl, data?.transaction?._id);
@@ -293,6 +298,14 @@ export default function RegisterBusinessScreen() {
       for (let attempt = 0; attempt < 10; attempt += 1) {
         const status = await getSaasPaymentStatus(transactionId);
         const paymentStatus = String(status?.transaction?.status || "").toLowerCase();
+        startTransition(() => {
+          setResult((current) => current ? {
+            ...current,
+            transaction: status?.transaction || current.transaction,
+            subscription: status?.subscription || current.subscription,
+            organization: status?.subscription?.organizationId ? current.organization : current.organization,
+          } : current);
+        });
         if (paymentStatus === "success") {
           await showPaymentSuccess(status);
           return;
@@ -314,6 +327,13 @@ export default function RegisterBusinessScreen() {
   async function showPaymentSuccess(status) {
     const subscription = status?.subscription || result?.subscription || {};
     const transaction = status?.transaction || result?.transaction || {};
+    startTransition(() => {
+      setResult((current) => current ? {
+        ...current,
+        transaction,
+        subscription,
+      } : current);
+    });
     Alert.alert(
       "Payment successful",
       `Your subscription is active.\nAmount: ${money(transaction.amount || subscription.amount)}\nValid till: ${formatDate(subscription.endDate)}\n\nPlease start your system.`,
@@ -339,18 +359,35 @@ export default function RegisterBusinessScreen() {
     }, 500);
   }
 
+  useEffect(() => {
+    if (!result?.transaction?._id) return undefined;
+    if (autoCheckingPayment) return undefined;
+    if (appState !== "active") return undefined;
+    if (!["created", "pending"].includes(paymentStatus)) return undefined;
+
+    const timer = setInterval(() => {
+      paymentPollRef.current?.(result.transaction._id);
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [appState, autoCheckingPayment, paymentStatus, result?.transaction?._id]);
+
   if (result) {
+    const isSuccess = paymentStatus === "success";
+    const isFailed = ["failed", "cancelled", "canceled"].includes(paymentStatus);
     return (
       <ScrollView style={styles.screen} contentContainerStyle={[styles.content, contentInsetStyle]}>
         <View style={styles.successCard}>
           <CheckCircle2 size={42} color={colors.success} />
           <Text style={styles.successTitle}>
-            {autoCheckingPayment ? "Verifying payment" : "Registration completed"}
+            {autoCheckingPayment ? "Verifying payment" : isSuccess ? "Subscription active" : "Registration completed"}
           </Text>
           <Text style={styles.successText}>
             {autoCheckingPayment
               ? "Please wait while we confirm your subscription payment."
-              : "Your account is created. Complete payment to activate your subscription."}
+              : isSuccess
+                ? "Your payment is confirmed. You can now sign in and start your system."
+                : "Your account is created. Complete payment to activate your subscription."}
           </Text>
         </View>
 
@@ -360,6 +397,8 @@ export default function RegisterBusinessScreen() {
           <Text style={styles.summaryLine}>Email: {result.user?.email}</Text>
           <Text style={styles.summaryLine}>Status: {result.organization?.status}</Text>
           <Text style={styles.summaryLine}>Subscription: {result.subscription?.durationMonths} months</Text>
+          {result.subscription?.startDate ? <Text style={styles.summaryLine}>Start: {formatDate(result.subscription.startDate)}</Text> : null}
+          {result.subscription?.endDate ? <Text style={styles.summaryLine}>Valid till: {formatDate(result.subscription.endDate)}</Text> : null}
           <Text style={styles.summaryAmount}>{money(result.subscription?.amount)}</Text>
           {result.paymentError ? <Text style={styles.error}>{result.paymentError}</Text> : null}
         </View>
@@ -371,9 +410,20 @@ export default function RegisterBusinessScreen() {
           </View>
         ) : null}
 
-        {!autoCheckingPayment && getCheckoutUrl() ? (
+        {!autoCheckingPayment && !isSuccess && getCheckoutUrl() ? (
           <Pressable onPress={openRegistrationPayment} disabled={openingPayment} style={[styles.primaryButton, openingPayment && styles.disabled]}>
-            {openingPayment ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.primaryText}>Make payment</Text>}
+            {openingPayment ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.primaryText}>{isFailed ? "Retry payment" : "Make payment"}</Text>}
+          </Pressable>
+        ) : null}
+        {!autoCheckingPayment && isSuccess ? (
+          <Pressable
+            onPress={async () => {
+              await clearAuthSession();
+              router.replace({ pathname: "/login", params: { subscription: "active" } });
+            }}
+            style={styles.primaryButton}
+          >
+            <Text style={styles.primaryText}>Go to login</Text>
           </Pressable>
         ) : null}
         {paymentOpenError ? <Text style={styles.error}>{paymentOpenError}</Text> : null}

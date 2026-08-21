@@ -129,8 +129,13 @@ export default function TenantAdmissionScreen() {
 
   async function chooseImage(key) {
     setError("");
-    const options = { mediaTypes: ["images"], allowsEditing: true, quality: 0.85 };
     const isSelfie = key === "photo";
+    const options = {
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: isSelfie ? [1, 1] : [4, 3],
+      quality: 0.85,
+    };
     const permission = isSelfie
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -302,12 +307,13 @@ export default function TenantAdmissionScreen() {
           {isResidentialRoom ? <Field label="No. of family members" value={form.familyMembers} onChangeText={(value) => setValue("familyMembers", value.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" placeholder="Enter family members count" /> : null}
           {isShop ? <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(value) => setValue("shopBusiness", value)} multiline placeholder="Example: Grocery, mobile repair, salon, tailoring..." /> : <>
             <Field label={isResidentialRoom ? "Company Address / College" : "Company or college"} value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline placeholder="Name and address" />
-            <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} maximumDate={new Date()} />
+            <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
           </>}
         </> : null}
 
         {step === 4 ? <>
           <Text style={styles.sectionTitle}>Payment and documents</Text>
+          <Text style={styles.helperText}>After choosing an image, adjust the crop, then tap Cancel to discard or Done/Choose to use it. Selfies use a square crop.</Text>
           <View style={styles.summary}><Text style={styles.summaryLabel}>Monthly rent</Text><Text style={styles.summaryValue}>Rs. {selected?.bed?.price || 0}</Text></View>
           <Field label="Deposit amount" value={form.depositAmount} onChangeText={(value) => setValue("depositAmount", value)} keyboardType="numeric" placeholder="Example: 10000" />
           <Text style={styles.label}>Payment cycle</Text>

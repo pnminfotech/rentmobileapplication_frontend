@@ -88,8 +88,13 @@ export default function TenantEditScreen() {
   useFocusEffect(useCallback(() => { loadTenant(); }, [loadTenant]));
 
   async function chooseImage(key) {
-    const options = { mediaTypes: ["images"], allowsEditing: true, quality: 0.85 };
     const isSelfie = key === "photo";
+    const options = {
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: isSelfie ? [1, 1] : [4, 3],
+      quality: 0.85,
+    };
     const permission = isSelfie
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -215,7 +220,7 @@ export default function TenantEditScreen() {
         <Text style={styles.sectionTitle}>Family and work</Text>
         <Field label="No. of family members" value={form.familyMembers} onChangeText={(value) => setValue("familyMembers", value.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" />
         <Field label="Company Address / College" value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline />
-        <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} maximumDate={new Date()} />
+        <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
       </> : isShop ? <>
         <Text style={styles.sectionTitle}>Shop details</Text>
         <Field label="Shop name" value={form.shopName} onChangeText={(value) => setValue("shopName", value)} />
@@ -223,10 +228,11 @@ export default function TenantEditScreen() {
       </> : <>
         <Text style={styles.sectionTitle}>Work or education</Text>
         <Field label="Company or college" value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline />
-        <FormDateField label="Company or college joining date" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} maximumDate={new Date()} />
+        <FormDateField label="Company or college joining date" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
       </>}
 
       <Text style={styles.sectionTitle}>Documents</Text>
+      <Text style={styles.documentHint}>Adjust the crop after selecting or taking a photo. Tap Cancel to discard or Done/Choose to save it.</Text>
       {documentList.map((document) => {
         const uploaded = (tenant.documents || []).some((item) => item.relation === document.relation);
         const selected = Boolean(documentUpdates[document.key]);
@@ -250,4 +256,5 @@ const styles = StyleSheet.create({
   toggle: { height: 48, padding: 3, flexDirection: "row", borderRadius: 7, backgroundColor: colors.border }, toggleOption: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 5 }, toggleSelected: { backgroundColor: colors.surface }, toggleText: { color: colors.muted, fontWeight: "600" }, toggleTextSelected: { color: colors.primary },
   documentRow: { minHeight: 66, marginTop: 10, padding: 11, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentText: { flex: 1 }, documentTitle: { color: colors.text, fontWeight: "700" }, documentMeta: { marginTop: 4, color: colors.muted, fontSize: 12 }, documentButton: { minWidth: 92, height: 40, paddingHorizontal: 10, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primarySoft }, documentButtonText: { color: colors.primary, fontWeight: "700" },
   error: { marginTop: 14, color: colors.danger }, saveButton: { height: 50, marginTop: 24, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, saveText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.5 },
+  documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { Check, Camera, ChevronDown, ShieldCheck } from "lucide-react-native";
@@ -13,6 +13,7 @@ import {
 } from "../src/api/tenantApi";
 import { formatTenantUnit, propertyTypeFromTenant } from "../src/utils/unitLabels";
 import { colors } from "../src/theme/colors";
+import WebImageCropper from "../src/components/WebImageCropper";
 
 const DOCUMENTS = [
   ["selfAadhar", "Tenant Aadhaar", "Self Aadhaar Card"],
@@ -117,6 +118,7 @@ export default function TenantIntakeScreen() {
   const [invite, setInvite] = useState(null);
   const [form, setForm] = useState(INITIAL_FORM);
   const [documents, setDocuments] = useState({});
+  const [cropRequest, setCropRequest] = useState(null);
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
 
@@ -170,8 +172,13 @@ export default function TenantIntakeScreen() {
 
   async function chooseDocument(key) {
     setError("");
-    const options = { mediaTypes: ["images"], quality: 0.8 };
     const isSelfie = key === "photo";
+    const options = {
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: isSelfie ? [1, 1] : [4, 3],
+      quality: 0.8,
+    };
     const permission = isSelfie
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -180,6 +187,10 @@ export default function TenantIntakeScreen() {
       ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
       : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
+    if (Platform.OS === "web") {
+      setCropRequest({ key, uri: result.assets[0].uri, aspect: isSelfie ? 1 : 4 / 3 });
+      return;
+    }
     const image = await ImageManipulator.manipulateAsync(
       result.assets[0].uri,
       [{ resize: { width: 1200 } }],
@@ -274,7 +285,8 @@ export default function TenantIntakeScreen() {
   const isShop = propertyType === "shop";
   const documentList = isShop ? SHOP_DOCUMENTS : isResidentialRoom ? RESIDENTIAL_DOCUMENTS : DOCUMENTS;
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
+    <>
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
       <View style={styles.header}><ShieldCheck size={30} color={colors.primary} /><View style={styles.headerText}><Text style={styles.title}>Tenant registration</Text><Text style={styles.subtitle}>Secure one-time form</Text></View></View>
       <View style={styles.allocation}>
         <Text style={styles.allocationName}>{prefill.name || "Tenant"}</Text>
@@ -311,10 +323,11 @@ export default function TenantIntakeScreen() {
       {isResidentialRoom ? <Field label="No. of family members" value={form.familyMembers} onChangeText={(v) => setValue("familyMembers", v.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" /> : null}
       {isShop ? <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(v) => setValue("shopBusiness", v)} multiline /> : <>
         <Field label={isResidentialRoom ? "Company Address / College" : "Company or college name and address"} value={form.companyAddress} onChangeText={(v) => setValue("companyAddress", v)} multiline />
-        <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege || toDateValue()} onChange={(v) => setValue("dateOfJoiningCollege", v)} maximumDate={new Date()} />
+        <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege || toDateValue()} onChange={(v) => setValue("dateOfJoiningCollege", v)} />
       </>}
 
       <Text style={styles.section}>Required documents</Text>
+      <Text style={styles.documentHint}>Adjust the crop after selecting or taking a photo. Tap Cancel to discard or Done/Choose to use it.</Text>
       {documentList.map(([key, label, relation]) => {
         const existingDocuments = Array.isArray(invite?.existingDocuments) ? invite.existingDocuments : [];
         const alreadyUploaded = existingDocuments.some((document) =>
@@ -336,7 +349,23 @@ export default function TenantIntakeScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable onPress={submit} disabled={saving} style={[styles.submit, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.submitText}>Submit registration</Text>}</Pressable>
       <Text style={styles.securityNote}>Your link is valid for one successful submission only.</Text>
-    </ScrollView>
+      </ScrollView>
+      {cropRequest ? (
+        <WebImageCropper
+          sourceUri={cropRequest.uri}
+          aspect={cropRequest.aspect}
+          outputName={`${cropRequest.key}.jpg`}
+          onCancel={(cropError) => {
+            setCropRequest(null);
+            if (cropError) setError(cropError.message || "Unable to crop image.");
+          }}
+          onConfirm={async (image) => {
+            setDocuments((current) => ({ ...current, [cropRequest.key]: image }));
+            setCropRequest(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -349,7 +378,7 @@ const styles = StyleSheet.create({
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 }, multiline: { height: 82, paddingTop: 13, textAlignVertical: "top" },
   select: { height: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, selectValue: { flex: 1, color: colors.text, fontSize: 16 },
   options: { marginTop: 5, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, option: { height: 46, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft }, optionSelected: { backgroundColor: colors.primarySoft }, optionText: { flex: 1, color: colors.muted, fontWeight: "600" },
-  documentButton: { height: 50, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentReady: { borderColor: colors.successSoft, backgroundColor: colors.successSoft }, documentText: { color: colors.primary, fontWeight: "700" }, documentReadyText: { color: colors.success },
+  documentButton: { height: 50, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentReady: { borderColor: colors.successSoft, backgroundColor: colors.successSoft }, documentText: { color: colors.primary, fontWeight: "700" }, documentReadyText: { color: colors.success }, documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
   error: { marginTop: 18, color: colors.danger, textAlign: "center" }, submit: { height: 52, marginTop: 22, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, submitText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.55 }, securityNote: { marginTop: 12, color: colors.muted, fontSize: 12, textAlign: "center" },
   successIcon: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderRadius: 34, backgroundColor: colors.successSoft }, completeTitle: { marginTop: 18, color: colors.success, fontSize: 24, fontWeight: "700" }, invalidTitle: { color: colors.danger, fontSize: 24, fontWeight: "700" }, completeText: { maxWidth: 430, marginTop: 10, color: colors.muted, lineHeight: 22, textAlign: "center" },
 });

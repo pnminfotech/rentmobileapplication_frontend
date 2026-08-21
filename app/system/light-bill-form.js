@@ -201,7 +201,12 @@ export default function LightBillFormScreen() {
   const consumedUnits = meterMode && Number.isFinite(currentReading) && currentReading >= previousReading ? currentReading - previousReading : 0;
   const calculatedAmount = meterMode && ratePerUnit > 0 ? Math.max(consumedUnits * ratePerUnit + fixedCharge, 0) : 0;
   const extraUnits = meterMode ? Math.max(consumedUnits - includedUnits, 0) : 0;
-  const recoverableAmount = meterMode && ratePerUnit > 0 ? Math.max(extraUnits * ratePerUnit + (extraUnits > 0 ? fixedCharge : 0), 0) : 0;
+  const includedValue = includedUnits * ratePerUnit;
+  const recoverableAmount = meterMode && ratePerUnit > 0
+    ? activeMode === "room_meter_split"
+      ? Math.max(Number(amount || 0) - includedValue, 0)
+      : Math.max(extraUnits * ratePerUnit + (extraUnits > 0 ? fixedCharge : 0), 0)
+    : 0;
 
   useEffect(() => {
     if (editing) return;
@@ -211,9 +216,9 @@ export default function LightBillFormScreen() {
   }, [activeMode, editing, fixedAmount, fixedMode, ownerStyleMode]);
 
   useEffect(() => {
-    if (editing || !meterMode || !totalReading || ratePerUnit <= 0) return;
+    if (editing || !meterMode || activeMode === "room_meter_split" || !totalReading || ratePerUnit <= 0) return;
     setAmount(String(Math.round(calculatedAmount)));
-  }, [calculatedAmount, editing, meterMode, ratePerUnit, totalReading]);
+  }, [activeMode, calculatedAmount, editing, meterMode, ratePerUnit, totalReading]);
 
   function selectPropertyType(value) {
     setPropertyType(value);
@@ -473,7 +478,7 @@ export default function LightBillFormScreen() {
               <TextInput value={totalReading} onChangeText={setTotalReading} keyboardType="numeric" placeholder="Example: 250" style={styles.input} />
               <Text style={styles.helper}>Units consumed: {consumedUnits} | Rate Rs. {ratePerUnit || 0} | Fixed Rs. {fixedCharge || 0}</Text>
               {activeMode === "room_meter_split" && includedUnits > 0 ? (
-                <Text style={styles.helper}>Included units per month: {includedUnits} | Units above included limit: {extraUnits} | Recoverable amount: Rs. {Math.round(recoverableAmount).toLocaleString("en-IN")}</Text>
+                <Text style={styles.helper}>Included units per month: {includedUnits} | Included value: Rs. {Math.round(includedValue).toLocaleString("en-IN")} | Recoverable from admin bill: Rs. {Math.round(recoverableAmount).toLocaleString("en-IN")}</Text>
               ) : null}
             </>
           ) : null}
@@ -497,7 +502,7 @@ export default function LightBillFormScreen() {
 
       {fixedMode && fixedAmount > 0 ? <Text style={styles.helper}>Fixed amount from settings: Rs. {fixedAmount.toLocaleString("en-IN")}</Text> : null}
       {activeMode === "included_extra_split" ? <Text style={styles.helper}>Included amount per tenant: Rs. {includedAmount.toLocaleString("en-IN")}</Text> : null}
-      {meterMode && calculatedAmount > 0 ? <Text style={styles.helper}>Calculated bill amount: Rs. {Math.round(calculatedAmount).toLocaleString("en-IN")}</Text> : null}
+      {meterMode && activeMode !== "room_meter_split" && calculatedAmount > 0 ? <Text style={styles.helper}>Calculated bill amount: Rs. {Math.round(calculatedAmount).toLocaleString("en-IN")}</Text> : null}
       {activeMode === "room_meter_split" && includedUnits > 0 && meterMode ? <Text style={styles.helper}>Tenant split happens only when the entered month units are more than {includedUnits}. Example: if this month units are 128 and included units are 100, then 28 units are split between room members.</Text> : null}
 
       {!entryNotNeeded ? (
