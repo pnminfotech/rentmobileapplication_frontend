@@ -101,7 +101,7 @@ export default function NotificationListScreen({ backTo, title = "Notifications"
   const load = useCallback(async () => {
     try {
       setError("");
-      const data = await getNotifications({ status: "all", limit: 100 });
+      const data = await getNotifications({ status: "all", unreadOnly: true, limit: 100 });
       setNotifications(Array.isArray(data) ? data.filter(isActiveNotification) : []);
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load notifications.");
@@ -120,7 +120,7 @@ export default function NotificationListScreen({ backTo, title = "Notifications"
     try {
       setActionId(String(notification._id));
       await markNotificationRead(notification._id);
-      setNotifications((current) => current.map((item) => String(item._id) === String(notification._id) ? { ...item, read: true, status: "read" } : item));
+      setNotifications((current) => current.filter((item) => String(item._id) !== String(notification._id)));
     } catch (err) {
       Alert.alert("Unable to update", err.response?.data?.message || "Please try again.");
     } finally {
@@ -154,7 +154,7 @@ export default function NotificationListScreen({ backTo, title = "Notifications"
     try {
       setActionId("all");
       await markAllNotificationsRead();
-      setNotifications((current) => current.map((item) => ({ ...item, read: true, status: "read" })));
+      setNotifications([]);
     } catch (err) {
       Alert.alert("Unable to update", err.response?.data?.message || "Please try again.");
     } finally {

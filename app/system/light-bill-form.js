@@ -19,10 +19,6 @@ const STATUSES = [
   { label: "Pending", value: "pending" },
   { label: "Paid", value: "paid" },
 ];
-const BILL_PAYERS = [
-  { label: "Tenant / Unit", value: "tenant" },
-  { label: "Owner / Admin", value: "owner" },
-];
 
 const MODE_LABELS = {
   none: "No light bill flow",
@@ -104,7 +100,6 @@ export default function LightBillFormScreen() {
   const { id } = useLocalSearchParams();
   const editing = Boolean(id);
   const type = "meter";
-  const [billPayer, setBillPayer] = useState("tenant");
   const [propertyType, setPropertyType] = useState("bed");
   const [ownerBillName, setOwnerBillName] = useState("");
   const [roomNo, setRoomNo] = useState("");
@@ -144,7 +139,6 @@ export default function LightBillFormScreen() {
         setError("Light bill not found.");
         return;
       }
-      setBillPayer(bill.billPayer || (bill.isUnitLinked === false ? "owner" : "tenant"));
       setOwnerBillName(bill.name || bill.customLabel || "");
       setPropertyType(bill.propertyType || "bed");
       setRoomNo(bill.roomNo || "");
@@ -189,13 +183,13 @@ export default function LightBillFormScreen() {
   const manualMode = MANUAL_MODES.has(activeMode);
   const fixedMode = FIXED_MODES.has(activeMode);
   const entryNotNeeded = !editing && NO_ENTRY_MODES.has(activeMode);
-  const requiresUnit = billPayer === "tenant" && !ownerStyleMode && activeMode !== "none";
+  const requiresUnit = !ownerStyleMode && activeMode !== "none";
   const ratePerUnit = Number(propertySettings.ratePerUnit || 0);
   const fixedCharge = Number(propertySettings.fixedCharge || 0);
   const fixedAmount = Number(propertySettings.fixedAmount || 0);
   const includedAmount = Number(propertySettings.includedAmount || 0);
   const includedUnits = Number(propertySettings.includedUnits || 0);
-  const effectiveBillPayer = ownerStyleMode ? "owner" : billPayer;
+  const effectiveBillPayer = ownerStyleMode ? "owner" : "tenant";
   const previousReading = Number(selectedUnit?.lastMeterReading || 0);
   const currentReading = Number(totalReading || 0);
   const consumedUnits = meterMode && Number.isFinite(currentReading) && currentReading >= previousReading ? currentReading - previousReading : 0;
@@ -210,10 +204,8 @@ export default function LightBillFormScreen() {
 
   useEffect(() => {
     if (editing) return;
-    if (ownerStyleMode) setBillPayer("owner");
-    else if (activeMode !== "none") setBillPayer("tenant");
     if (fixedMode && fixedAmount > 0) setAmount(String(fixedAmount));
-  }, [activeMode, editing, fixedAmount, fixedMode, ownerStyleMode]);
+  }, [editing, fixedAmount, fixedMode]);
 
   useEffect(() => {
     if (editing || !meterMode || activeMode === "room_meter_split" || !totalReading || ratePerUnit <= 0) return;
@@ -230,18 +222,6 @@ export default function LightBillFormScreen() {
     setMeterNo("");
     setAmount("");
     setTotalReading("");
-  }
-
-  function selectBillPayer(value) {
-    setBillPayer(value);
-    setError("");
-    if (value === "owner") {
-      setSelectedPropertyName("");
-      setShowProperties(false);
-      setShowUnits(false);
-      setSelectedUnitId("");
-      setRoomNo("");
-    }
   }
 
   function selectPropertyName(value) {
@@ -381,15 +361,6 @@ export default function LightBillFormScreen() {
           </Pressable>
         ) : null}
       </View>
-
-      <Text style={styles.label}>This bill is for</Text>
-      {ownerStyleMode ? (
-        <View style={styles.readOnly}><Text style={styles.readOnlyText}>Owner / Admin</Text></View>
-      ) : (
-        <View style={styles.segmented}>
-          {BILL_PAYERS.map((item) => <Pressable key={item.value} onPress={() => selectBillPayer(item.value)} style={[styles.segment, billPayer === item.value && styles.segmentActive]}><Text style={[styles.segmentText, billPayer === item.value && styles.segmentTextActive]} numberOfLines={2}>{item.label}</Text></Pressable>)}
-        </View>
-      )}
 
       {entryNotNeeded ? (
         <View style={styles.noEntryBox}>

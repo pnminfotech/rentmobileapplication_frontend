@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,20 +12,26 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import {
   ArrowLeft,
-  Bell,
-  Building2,
   CirclePlus,
   HelpCircle,
   KeyRound,
   LogOut,
-  RefreshCw,
   ShieldCheck,
   WalletCards,
 } from "lucide-react-native";
 
-import { getAppBootstrap, getWalletSummary, requestPasswordReset, requestSubscriptionUpgrade } from "../../src/api/saasApi";
+import {
+  completeMockSaasPayment,
+  createSaasPayment,
+  getAppBootstrap,
+  getSaasPaymentStatus,
+  getWalletSummary,
+  requestPasswordReset,
+  requestSubscriptionUpgrade,
+} from "../../src/api/saasApi";
 import { clearAuthSession } from "../../src/storage/authStorage";
 import { systemColors as S, systemShadow } from "../../src/theme/systemTheme";
 
@@ -127,7 +134,18 @@ export default function SystemProfileScreen() {
     }));
   }
 
-  async function submitUpgradeRequest() {
+  async function verifyUpgradePayment(transactionId) {
+    let latest = null;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      latest = await getSaasPaymentStatus(transactionId);
+      const paymentStatus = String(latest?.transaction?.status || "").toLowerCase();
+      if (["success", "failed", "cancelled", "canceled"].includes(paymentStatus)) return latest;
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+    }
+    return latest;
+  }
+
+  async function submitUpgradePayment() {
     const unitsToAdd = {
       beds: Number(upgradeUnits.beds || 0),
       rooms: Number(upgradeUnits.rooms || 0),
@@ -141,16 +159,55 @@ export default function SystemProfileScreen() {
     try {
       setAction("upgrade");
       const result = await requestSubscriptionUpgrade({ units: unitsToAdd, useWallet: useWalletForUpgrade });
+      const transactionId = result?.transaction?._id;
+      if (!transactionId) throw new Error("Upgrade payment transaction was not created.");
+      const payment = await createSaasPayment({ transactionId });
+
       setUpgradeUnits({ beds: "", rooms: "", shops: "" });
       setShowUpgrade(false);
-      await load();
       const walletCoinsUsed = Number(result?.upgrade?.walletCoinsUsed || 0);
-      Alert.alert(
-        "Upgrade request sent",
-        `Request sent to superadmin. Payable amount: ${money(result?.upgrade?.amount, result?.upgrade?.currency)}${walletCoinsUsed ? `\nWallet used: ${walletCoinsUsed} coins` : ""}`
-      );
+
+      if (payment?.payment?.mockSuccessUrl) {
+        await completeMockSaasPayment(transactionId);
+        await load();
+        Alert.alert("Package upgraded", "Payment completed and your package is active.");
+        return;
+      }
+
+      const paymentUrl = payment?.payment?.directPaymentUrl || payment?.payment?.paymentUrl || payment?.payment?.checkoutPageUrl;
+      if (paymentUrl) {
+        const canOpenPaymentUrl = await Linking.canOpenURL(paymentUrl);
+        if (canOpenPaymentUrl) {
+          await Linking.openURL(paymentUrl);
+        } else {
+          await WebBrowser.openBrowserAsync(paymentUrl, {
+            presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+            showTitle: true,
+          });
+        }
+
+        const latest = await verifyUpgradePayment(transactionId);
+        const paymentStatus = String(latest?.transaction?.status || "").toLowerCase();
+        await load();
+
+        if (paymentStatus === "success") {
+          Alert.alert("Package upgraded", "Payment confirmed and your new units are active.");
+          return;
+        }
+        if (["failed", "cancelled", "canceled"].includes(paymentStatus)) {
+          Alert.alert("Payment not completed", "The package upgrade payment was not successful. Please try again.");
+          return;
+        }
+        Alert.alert(
+          "Payment pending",
+          `We could not confirm the payment yet. If money was deducted, refresh profile after a minute. Payable amount: ${money(result?.upgrade?.amount, result?.upgrade?.currency)}${walletCoinsUsed ? `\nWallet used: ${walletCoinsUsed} coins` : ""}`
+        );
+      } else {
+        Alert.alert("Payment created", "Complete the payment to activate your package upgrade.");
+      }
+      await load();
     } catch (err) {
-      Alert.alert("Unable to request upgrade", err.response?.data?.message || "Please try again.");
+      Alert.alert("Unable to start payment", err.response?.data?.message || err.message || "Please try again.");
     } finally {
       setAction("");
     }
@@ -289,9 +346,9 @@ export default function SystemProfileScreen() {
                 <View style={[styles.toggleKnob, useWalletForUpgrade && walletBalance > 0 && styles.toggleKnobActive]} />
               </View>
             </Pressable>
-            <Pressable onPress={submitUpgradeRequest} disabled={action === "upgrade"} style={styles.upgradeButton}>
+            <Pressable onPress={submitUpgradePayment} disabled={action === "upgrade"} style={styles.upgradeButton}>
               {action === "upgrade" ? <ActivityIndicator size="small" color="#fff" /> : <CirclePlus size={18} color="#fff" />}
-              <Text style={styles.upgradeButtonText}>Send upgrade request</Text>
+              <Text style={styles.upgradeButtonText}>Make payment</Text>
             </Pressable>
           </View>
         ) : null}
@@ -303,24 +360,6 @@ export default function SystemProfileScreen() {
           title="Change Password"
           subtitle={action === "password" ? "Sending reset link..." : "Send reset link to registered email"}
           onPress={sendPasswordReset}
-        />
-        <SettingRow
-          Icon={Bell}
-          title="Notification Preferences"
-          subtitle="Coming soon"
-          onPress={() => Alert.alert("Coming soon", "Notification preferences will be added later.")}
-        />
-        <SettingRow
-          Icon={RefreshCw}
-          title="Refresh Profile"
-          subtitle="Sync latest account data"
-          onPress={load}
-        />
-        <SettingRow
-          Icon={Building2}
-          title="Business Settings"
-          subtitle="Business editing will be added later"
-          onPress={() => Alert.alert("Coming soon", "Business profile editing will be added later.")}
         />
         <SettingRow
           Icon={HelpCircle}

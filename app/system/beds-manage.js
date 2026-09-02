@@ -4,6 +4,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -19,10 +20,22 @@ function normalizeIdentifier(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
 }
 
+function roomSummary(room) {
+  if (!room) return "";
+  const parts = [
+    `Room ${room.roomNo}`,
+    room.wingName ? `Wing ${room.wingName}` : "",
+    `Floor ${room.floorNo}`,
+    `${room.beds?.length || 0} beds`,
+  ].filter(Boolean);
+  return parts.join(" | ");
+}
+
 export default function BedsManageScreen() {
   const router = useRouter();
   const [mode, setMode] = useState("existing");
   const [rooms, setRooms] = useState([]);
+  const [allUnits, setAllUnits] = useState([]);
   const [quota, setQuota] = useState(null);
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [showRooms, setShowRooms] = useState(false);
@@ -32,6 +45,8 @@ export default function BedsManageScreen() {
   const [building, setBuilding] = useState("");
   const [floorNo, setFloorNo] = useState("");
   const [roomNo, setRoomNo] = useState("");
+  const [hasWing, setHasWing] = useState(false);
+  const [wingName, setWingName] = useState("");
   const [meterNo, setMeterNo] = useState("");
   const [lastMeterReading, setLastMeterReading] = useState("");
   const [count, setCount] = useState("1");
@@ -46,10 +61,12 @@ export default function BedsManageScreen() {
 
   const loadData = useCallback(async () => {
     try {
+      setError("");
       const [unitData, quotaData] = await Promise.all([getRooms(), getUnitUsage()]);
-      const bedRooms = (Array.isArray(unitData) ? unitData : []).filter(
-        (unit) => (unit.propertyType || "bed") === "bed"
-      );
+      const allLoadedUnits = Array.isArray(unitData) ? unitData : [];
+      const bedRooms = allLoadedUnits.filter((unit) => (unit.propertyType || "bed") === "bed");
+
+      setAllUnits(allLoadedUnits);
       setRooms(bedRooms);
       setQuota(quotaData);
       setBedPriceEdits((current) => {
@@ -57,7 +74,9 @@ export default function BedsManageScreen() {
         bedRooms.forEach((room) => {
           (room.beds || []).forEach((bed) => {
             const key = `${room._id}:${bed.bedNo}`;
-            if (next[key] === undefined) next[key] = bed.price === null || bed.price === undefined ? "" : String(bed.price);
+            if (next[key] === undefined) {
+              next[key] = bed.price === null || bed.price === undefined ? "" : String(bed.price);
+            }
           });
         });
         return next;
@@ -78,7 +97,13 @@ export default function BedsManageScreen() {
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   const selectedRoom = rooms.find((room) => String(room._id) === String(selectedRoomId));
-  const buildings = [...new Set(rooms.map((room) => String(room.category || "").trim()).filter(Boolean))];
+  const buildings = [
+    ...new Set(
+      allUnits
+        .map((unit) => String(unit.category || "").trim())
+        .filter(Boolean)
+    ),
+  ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const remaining = quota?.remaining?.beds ?? 0;
 
   function chooseMode(value) {
@@ -104,9 +129,14 @@ export default function BedsManageScreen() {
       setError("Select an existing room.");
       return;
     }
+
     const buildingName = buildingMode === "existing" ? selectedBuilding : building.trim();
     if (mode === "new" && (!buildingName || !floorNo.trim() || !roomNo.trim())) {
       setError("Building, floor and room number are required.");
+      return;
+    }
+    if (mode === "new" && hasWing && !wingName.trim()) {
+      setError("Enter the wing name.");
       return;
     }
     if (mode === "new" && lastMeterReading !== "" && (!Number.isFinite(reading) || reading < 0)) {
@@ -130,6 +160,8 @@ export default function BedsManageScreen() {
           category: buildingName,
           floorNo: floorNo.trim(),
           roomNo: normalizeIdentifier(roomNo),
+          hasWing,
+          wingName: hasWing ? wingName.trim() : "",
           meterNo: normalizeIdentifier(meterNo),
           lastMeterReading: reading,
           bedCount,
@@ -220,9 +252,7 @@ export default function BedsManageScreen() {
           <Pressable onPress={() => setShowRooms((value) => !value)} style={styles.select}>
             <View style={styles.flex}>
               <Text style={styles.selectTitle}>{selectedRoom?.category || "Choose a room"}</Text>
-              {selectedRoom ? (
-                <Text style={styles.selectMeta}>Room {selectedRoom.roomNo} · Floor {selectedRoom.floorNo} · {selectedRoom.beds?.length || 0} beds</Text>
-              ) : null}
+              {selectedRoom ? <Text style={styles.selectMeta}>{roomSummary(selectedRoom)}</Text> : null}
             </View>
             <ChevronDown size={20} color={colors.muted} />
           </Pressable>
@@ -239,7 +269,7 @@ export default function BedsManageScreen() {
                   >
                     <View style={styles.flex}>
                       <Text style={styles.selectTitle}>{room.category}</Text>
-                      <Text style={styles.selectMeta}>Room {room.roomNo} · Floor {room.floorNo} · {room.beds?.length || 0} beds</Text>
+                      <Text style={styles.selectMeta}>{roomSummary(room)}</Text>
                     </View>
                     {selected ? <Check size={18} color={colors.primary} /> : null}
                   </Pressable>
@@ -337,6 +367,19 @@ export default function BedsManageScreen() {
 
           <Text style={styles.label}>Floor</Text>
           <TextInput value={floorNo} onChangeText={setFloorNo} placeholder="Example: Ground or 1" style={styles.input} />
+
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Has wing or block</Text>
+            <Switch value={hasWing} onValueChange={setHasWing} />
+          </View>
+
+          {hasWing ? (
+            <>
+              <Text style={styles.label}>Wing</Text>
+              <TextInput value={wingName} onChangeText={setWingName} placeholder="Example: A" style={styles.input} />
+            </>
+          ) : null}
+
           <Text style={styles.label}>Room number</Text>
           <TextInput value={roomNo} onChangeText={setRoomNo} placeholder="Example: 101" style={styles.input} />
           <Text style={styles.label}>Meter number (optional)</Text>
@@ -388,6 +431,8 @@ const styles = StyleSheet.create({
   buildingModeButton: { flex: 1, height: 40, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 6, backgroundColor: colors.surface },
   buildingModeActive: { borderColor: colors.border, backgroundColor: colors.primarySoft },
   buildingModeText: { color: colors.muted, fontSize: 13, fontWeight: "600" },
+  switchRow: { marginTop: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  switchLabel: { color: colors.muted, fontSize: 14, fontWeight: "600" },
   label: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
   select: { minHeight: 60, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },

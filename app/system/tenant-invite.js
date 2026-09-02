@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
@@ -23,6 +23,22 @@ const CANTEEN_MODE_LABELS = {
   per_meal: "Per meal pricing",
   meal_package: "Meal package monthly",
 };
+
+async function lookupIndianPincode(pincode) {
+  const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+  const payload = await response.json();
+  const result = Array.isArray(payload) ? payload[0] : null;
+  const offices = Array.isArray(result?.PostOffice) ? result.PostOffice : [];
+  const office = offices.find((item) => item?.DeliveryStatus === "Delivery") || offices[0];
+  if (!office || String(result?.Status || "").toLowerCase() !== "success") {
+    throw new Error("PIN code details not found.");
+  }
+  return {
+    locality: office.Name || "",
+    city: office.District || office.Name || "",
+    state: office.State || "",
+  };
+}
 
 function localDateValue(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -83,12 +99,69 @@ export default function TenantInviteScreen() {
   const [saving, setSaving] = useState(false);
   const [generatedLink, setGeneratedLink] = useState("");
   const [error, setError] = useState("");
+  const [pinLookupStatus, setPinLookupStatus] = useState("idle");
   const [form, setForm] = useState({
     name: "", phoneNo: "", joiningDate: localDateValue(), depositAmount: "",
     dob: "", pincode: "", city: "", state: "", address: "", houseNo: "", nearbyPlace: "",
     familyMembers: "", shopName: "", shopBusiness: "", companyAddress: "", dateOfJoiningCollege: "",
     firstRentStatus: "NOT_PAID", paymentMode: "Cash", hasCanteen: false, canteenPlanType: "",
   });
+
+  useEffect(() => {
+    if (!isResidentialRoom && !isShop) {
+      setPinLookupStatus("idle");
+      return;
+    }
+
+    let active = true;
+    const pincode = String(form.pincode || "").trim();
+
+    if (!/^\d{6}$/.test(pincode)) {
+      setPinLookupStatus("idle");
+      return () => {
+        active = false;
+      };
+    }
+
+    setPinLookupStatus("loading");
+    const timer = setTimeout(async () => {
+      try {
+        const result = await lookupIndianPincode(pincode);
+        if (!active) return;
+        setForm((current) => {
+          if (String(current.pincode || "").trim() !== pincode) return current;
+          return {
+            ...current,
+            nearbyPlace: result.locality || current.nearbyPlace,
+            city: result.city || current.city,
+            state: result.state || current.state,
+          };
+        });
+        setPinLookupStatus("success");
+      } catch (_error) {
+        if (!active) return;
+        setPinLookupStatus("error");
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [form.pincode, isResidentialRoom, isShop]);
+
+  const resetForm = useCallback(() => {
+    setForm({
+      name: "", phoneNo: "", joiningDate: localDateValue(), depositAmount: "",
+      dob: "", pincode: "", city: "", state: "", address: "", houseNo: "", nearbyPlace: "",
+      familyMembers: "", shopName: "", shopBusiness: "", companyAddress: "", dateOfJoiningCollege: "",
+      firstRentStatus: "NOT_PAID", paymentMode: "Cash", hasCanteen: false, canteenPlanType: "",
+    });
+    setGeneratedLink("");
+    setError("");
+    setSelectedIndex(0);
+    setShowUnits(false);
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -104,7 +177,10 @@ export default function TenantInviteScreen() {
       setLoading(false);
     }
   }, []);
-  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+  useFocusEffect(useCallback(() => { 
+    loadData(); 
+    resetForm();
+  }, [loadData, resetForm]));
 
   const filteredVacancies = useMemo(() => filterVacanciesByType(vacancies, assignmentType), [assignmentType, vacancies]);
   const assignmentTypes = useMemo(() => ASSIGNMENT_TYPES.filter((type) => allowedUnitTypes(unitAccess).some((allowed) => allowed.value === type.value)), [unitAccess]);
@@ -154,6 +230,8 @@ export default function TenantInviteScreen() {
         roomId: selected.unit._id,
         propertyType: assignmentType,
         category: selected.unit.category,
+        hasWing: Boolean(selected.unit.hasWing && selected.unit.wingName),
+        wingName: selected.unit.wingName || "",
         floorNo: selected.unit.floorNo,
         roomNo: selected.unit.roomNo,
         bedNo: selected.bed?.bedNo || selected.unit.roomNo,
@@ -263,6 +341,9 @@ export default function TenantInviteScreen() {
         </View> : null}
         {isResidentialRoom || isShop ? <>
           <Field label="Pincode" value={form.pincode} onChangeText={(pincode) => setForm((current) => ({ ...current, pincode: pincode.replace(/\D/g, "").slice(0, 6) }))} keyboardType="number-pad" placeholder="6-digit pincode" />
+          {pinLookupStatus === "loading" ? <Text style={styles.helperText}>Fetching city and state from PIN code...</Text> : null}
+          {pinLookupStatus === "success" ? <Text style={styles.helperText}>City and state updated from PIN code. You can still edit them.</Text> : null}
+          {pinLookupStatus === "error" ? <Text style={styles.error}>Could not fetch city/state for this PIN code. Please enter them manually.</Text> : null}
           <Field label="City" value={form.city} onChangeText={(city) => setForm((current) => ({ ...current, city }))} />
           <Field label="State" value={form.state} onChangeText={(state) => setForm((current) => ({ ...current, state }))} />
           <Field label="Local Address" value={form.address} onChangeText={(address) => setForm((current) => ({ ...current, address }))} placeholder="House, Street, Area" />
@@ -311,6 +392,7 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 23, fontWeight: "700" }, subtitle: { marginTop: 2, color: colors.muted, fontSize: 12 },
   content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 40 },
   label: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
+  helperText: { marginTop: 6, color: colors.muted, fontSize: 12 },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
   multiline: { height: 84, paddingTop: 13, textAlignVertical: "top" },
   select: { minHeight: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, selectText: { flex: 1, paddingRight: 8, color: colors.text, fontWeight: "600" },

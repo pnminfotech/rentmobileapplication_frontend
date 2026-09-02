@@ -70,7 +70,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
     return;
   }
 
-  if (hasWing && propertyType !== "bed" && !wingName.trim()) {
+  if (hasWing && !wingName.trim()) {
     setError("Enter the wing name.");
     return;
   }
@@ -183,20 +183,18 @@ const [bedCategory, setBedCategory] = useState("Standard");
         style={styles.input}
       />
 
-      {propertyType !== "bed" ? (
-        <View style={styles.switchRow}>
-          <Text style={styles.labelNoMargin}>Has wing</Text>
+      <View style={styles.switchRow}>
+        <Text style={styles.labelNoMargin}>Has wing</Text>
 
-          <Switch
-            value={hasWing}
-            onValueChange={setHasWing}
-            trackColor={{ false: colors.border, true: colors.border }}
-            thumbColor={hasWing ? colors.primary : colors.surfaceSoft}
-          />
-        </View>
-      ) : null}
+        <Switch
+          value={hasWing}
+          onValueChange={setHasWing}
+          trackColor={{ false: colors.border, true: colors.border }}
+          thumbColor={hasWing ? colors.primary : colors.surfaceSoft}
+        />
+      </View>
 
-      {hasWing && propertyType !== "bed" ? (
+      {hasWing ? (
         <>
           <Text style={styles.label}>Wing name</Text>
           <TextInput

@@ -14,7 +14,7 @@ const MODE_OPTIONS = {
     { value: "owner_only", title: "Owner pays the bill", subtitle: "Only record the hostel light bill. It will not be added to tenant rent." },
     { value: "fixed_per_tenant", title: "Same fixed amount for every tenant", subtitle: "Example: collect Rs. 300 per tenant every month with rent." },
     { value: "room_meter_split", title: "Each room has a meter", subtitle: "Add one bill for a hostel room. Extra amount after included units splits between tenants in that room." },
-    { value: "common_meter_split", title: "One common hostel bill", subtitle: "Add one hostel bill. Amount splits between all active hostel tenants." },
+    // { value: "common_meter_split", title: "One common hostel bill", subtitle: "Add one hostel bill. Amount splits between all active hostel tenants." },
   ],
   room: [
     { value: "owner_only", title: "Owner pays the bill", subtitle: "Only record the room light bill. It will not be added to tenant rent." },
@@ -38,7 +38,7 @@ const LEGACY_MODE_ALIASES = {
 
 const EMPTY_PROPERTY = {
   enabled: false,
-  mode: "none",
+  mode: "owner_only",
   addToRentCollection: false,
   fixedAmount: "",
   includedAmount: "",
@@ -61,12 +61,12 @@ function amountText(value) {
 }
 
 function normalizeProperty(settings = {}) {
-  const mode = LEGACY_MODE_ALIASES[settings.mode] || settings.mode || "none";
+  const mode = LEGACY_MODE_ALIASES[settings.mode] || settings.mode || "owner_only";
   return {
     ...EMPTY_PROPERTY,
-    enabled: Boolean(settings.enabled),
-    mode,
-    addToRentCollection: Boolean(settings.addToRentCollection),
+    enabled: Boolean(settings.enabled) || mode !== "none",
+    mode: mode === "none" ? "owner_only" : mode,
+    addToRentCollection: canRecover(mode),
     fixedAmount: amountText(settings.fixedAmount),
     includedAmount: amountText(settings.includedAmount),
     includedUnits: amountText(settings.includedUnits),
@@ -145,9 +145,9 @@ export default function LightBillSettingsScreen() {
     setForm((current) => ({ ...current, [type]: { ...current[type], ...patch } }));
   }
 
-  function selectMode(type, mode) {
+function selectMode(type, mode) {
     setProperty(type, {
-      enabled: mode !== "none",
+      enabled: true,
       mode,
       addToRentCollection: canRecover(mode),
     });
@@ -173,6 +173,7 @@ export default function LightBillSettingsScreen() {
       const payload = {
         bed: {
           ...form.bed,
+          addToRentCollection: canRecover(form.bed.mode),
           fixedAmount: Number(form.bed.fixedAmount || 0),
           includedAmount: Number(form.bed.includedAmount || 0),
           includedUnits: Number(form.bed.includedUnits || 0),
@@ -181,6 +182,7 @@ export default function LightBillSettingsScreen() {
         },
         room: {
           ...form.room,
+          addToRentCollection: canRecover(form.room.mode),
           fixedAmount: Number(form.room.fixedAmount || 0),
           includedAmount: Number(form.room.includedAmount || 0),
           includedUnits: Number(form.room.includedUnits || 0),
@@ -189,6 +191,7 @@ export default function LightBillSettingsScreen() {
         },
         shop: {
           ...form.shop,
+          addToRentCollection: canRecover(form.shop.mode),
           fixedAmount: Number(form.shop.fixedAmount || 0),
           includedAmount: Number(form.shop.includedAmount || 0),
           includedUnits: Number(form.shop.includedUnits || 0),
@@ -231,18 +234,11 @@ export default function LightBillSettingsScreen() {
         const property = form[type.value] || EMPTY_PROPERTY;
         const activeMode = property.mode || "none";
         return (
-          <View key={type.value} style={styles.section}>
+            <View key={type.value} style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{PROPERTY_HINT[type.value]}</Text>
               <Text style={[styles.statusBadge, property.enabled && styles.statusBadgeActive]}>{property.enabled ? "Enabled" : "Not used"}</Text>
             </View>
-            <Pressable onPress={() => selectMode(type.value, "none")} style={[styles.option, activeMode === "none" && styles.optionActive]}>
-              <View style={styles.optionText}>
-                <Text style={styles.optionTitle}>No light bill for this type</Text>
-                <Text style={styles.optionSubtitle}>Hide billing/recovery flow for this property type.</Text>
-              </View>
-              {activeMode === "none" ? <Check size={19} color={colors.deep} /> : null}
-            </Pressable>
             {(MODE_OPTIONS[type.value] || []).map((option) => {
               const selected = activeMode === option.value;
               return (
@@ -282,12 +278,6 @@ export default function LightBillSettingsScreen() {
                     {moneyInput(property.includedUnits, (value) => setProperty(type.value, { includedUnits: value }), "100")}
                     <Text style={styles.infoText}>Example: if 100 units are included, tenants only share the bill for units consumed after 100.</Text>
                   </View>
-                ) : null}
-                {canRecover(activeMode) ? (
-                  <Pressable onPress={() => setProperty(type.value, { addToRentCollection: !property.addToRentCollection })} style={styles.recoveryRow}>
-                    <View style={[styles.checkbox, property.addToRentCollection && styles.checkboxActive]}>{property.addToRentCollection ? <Check size={15} color={colors.surface} /> : null}</View>
-                    <Text style={styles.recoveryText}>Add recoverable light bill in rent collection</Text>
-                  </Pressable>
                 ) : null}
                 {activeMode === "owner_only" ? (
                   <Text style={styles.infoText}>This bill will appear in Light bills and reports as owner/admin paid. It will not be added in tenant rent.</Text>
@@ -348,10 +338,6 @@ const styles = StyleSheet.create({
   moneyInput: { flex: 1, marginLeft: 7, color: colors.text, fontSize: 15, fontWeight: "800" },
   twoColumn: { flexDirection: "row", gap: 10 },
   column: { flex: 1, minWidth: 0 },
-  recoveryRow: { marginTop: 12, padding: 11, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.card },
-  checkbox: { width: 24, height: 24, marginRight: 10, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
-  checkboxActive: { borderColor: colors.deep, backgroundColor: colors.deep },
-  recoveryText: { flex: 1, color: colors.text, fontSize: 13, fontWeight: "800" },
   infoText: { marginTop: 10, color: colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 17 },
   error: { marginBottom: 12, color: colors.danger, fontWeight: "800" },
   saveButton: { height: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 15, backgroundColor: colors.deep, ...systemShadow },

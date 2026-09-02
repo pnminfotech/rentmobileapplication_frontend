@@ -43,6 +43,10 @@ function formatBreakdownLine(item) {
   return `${item.label || "Light bill"}${suffix}`;
 }
 
+function isLightBillIncluded(quote) {
+  return quote?.lightBill?.mode === "owner_only";
+}
+
 export default function RentFormScreen() {
   const router = useRouter();
   const { id, returnTo = "/system/tenants", month: requestedMonthParam } = useLocalSearchParams();
@@ -216,6 +220,11 @@ export default function RentFormScreen() {
 
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>Payment split</Text>
+        {isLightBillIncluded(quote) ? (
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoBannerText}>Light bill is included in rent for this tenant, so no separate electricity amount is added here.</Text>
+          </View>
+        ) : null}
         <View style={styles.splitRow}>
           <Text style={styles.splitLabel}>Rent</Text>
           <Text style={styles.splitValue}>Rs. {Number(expected).toLocaleString("en-IN")}</Text>
@@ -313,6 +322,8 @@ const styles = StyleSheet.create({
   monthText: { color: colors.text, fontSize: 16, fontWeight: "700" },
   summaryCard: { marginTop: 12, padding: 12, borderRadius: 7, backgroundColor: colors.primarySoft },
   summaryTitle: { color: colors.primaryDark, fontSize: 14, fontWeight: "800" },
+  infoBanner: { marginTop: 10, padding: 10, borderRadius: 7, backgroundColor: "#EEF4FF" },
+  infoBannerText: { color: "#2459D3", fontSize: 12, fontWeight: "700" },
   splitRow: { marginTop: 10, paddingBottom: 9, borderBottomWidth: 1, borderBottomColor: colors.border },
   splitLabel: { color: colors.text, fontSize: 13, fontWeight: "800" },
   splitValue: { marginTop: 3, color: colors.primaryDark, fontSize: 18, fontWeight: "900" },

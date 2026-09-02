@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -7,6 +7,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { ArrowLeft, Camera, Check, ChevronDown, MoveRight } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
+import WebImageCropper from "../../src/components/WebImageCropper";
 import { getSystemDashboard } from "../../src/api/saasApi";
 import { getCanteenSettings } from "../../src/api/canteenApi";
 import { getTenant, updateTenantDocuments, updateTenantProfile } from "../../src/api/tenantApi";
@@ -59,6 +60,7 @@ export default function TenantEditScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [cropRequest, setCropRequest] = useState(null);
   const setValue = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   const loadTenant = useCallback(async () => {
@@ -91,7 +93,7 @@ export default function TenantEditScreen() {
     const isSelfie = key === "photo";
     const options = {
       mediaTypes: ["images"],
-      allowsEditing: true,
+      allowsEditing: false,
       aspect: isSelfie ? [1, 1] : [4, 3],
       quality: 0.85,
     };
@@ -103,12 +105,16 @@ export default function TenantEditScreen() {
       ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
       : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
+    if (Platform.OS === "web") {
+      setCropRequest({ key, uri: result.assets[0].uri, aspect: isSelfie ? 1 : 4 / 3 });
+      return;
+    }
     const image = await ImageManipulator.manipulateAsync(
       result.assets[0].uri,
-      [{ resize: { width: 1200 } }],
-      { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG }
+      [{ resize: { width: 1600 } }],
+      { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
     );
-    setDocumentUpdates((current) => ({ ...current, [key]: { uri: image.uri, name: `${key}.jpg` } }));
+    setCropRequest({ key, uri: image.uri, aspect: isSelfie ? 1 : 4 / 3 });
   }
 
   async function save() {
@@ -158,6 +164,7 @@ export default function TenantEditScreen() {
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
 
   return (
+    <>
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
       <View style={styles.header}><Pressable onPress={() => router.replace({ pathname: "/system/tenant-details", params: { id, returnTo } })} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View><Text style={styles.title}>Edit tenant</Text><Text style={styles.subtitle}>Update admission and profile details</Text></View></View>
       <Text style={styles.sectionTitle}>Assignment</Text>
@@ -241,6 +248,22 @@ export default function TenantEditScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable onPress={save} disabled={saving} style={[styles.saveButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveText}>Save all changes</Text>}</Pressable>
     </ScrollView>
+    {cropRequest ? (
+      <WebImageCropper
+        sourceUri={cropRequest.uri}
+        aspect={cropRequest.aspect}
+        outputName={`${cropRequest.key}.jpg`}
+        onCancel={(cropError) => {
+          setCropRequest(null);
+          if (cropError) Alert.alert("Unable to crop image", cropError.message || "Please try again.");
+        }}
+        onConfirm={(image) => {
+          setDocumentUpdates((current) => ({ ...current, [cropRequest.key]: image }));
+          setCropRequest(null);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 

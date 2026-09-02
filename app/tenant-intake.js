@@ -40,6 +40,22 @@ const INITIAL_FORM = {
 const RELATIONS = ["Father", "Mother", "Husband", "Sister", "Brother", "Self"];
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000/api";
 
+async function lookupIndianPincode(pincode) {
+  const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+  const payload = await response.json();
+  const result = Array.isArray(payload) ? payload[0] : null;
+  const offices = Array.isArray(result?.PostOffice) ? result.PostOffice : [];
+  const office = offices.find((item) => item?.DeliveryStatus === "Delivery") || offices[0];
+  if (!office || String(result?.Status || "").toLowerCase() !== "success") {
+    throw new Error("PIN code details not found.");
+  }
+  return {
+    locality: office.Name || "",
+    city: office.District || office.Name || "",
+    state: office.State || "",
+  };
+}
+
 function Field({ label, multiline, ...props }) {
   return <><Text style={styles.label}>{label}</Text><TextInput {...props} style={[styles.input, multiline && styles.multiline]} multiline={multiline} /></>;
 }
@@ -121,6 +137,7 @@ export default function TenantIntakeScreen() {
   const [cropRequest, setCropRequest] = useState(null);
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
+  const [pinLookupStatus, setPinLookupStatus] = useState("idle");
 
   useEffect(() => {
     let active = true;
@@ -168,6 +185,43 @@ export default function TenantIntakeScreen() {
     return () => { active = false; };
   }, [token]);
 
+  useEffect(() => {
+    let active = true;
+    const pincode = String(form.pincode || "").trim();
+    if (!/^\d{6}$/.test(pincode)) {
+      setPinLookupStatus("idle");
+      return () => {
+        active = false;
+      };
+    }
+
+    setPinLookupStatus("loading");
+    const timer = setTimeout(async () => {
+      try {
+        const result = await lookupIndianPincode(pincode);
+        if (!active) return;
+        setForm((current) => {
+          if (String(current.pincode || "").trim() !== pincode) return current;
+          return {
+            ...current,
+            nearbyPlace: result.locality || current.nearbyPlace,
+            city: result.city || current.city,
+            state: result.state || current.state,
+          };
+        });
+        setPinLookupStatus("success");
+      } catch (_error) {
+        if (!active) return;
+        setPinLookupStatus("error");
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [form.pincode]);
+
   const setValue = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   async function chooseDocument(key) {
@@ -175,7 +229,7 @@ export default function TenantIntakeScreen() {
     const isSelfie = key === "photo";
     const options = {
       mediaTypes: ["images"],
-      allowsEditing: true,
+      allowsEditing: false,
       aspect: isSelfie ? [1, 1] : [4, 3],
       quality: 0.8,
     };
@@ -193,10 +247,10 @@ export default function TenantIntakeScreen() {
     }
     const image = await ImageManipulator.manipulateAsync(
       result.assets[0].uri,
-      [{ resize: { width: 1200 } }],
-      { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG }
+      [{ resize: { width: 1600 } }],
+      { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
     );
-    setDocuments((current) => ({ ...current, [key]: { uri: image.uri, name: `${key}.jpg`, mimeType: "image/jpeg" } }));
+    setCropRequest({ key, uri: image.uri, aspect: isSelfie ? 1 : 4 / 3 });
   }
 
   function validate() {
@@ -301,6 +355,9 @@ export default function TenantIntakeScreen() {
       <FormDateField label="Date of birth" value={form.dob || toDateValue()} onChange={(v) => setValue("dob", v)} maximumDate={new Date()} />
       {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(v) => setValue("shopName", v)} /> : null}
       <Field label="Pincode" value={form.pincode} onChangeText={(v) => setValue("pincode", v.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" />
+      {pinLookupStatus === "loading" ? <Text style={styles.helperText}>Fetching city and state from PIN code...</Text> : null}
+      {pinLookupStatus === "success" ? <Text style={styles.helperText}>City and state updated from PIN code. You can still edit them.</Text> : null}
+      {pinLookupStatus === "error" ? <Text style={styles.errorInline}>Could not fetch city/state for this PIN code. Please enter them manually.</Text> : null}
       <Field label="City" value={form.city} onChangeText={(v) => setValue("city", v)} />
       <Field label="State" value={form.state} onChangeText={(v) => setValue("state", v)} />
       <Field label="Full address" value={form.address} onChangeText={(v) => setValue("address", v)} multiline />
@@ -375,10 +432,12 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", marginBottom: 18, backgroundColor: colors.background }, headerText: { marginLeft: 10 }, title: { color: colors.text, fontSize: 25, fontWeight: "700" }, subtitle: { color: colors.muted, marginTop: 2 },
   allocation: { padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 9, backgroundColor: colors.primarySoft }, allocationName: { color: colors.primaryDark, fontSize: 18, fontWeight: "700" }, allocationMeta: { marginTop: 5, color: colors.primaryDark },
   section: { marginTop: 26, color: colors.text, fontSize: 18, fontWeight: "700" }, label: { marginTop: 15, marginBottom: 7, color: colors.muted, fontWeight: "600" },
+  helperText: { marginTop: 6, color: colors.muted, fontSize: 12 },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 }, multiline: { height: 82, paddingTop: 13, textAlignVertical: "top" },
   select: { height: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, selectValue: { flex: 1, color: colors.text, fontSize: 16 },
   options: { marginTop: 5, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, option: { height: 46, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft }, optionSelected: { backgroundColor: colors.primarySoft }, optionText: { flex: 1, color: colors.muted, fontWeight: "600" },
   documentButton: { height: 50, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentReady: { borderColor: colors.successSoft, backgroundColor: colors.successSoft }, documentText: { color: colors.primary, fontWeight: "700" }, documentReadyText: { color: colors.success }, documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
+  errorInline: { marginTop: 6, color: colors.danger, fontSize: 12 },
   error: { marginTop: 18, color: colors.danger, textAlign: "center" }, submit: { height: 52, marginTop: 22, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, submitText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.55 }, securityNote: { marginTop: 12, color: colors.muted, fontSize: 12, textAlign: "center" },
   successIcon: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderRadius: 34, backgroundColor: colors.successSoft }, completeTitle: { marginTop: 18, color: colors.success, fontSize: 24, fontWeight: "700" }, invalidTitle: { color: colors.danger, fontSize: 24, fontWeight: "700" }, completeText: { maxWidth: 430, marginTop: 10, color: colors.muted, lineHeight: 22, textAlign: "center" },
 });

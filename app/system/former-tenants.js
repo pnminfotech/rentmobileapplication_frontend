@@ -45,6 +45,22 @@ function activeTenant(tenant) {
   return Number.isNaN(date.getTime()) || date > new Date();
 }
 
+function undoDeadline(tenant) {
+  if (!tenant?.leaveDate) return null;
+  const date = new Date(tenant.leaveDate);
+  if (Number.isNaN(date.getTime())) return null;
+  const deadline = new Date(date);
+  deadline.setMonth(deadline.getMonth() + 1);
+  deadline.setHours(23, 59, 59, 999);
+  return deadline;
+}
+
+function canUndoTenant(tenant) {
+  const deadline = undoDeadline(tenant);
+  if (!deadline) return true;
+  return deadline.getTime() >= Date.now();
+}
+
 function isSameSlot(tenant, unit, bed) {
   const sameUnitById = tenant.roomId && String(tenant.roomId) === String(unit._id);
   const sameUnitByNumber = String(tenant.category || "") === String(unit.category || "") && String(tenant.roomNo || "") === String(unit.roomNo || "");
@@ -80,6 +96,24 @@ function allocationFromVacancy(vacancy) {
   };
 }
 
+function rentHistoryEntries(tenant) {
+  const rents = Array.isArray(tenant?.rents) ? tenant.rents : [];
+  return rents.flatMap((rent) => {
+    const payments = Array.isArray(rent.payments) && rent.payments.length
+      ? rent.payments
+      : [{ amount: rent.rentAmount, date: rent.date, paymentMode: rent.paymentMode, utr: rent.utr, note: rent.note }];
+    return payments.map((payment, index) => ({
+      key: `${rent.month || "month"}-${index}-${payment.date || ""}`,
+      month: rent.month || "-",
+      date: formatDate(payment.date),
+      amount: money(payment.amount),
+      mode: payment.paymentMode || rent.paymentMode || "-",
+      utr: payment.utr || "-",
+      note: payment.note || "-",
+    }));
+  });
+}
+
 export default function FormerTenantsScreen() {
   const router = useRouter();
   const [tenants, setTenants] = useState([]);
@@ -91,6 +125,8 @@ export default function FormerTenantsScreen() {
   const [restoringId, setRestoringId] = useState("");
   const [reportingId, setReportingId] = useState("");
   const [sheetingId, setSheetingId] = useState("");
+  const [detailsTenant, setDetailsTenant] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [restoreModal, setRestoreModal] = useState({ visible: false, tenant: null, vacancies: [], selectedIndex: 0, oldOccupied: false, showOptions: false });
 
   const loadData = useCallback(async () => {
@@ -136,6 +172,10 @@ export default function FormerTenantsScreen() {
 
   async function restoreNow(tenant, allocation) {
     try {
+      if (!canUndoTenant(tenant)) {
+        Alert.alert("Undo expired", "Undo is only available until one month after the leave date.");
+        return;
+      }
       const tenantType = propertyTypeFromTenant(tenant);
       if (!isTypeAllowed(tenantType, unitAccess)) {
         Alert.alert("Not included", `Your current subscription does not include ${unitTypeLabel({ propertyType: tenantType }).toLowerCase()}.`);
@@ -159,6 +199,10 @@ export default function FormerTenantsScreen() {
 
   async function openRestoreFlow(tenant, forcePick = false) {
     try {
+      if (!canUndoTenant(tenant)) {
+        Alert.alert("Undo expired", "Undo is only available until one month after the leave date.");
+        return;
+      }
       setRestoringId(String(tenant._id));
       const tenantType = propertyTypeFromTenant(tenant);
       if (!isTypeAllowed(tenantType, unitAccess)) {
@@ -407,6 +451,16 @@ export default function FormerTenantsScreen() {
     }
   }
 
+  function DetailRow({ label, value }) {
+    if (!String(value ?? "").trim()) return null;
+    return (
+      <View style={styles.detailRow}>
+        <Text style={styles.detailLabel}>{label}</Text>
+        <Text style={styles.detailValue}>{value || "-"}</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screen}>
       <View style={styles.content}>
@@ -436,12 +490,91 @@ export default function FormerTenantsScreen() {
               {!visible.length ? <View style={styles.empty}><Archive size={32} color={colors.subtle} /><Text style={styles.emptyTitle}>No former tenants</Text></View> : null}
               {visible.map((tenant) => {
                 const settlement = tenant.leaveSettlement || {};
-                return <View key={tenant._id} style={styles.row}><View style={styles.rowTop}><View style={styles.info}><Text style={styles.name}>{tenant.name}</Text><Text style={styles.meta}>{formatTenantUnit(tenant)}</Text></View><Text style={styles.leaveDate}>Left {formatDate(tenant.leaveDate)}</Text></View><View style={styles.settlement}><View style={styles.settlementInfo}><Text style={styles.settlementText}>Deposit refund: Rs. {Number(settlement.refundableDeposit || 0).toLocaleString("en-IN")}</Text></View></View><View style={styles.rowActions}><Pressable disabled={reportingId === String(tenant._id)} onPress={() => downloadTenantReport(tenant)} style={[styles.reportButton, reportingId === String(tenant._id) && styles.disabled]}>{reportingId === String(tenant._id) ? <ActivityIndicator size="small" color={colors.primary} /> : <FileText size={16} color={colors.primary} />}<Text style={styles.undoText}>PDF</Text></Pressable><Pressable disabled={sheetingId === String(tenant._id)} onPress={() => downloadTenantSheet(tenant)} style={[styles.reportButton, sheetingId === String(tenant._id) && styles.disabled]}>{sheetingId === String(tenant._id) ? <ActivityIndicator size="small" color={colors.primary} /> : <FileDown size={16} color={colors.primary} />}<Text style={styles.undoText}>Sheet</Text></Pressable><Pressable disabled={restoringId === String(tenant._id)} onPress={() => openRestoreFlow(tenant)} style={[styles.undoButton, restoringId === String(tenant._id) && styles.disabled]}>{restoringId === String(tenant._id) ? <ActivityIndicator size="small" color={colors.primary} /> : <RotateCcw size={16} color={colors.primary} />}<Text style={styles.undoText}>Undo</Text></Pressable></View></View>;
+                const undoAllowed = canUndoTenant(tenant);
+                const deadline = undoDeadline(tenant);
+                return <View key={tenant._id} style={styles.row}><Pressable onPress={() => { setDetailsTenant(tenant); setHistoryOpen(false); }} style={styles.rowMain}><View style={styles.rowTop}><View style={styles.info}><Text style={styles.name}>{tenant.name}</Text><Text style={styles.meta}>{formatTenantUnit(tenant)}</Text></View><Text style={styles.leaveDate}>Left {formatDate(tenant.leaveDate)}</Text></View><View style={styles.settlement}><View style={styles.settlementInfo}><Text style={styles.settlementText}>Deposit refund: Rs. {Number(settlement.refundableDeposit || 0).toLocaleString("en-IN")}</Text>{deadline ? <Text style={[styles.undoWindowText, !undoAllowed && styles.undoExpiredText]}>{undoAllowed ? `Undo till ${formatDate(deadline)}` : `Undo expired on ${formatDate(deadline)}`}</Text> : null}</View></View></Pressable><View style={styles.rowActions}><Pressable disabled={reportingId === String(tenant._id)} onPress={() => downloadTenantReport(tenant)} style={[styles.reportButton, reportingId === String(tenant._id) && styles.disabled]}>{reportingId === String(tenant._id) ? <ActivityIndicator size="small" color={colors.primary} /> : <FileText size={16} color={colors.primary} />}<Text style={styles.undoText}>PDF</Text></Pressable><Pressable disabled={sheetingId === String(tenant._id)} onPress={() => downloadTenantSheet(tenant)} style={[styles.reportButton, sheetingId === String(tenant._id) && styles.disabled]}>{sheetingId === String(tenant._id) ? <ActivityIndicator size="small" color={colors.primary} /> : <FileDown size={16} color={colors.primary} />}<Text style={styles.undoText}>Sheet</Text></Pressable><Pressable disabled={!undoAllowed || restoringId === String(tenant._id)} onPress={() => openRestoreFlow(tenant)} style={[styles.undoButton, (!undoAllowed || restoringId === String(tenant._id)) && styles.disabled]}>{restoringId === String(tenant._id) ? <ActivityIndicator size="small" color={colors.primary} /> : <RotateCcw size={16} color={colors.primary} />}<Text style={styles.undoText}>Undo</Text></Pressable></View></View>;
               })}
             </View>
           )}
         </ScrollView>
       </View>
+      <Modal transparent visible={Boolean(detailsTenant)} animationType="fade" onRequestClose={() => setDetailsTenant(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.detailModalCard}>
+            <View style={styles.detailHeader}>
+              <View style={styles.detailHeaderText}>
+                <Text style={styles.modalTitle}>{detailsTenant?.name || "Former tenant"}</Text>
+                <Text style={styles.detailSubtitle}>{detailsTenant ? `${formatTenantUnit(detailsTenant)} | Left ${formatDate(detailsTenant.leaveDate)}` : ""}</Text>
+              </View>
+            </View>
+            <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+              {detailsTenant && ["bed", "room", "shop"].includes(propertyTypeFromTenant(detailsTenant)) ? (
+                <>
+                  {!historyOpen ? <Pressable onPress={() => setHistoryOpen(true)} style={styles.historyButton}><Text style={styles.historyButtonText}>View full rent history</Text></Pressable> : null}
+                  <DetailRow label="Phone" value={detailsTenant.phoneNo ? String(detailsTenant.phoneNo) : ""} />
+                  <DetailRow label="Payment cycle" value={detailsTenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid" : "Normal cycle"} />
+                  <DetailRow label="Deposit" value={money(detailsTenant.depositAmount)} />
+                  <DetailRow label="Monthly rent" value={money(detailsTenant.baseRent || detailsTenant.rentAmount)} />
+                  <DetailRow label="Joining date" value={formatDate(detailsTenant.joiningDate)} />
+                  <DetailRow label="Leave date" value={formatDate(detailsTenant.leaveDate)} />
+                  <DetailRow label="Date of birth" value={formatDate(detailsTenant.dob)} />
+                  <DetailRow label="Address" value={[detailsTenant.houseNo, detailsTenant.address, detailsTenant.nearbyPlace].filter(Boolean).join(", ")} />
+                  <DetailRow label="City / State / PIN" value={[detailsTenant.city, detailsTenant.state, detailsTenant.pincode].filter(Boolean).join(", ")} />
+                  {propertyTypeFromTenant(detailsTenant) === "bed" ? (
+                    <>
+                      <DetailRow label="Contact 1" value={[detailsTenant.relative1Relation, detailsTenant.relative1Name, detailsTenant.relative1Phone].filter(Boolean).join(" | ")} />
+                      <DetailRow label="Contact 2" value={[detailsTenant.relative2Relation, detailsTenant.relative2Name, detailsTenant.relative2Phone].filter(Boolean).join(" | ")} />
+                      <DetailRow label="Company / College" value={detailsTenant.companyAddress} />
+                      <DetailRow label="Joining date at company/college" value={formatDate(detailsTenant.dateOfJoiningCollege)} />
+                    </>
+                  ) : null}
+                  {propertyTypeFromTenant(detailsTenant) === "room" ? (
+                    <>
+                      <DetailRow label="Family members" value={detailsTenant.familyMembers != null ? String(detailsTenant.familyMembers) : ""} />
+                      <DetailRow label="Partner / Contact" value={[detailsTenant.relative1Relation, detailsTenant.relative1Name, detailsTenant.relative1Phone].filter(Boolean).join(" | ")} />
+                      <DetailRow label="Partner / Contact 2" value={[detailsTenant.relative2Relation, detailsTenant.relative2Name, detailsTenant.relative2Phone].filter(Boolean).join(" | ")} />
+                      <DetailRow label="Company / College" value={detailsTenant.companyAddress} />
+                    </>
+                  ) : null}
+                  {propertyTypeFromTenant(detailsTenant) === "shop" ? (
+                    <>
+                      <DetailRow label="Shop name" value={detailsTenant.shopName} />
+                      <DetailRow label="Shop business" value={detailsTenant.shopBusiness} />
+                    </>
+                  ) : null}
+                  <DetailRow label="Deposit refund" value={money(detailsTenant.leaveSettlement?.refundableDeposit)} />
+                  <DetailRow label="Total deduction" value={money(detailsTenant.leaveSettlement?.totalDeduction)} />
+                  <DetailRow label="Amount due from tenant" value={money(detailsTenant.leaveSettlement?.amountDueFromTenant)} />
+                  <DetailRow label="Settlement note" value={detailsTenant.leaveSettlement?.note} />
+                  {historyOpen ? (
+                    <View style={styles.historySection}>
+                      <Text style={styles.historyTitle}>Rent history</Text>
+                      {rentHistoryEntries(detailsTenant).length ? (
+                        rentHistoryEntries(detailsTenant).map((entry) => (
+                          <View key={entry.key} style={styles.historyCard}>
+                            <Text style={styles.historyMonth}>{entry.month}</Text>
+                            <Text style={styles.historyMeta}>Date: {entry.date}</Text>
+                            <Text style={styles.historyMeta}>Amount: {entry.amount}</Text>
+                            <Text style={styles.historyMeta}>Mode: {entry.mode}</Text>
+                            <Text style={styles.historyMeta}>UTR: {entry.utr}</Text>
+                            <Text style={styles.historyMeta}>Note: {entry.note}</Text>
+                          </View>
+                        ))
+                      ) : (
+                        <Text style={styles.historyEmpty}>No rent history found.</Text>
+                      )}
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+            </ScrollView>
+            <View style={styles.modalActions}>
+              {historyOpen ? <Pressable onPress={() => setHistoryOpen(false)} style={styles.cancelButton}><Text style={styles.cancelText}>Hide history</Text></Pressable> : null}
+              <Pressable onPress={() => { setDetailsTenant(null); setHistoryOpen(false); }} style={styles.cancelButton}><Text style={styles.cancelText}>Close</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal transparent visible={restoreModal.visible} animationType="fade" onRequestClose={() => setRestoreModal((current) => ({ ...current, visible: false }))}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -454,7 +587,7 @@ export default function FormerTenantsScreen() {
             {restoreModal.showOptions ? <View style={styles.options}>{restoreModal.vacancies.map((vacancy, index) => <Pressable key={`${vacancy.unit._id}-${vacancy.bed?.bedNo || index}`} onPress={() => setRestoreModal((current) => ({ ...current, selectedIndex: index, showOptions: false }))} style={[styles.option, index === restoreModal.selectedIndex && styles.optionSelected]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(vacancy.unit)} | {vacancy.unit.category}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(vacancy.unit, vacancy.bed)}</Text></View>{index === restoreModal.selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>)}</View> : null}
             <View style={styles.modalActions}>
               <Pressable onPress={() => setRestoreModal({ visible: false, tenant: null, vacancies: [], selectedIndex: 0, oldOccupied: false, showOptions: false })} style={styles.cancelButton}><Text style={styles.cancelText}>Cancel</Text></Pressable>
-              <Pressable disabled={!restoreModal.vacancies[restoreModal.selectedIndex] || restoringId} onPress={() => restoreNow(restoreModal.tenant, allocationFromVacancy(restoreModal.vacancies[restoreModal.selectedIndex]))} style={[styles.restoreButton, (!restoreModal.vacancies[restoreModal.selectedIndex] || restoringId) && styles.disabled]}>{restoringId ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.restoreText}>Restore</Text>}</Pressable>
+              <Pressable disabled={!restoreModal.vacancies[restoreModal.selectedIndex] || Boolean(restoringId)} onPress={() => restoreNow(restoreModal.tenant, allocationFromVacancy(restoreModal.vacancies[restoreModal.selectedIndex]))} style={[styles.restoreButton, (!restoreModal.vacancies[restoreModal.selectedIndex] || Boolean(restoringId)) && styles.disabled]}>{restoringId ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.restoreText}>Restore</Text>}</Pressable>
             </View>
           </View>
         </View>
@@ -473,9 +606,11 @@ const styles = StyleSheet.create({
   typeTabTextActive: { color: colors.primary },
   typeTabCount: { width: "100%", marginTop: 2, color: colors.subtle, fontSize: 11, fontWeight: "700", textAlign: "center" },
   counterTitle: { marginBottom: 7, color: colors.muted, fontSize: 13, fontWeight: "800" }, counterBar: { minHeight: 70, padding: 10, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.primarySoft }, counterItem: { flex: 1, alignItems: "center" }, counterValue: { color: colors.text, fontSize: 14, fontWeight: "800" }, counterLabel: { marginTop: 4, color: colors.muted, fontSize: 10, fontWeight: "600" }, counterDivider: { width: 1, height: 36, backgroundColor: colors.border }, green: { color: colors.success }, red: { color: colors.danger },
-  row: { padding: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, rowTop: { flexDirection: "row", alignItems: "center" }, info: { flex: 1, minWidth: 0, paddingRight: 8 }, name: { color: colors.text, fontWeight: "700" }, meta: { marginTop: 4, color: colors.muted, fontSize: 11 }, leaveDate: { color: colors.muted, fontSize: 11 }, settlement: { marginTop: 10, paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.surfaceSoft }, settlementInfo: { flex: 1 }, settlementText: { color: colors.success, fontSize: 11, fontWeight: "600" }, due: { marginTop: 3, color: colors.danger, fontSize: 11, fontWeight: "700" },
+  row: { borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, rowMain: { padding: 13 }, rowTop: { flexDirection: "row", alignItems: "center" }, info: { flex: 1, minWidth: 0, paddingRight: 8 }, name: { color: colors.text, fontWeight: "700" }, meta: { marginTop: 4, color: colors.muted, fontSize: 11 }, leaveDate: { color: colors.muted, fontSize: 11 }, settlement: { marginTop: 10, paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.surfaceSoft }, settlementInfo: { flex: 1 }, settlementText: { color: colors.success, fontSize: 11, fontWeight: "600" }, undoWindowText: { marginTop: 5, color: colors.muted, fontSize: 10, fontWeight: "600" }, undoExpiredText: { color: colors.danger }, due: { marginTop: 3, color: colors.danger, fontSize: 11, fontWeight: "700" },
   rowActions: { marginTop: 11, flexDirection: "row", alignItems: "center", gap: 8 }, reportButton: { flex: 1, minHeight: 40, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, undoButton: { flex: 1, minHeight: 40, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.primarySoft }, undoText: { color: colors.primary, fontSize: 12, fontWeight: "700" }, disabled: { opacity: 0.55 },
-  modalBackdrop: { flex: 1, padding: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 23, 42, 0.45)" }, modalCard: { width: "100%", maxWidth: 460, padding: 18, borderRadius: 10, backgroundColor: colors.surface }, modalTitle: { color: colors.text, fontSize: 20, fontWeight: "700" }, modalText: { marginTop: 8, marginBottom: 14, color: colors.muted, lineHeight: 20 },
+  modalBackdrop: { flex: 1, padding: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 23, 42, 0.45)" }, modalCard: { width: "100%", maxWidth: 460, padding: 18, borderRadius: 10, backgroundColor: colors.surface }, detailModalCard: { width: "100%", maxWidth: 520, maxHeight: "85%", padding: 18, borderRadius: 10, backgroundColor: colors.surface }, modalTitle: { color: colors.text, fontSize: 20, fontWeight: "700" }, modalText: { marginTop: 8, marginBottom: 14, color: colors.muted, lineHeight: 20 },
+  detailHeader: { marginBottom: 10 }, detailHeaderText: { minWidth: 0 }, detailSubtitle: { marginTop: 4, color: colors.muted, fontSize: 12 }, detailScroll: { maxHeight: 520 }, detailContent: { paddingBottom: 8 }, detailRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft }, detailLabel: { color: colors.muted, fontSize: 11, fontWeight: "700" }, detailValue: { marginTop: 4, color: colors.text, fontSize: 14, fontWeight: "600" },
+  historyButton: { minHeight: 42, marginBottom: 10, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primarySoft }, historyButtonText: { color: colors.primary, fontWeight: "700" }, historySection: { marginTop: 14 }, historyTitle: { color: colors.text, fontSize: 16, fontWeight: "700", marginBottom: 10 }, historyCard: { padding: 11, marginBottom: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, historyMonth: { color: colors.text, fontSize: 14, fontWeight: "700" }, historyMeta: { marginTop: 3, color: colors.muted, fontSize: 12 }, historyEmpty: { color: colors.muted, fontSize: 13 },
   select: { minHeight: 50, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, selectValue: { flex: 1, paddingRight: 8, color: colors.text, fontWeight: "600" }, options: { maxHeight: 260, marginTop: 6, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, option: { minHeight: 56, padding: 11, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft }, optionSelected: { backgroundColor: colors.primarySoft }, optionText: { flex: 1 }, optionTitle: { color: colors.text, fontWeight: "700" }, optionMeta: { marginTop: 3, color: colors.muted, fontSize: 12 },
   modalActions: { marginTop: 16, flexDirection: "row", justifyContent: "flex-end", gap: 10 }, cancelButton: { height: 44, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, cancelText: { color: colors.muted, fontWeight: "700" }, restoreButton: { height: 44, minWidth: 112, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, restoreText: { color: colors.surface, fontWeight: "700" },
   empty: { minHeight: 240, alignItems: "center", justifyContent: "center" }, emptyTitle: { marginTop: 9, color: colors.muted, fontWeight: "600" }, error: { color: colors.danger },

@@ -150,6 +150,11 @@ export async function createTenant(payload) {
   return data;
 }
 
+export async function importTenantsFromSheet(propertyType, rows) {
+  const { data } = await api.post("/forms/import", { propertyType, rows });
+  return data;
+}
+
 export async function createTenantInvite(payload) {
   const { data } = await api.post("/invites", payload);
   return data;

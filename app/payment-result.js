@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { CheckCircle2, Clock3, XCircle } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getSaasPaymentStatus } from "../src/api/saasApi";
+import { getAppBootstrap, getSaasPaymentStatus } from "../src/api/saasApi";
 import { clearAuthSession } from "../src/storage/authStorage";
 import { colors } from "../src/theme/colors";
 
@@ -30,8 +30,16 @@ export default function PaymentResultScreen() {
   const [error, setError] = useState("");
   const [transactionId, setTransactionId] = useState(String(params.transactionId || ""));
 
-  const goToLogin = useCallback(async () => {
-    await clearAuthSession();
+  const continueAfterPayment = useCallback(async () => {
+    try {
+      const bootstrap = await getAppBootstrap();
+      if (bootstrap?.access?.canUseSystem) {
+        router.replace(bootstrap.user?.role === "superadmin" ? "/superadmin" : "/system");
+        return;
+      }
+    } catch (_err) {
+      await clearAuthSession();
+    }
     router.replace("/login");
   }, [router]);
 
@@ -82,14 +90,17 @@ export default function PaymentResultScreen() {
         const transactionStatus = String(latest?.transaction?.status || "").toLowerCase();
         if (transactionStatus === "success") {
           const subscription = latest?.subscription || {};
+          const action = String(latest?.transaction?.requestPayload?.action || "").toLowerCase();
+          const isUpgrade = action === "subscription_upgrade";
+          const isRenewal = action === "renewal_request" || Boolean(latest?.transaction?.requestPayload?.previousSubscriptionId);
           Alert.alert(
             "Payment successful",
-            `Subscription activated.\nAmount: ${money(latest?.transaction?.amount)}\nValid till: ${formatDate(subscription.endDate)}\n\nPlease login to start your system.`,
-            [{ text: "Login", onPress: goToLogin }]
+            `${isUpgrade ? "Package upgraded" : isRenewal ? "Subscription renewed" : "Subscription activated"}.\nAmount: ${money(latest?.transaction?.amount)}\nValid till: ${formatDate(subscription.endDate)}\n\nContinue to your system.`,
+            [{ text: "Continue", onPress: continueAfterPayment }]
           );
           setTimeout(() => {
-            goToLogin();
-          }, 400);
+            continueAfterPayment();
+          }, 700);
         }
       } catch (err) {
         if (active) setError(err.response?.data?.message || err.message || "Unable to verify payment.");
@@ -101,7 +112,7 @@ export default function PaymentResultScreen() {
     return () => {
       active = false;
     };
-  }, [goToLogin, params.transactionId, transactionId]);
+  }, [continueAfterPayment, params.transactionId, transactionId]);
 
   const transactionStatus = String(status?.transaction?.status || "").toLowerCase();
   const isSuccess = transactionStatus === "success";
@@ -122,7 +133,7 @@ export default function PaymentResultScreen() {
 
         {isSuccess ? (
           <>
-            <Text style={styles.message}>Your subscription is active. Login to start your system.</Text>
+            <Text style={styles.message}>Your payment is confirmed. Continue to start your system.</Text>
             <View style={styles.summary}>
               <Text style={styles.summaryLine}>Amount: {money(status?.transaction?.amount)}</Text>
               <Text style={styles.summaryLine}>Valid till: {formatDate(subscription.endDate)}</Text>
@@ -136,8 +147,8 @@ export default function PaymentResultScreen() {
           </Text>
         ) : null}
 
-        <Pressable onPress={goToLogin} style={styles.button}>
-          <Text style={styles.buttonText}>Go to login</Text>
+        <Pressable onPress={continueAfterPayment} style={styles.button}>
+          <Text style={styles.buttonText}>{isSuccess ? "Continue" : "Go to login"}</Text>
         </Pressable>
       </View>
     </View>

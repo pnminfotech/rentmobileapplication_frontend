@@ -16,7 +16,18 @@ function isActive(tenant) {
   return Number.isNaN(date.getTime()) || date > new Date();
 }
 
-function vacanciesFor(units, tenants, currentTenantId) {
+function isCurrentAssignment(vacancyUnit, vacancyBed, currentTenant) {
+  if (!currentTenant || !vacancyUnit) return false;
+  const sameUnit = currentTenant.roomId
+    ? String(currentTenant.roomId) === String(vacancyUnit._id)
+    : String(currentTenant.category || "") === String(vacancyUnit.category || "") && String(currentTenant.roomNo || "") === String(vacancyUnit.roomNo || "");
+  if (!sameUnit) return false;
+  if (vacancyUnit.propertyType !== "bed") return true;
+  return String(currentTenant.bedNo || "") === String(vacancyBed?.bedNo || "");
+}
+
+function vacanciesFor(units, tenants, currentTenant) {
+  const currentTenantId = currentTenant?._id;
   const active = tenants.filter((tenant) => String(tenant._id) !== String(currentTenantId) && isActive(tenant));
   const occupied = (unit, bed) => active.some((tenant) => {
     const sameUnit = tenant.roomId
@@ -26,8 +37,13 @@ function vacanciesFor(units, tenants, currentTenantId) {
   });
   return units.flatMap((unit) => {
     const beds = Array.isArray(unit.beds) ? unit.beds : [];
-    if (unit.propertyType === "bed") return beds.filter((bed) => !occupied(unit, bed)).map((bed) => ({ unit, bed }));
-    return beds[0] && !occupied(unit, beds[0]) ? [{ unit, bed: beds[0] }] : [];
+    if (unit.propertyType === "bed") {
+      return beds
+        .filter((bed) => !occupied(unit, bed))
+        .filter((bed) => !isCurrentAssignment(unit, bed, currentTenant))
+        .map((bed) => ({ unit, bed }));
+    }
+    return beds[0] && !occupied(unit, beds[0]) && !isCurrentAssignment(unit, beds[0], currentTenant) ? [{ unit, bed: beds[0] }] : [];
   });
 }
 
@@ -51,7 +67,7 @@ export default function TenantShiftScreen() {
       const [tenantData, units, tenants, dueData] = await Promise.all([getTenant(id), getRooms(), getTenants(), getTenantRentDue(id)]);
       setTenant(tenantData);
       setSelectedIndex(0);
-      setVacancies(vacanciesFor(Array.isArray(units) ? units : [], Array.isArray(tenants) ? tenants : [], id));
+      setVacancies(vacanciesFor(Array.isArray(units) ? units : [], Array.isArray(tenants) ? tenants : [], tenantData));
       setDue(Number(dueData.totalDue || 0));
     } catch (err) { setError(err.response?.data?.message || "Unable to load shift options."); }
     finally { setLoading(false); }
@@ -102,6 +118,7 @@ export default function TenantShiftScreen() {
       <Text style={styles.label}>Vacant destination</Text>
       <Pressable onPress={() => setShowOptions((value) => !value)} disabled={!filteredVacancies.length} style={[styles.select, !filteredVacancies.length && styles.disabled]}><Text style={styles.selectValue}>{selected ? `${formatVacancyTitle(selected.unit)} | ${formatVacancyMeta(selected.unit, selected.bed)}` : "No vacant destination"}</Text><ChevronDown size={19} color={colors.muted} /></Pressable>
       {showOptions ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => { setSelectedIndex(index); setShowOptions(false); }} style={[styles.option, index === selectedIndex && styles.optionSelected]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
+      {!filteredVacancies.length ? <Text style={styles.emptyText}>No vacant {typeInfo.label.toLowerCase()} available right now.</Text> : null}
 
       {selected ? <View style={styles.newRent}><Text style={styles.currentLabel}>New monthly rent</Text><Text style={styles.newRentValue}>Rs. {Number(selected.bed.price || 0).toLocaleString("en-IN")}</Text></View> : null}
       <FormDateField label="Shift effective date" value={effectiveDate} onChange={setEffectiveDate} minimumDate={tenant?.joiningDate ? new Date(tenant.joiningDate) : undefined} maximumDate={new Date()} />

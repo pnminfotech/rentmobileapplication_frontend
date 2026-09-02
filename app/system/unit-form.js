@@ -124,11 +124,10 @@ export default function UnitFormScreen() {
     [propertyType, units]
   );
 
-  const locationSourceUnits = useMemo(
-    () => (propertyType === "shop" ? units : unitsOfType),
-    [propertyType, units, unitsOfType]
-  );
-
+ const locationSourceUnits = useMemo(
+  () => units,
+  [units]
+);
   const categoryOptions = useMemo(
     () => uniqueValues(locationSourceUnits, (unit) => unit.category),
     [locationSourceUnits]
@@ -177,11 +176,11 @@ export default function UnitFormScreen() {
       .filter((unit) => {
         if (normalizeKey(unit.category) !== categoryKey) return false;
         if (normalizeKey(unit.floorNo) !== floorKey) return false;
-        if (propertyType !== "bed" && hasWing && wingKey && normalizeKey(unit.wingName) !== wingKey) return false;
+        if (hasWing && wingKey && normalizeKey(unit.wingName) !== wingKey) return false;
         return true;
       })
       .sort((a, b) => String(a.roomNo || "").localeCompare(String(b.roomNo || ""), undefined, { numeric: true }));
-  }, [category, floorNo, hasWing, propertyType, unitsOfType, wingName]);
+  }, [category, floorNo, hasWing, unitsOfType, wingName]);
 
   function selectType(value) {
     setPropertyType(value);
@@ -192,11 +191,7 @@ export default function UnitFormScreen() {
     setMeterNo("");
     setLastMeterReading("");
     setBedRoomMode("new");
-    if (value === "bed") {
-      setHasWing(false);
-      setWingName("");
-      setFlatType("");
-    }
+    if (value !== "room") setFlatType("");
   }
 
   function selectCategory(value) {
@@ -278,14 +273,13 @@ export default function UnitFormScreen() {
     const categoryKey = normalizeKey(category);
     const floorKey = normalizeKey(floorNo);
     const roomKey = normalizeIdentifier(roomNo);
-    const wingKey = propertyType !== "bed" && hasWing ? normalizeKey(wingName) : "";
+    const wingKey = hasWing ? normalizeKey(wingName) : "";
     const duplicateUnit = unitsOfType.find((unit) => {
       const sameBase =
         normalizeKey(unit.category) === categoryKey &&
         normalizeKey(unit.floorNo) === floorKey &&
         normalizeIdentifier(unit.roomNo) === roomKey;
       if (!sameBase) return false;
-      if (propertyType === "bed") return true;
       return normalizeKey(unit.wingName) === wingKey;
     });
 
@@ -311,8 +305,8 @@ export default function UnitFormScreen() {
         category: category.trim(),
         floorNo: floorNo.trim(),
         roomNo: normalizeIdentifier(roomNo),
-        hasWing: propertyType !== "bed" && hasWing,
-        wingName: propertyType !== "bed" && hasWing ? wingName.trim() : "",
+        hasWing,
+        wingName: hasWing ? wingName.trim() : "",
         flatType: propertyType === "room" ? flatType.trim() : "",
         meterNo: normalizeIdentifier(meterNo),
         lastMeterReading: reading,
@@ -386,14 +380,12 @@ export default function UnitFormScreen() {
       />
       <TextInput value={floorNo} onChangeText={setFloorNo} placeholder="Example: Ground or 1" style={styles.input} />
 
-      {propertyType !== "bed" ? (
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>Has wing or block</Text>
-          <Switch value={hasWing} onValueChange={setHasWing} />
-        </View>
-      ) : null}
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Has wing or block</Text>
+        <Switch value={hasWing} onValueChange={setHasWing} />
+      </View>
 
-      {propertyType !== "bed" && hasWing ? (
+      {hasWing ? (
         <>
           <Text style={styles.label}>Wing or block</Text>
           <OptionList
@@ -404,6 +396,13 @@ export default function UnitFormScreen() {
           />
           <TextInput value={wingName} onChangeText={setWingName} placeholder="Example: A" style={styles.input} />
         </>
+      ) : null}
+
+      {propertyType === "room" ? (
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Flat type required</Text>
+          <Text style={styles.optionHelper}>Residential rooms need a flat or room type.</Text>
+        </View>
       ) : null}
 
       {propertyType === "room" ? (

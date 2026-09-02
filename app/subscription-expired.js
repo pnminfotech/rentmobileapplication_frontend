@@ -123,6 +123,17 @@ export default function SubscriptionExpiredScreen() {
     router.replace("/login");
   }
 
+  async function verifyRenewalPayment(transactionId) {
+    let latest = null;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      latest = await getSaasPaymentStatus(transactionId);
+      const paymentStatus = String(latest?.transaction?.status || "").toLowerCase();
+      if (["success", "failed", "cancelled", "canceled"].includes(paymentStatus)) return latest;
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+    }
+    return latest;
+  }
+
   async function renewNow() {
     try {
       setRenewing(true);
@@ -152,13 +163,33 @@ export default function SubscriptionExpiredScreen() {
         return;
       }
 
-      const paymentUrl = payment?.payment?.paymentUrl;
+      const paymentUrl = payment?.payment?.directPaymentUrl || payment?.payment?.paymentUrl || payment?.payment?.checkoutPageUrl;
       if (paymentUrl) {
-        await WebBrowser.openBrowserAsync(paymentUrl, {
-          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-          showTitle: true,
-        });
-        Alert.alert("Payment opened", "Complete payment in PhonePe, then return to this screen to continue.");
+        const canOpenPaymentUrl = await Linking.canOpenURL(paymentUrl);
+        if (canOpenPaymentUrl) {
+          await Linking.openURL(paymentUrl);
+        } else {
+          await WebBrowser.openBrowserAsync(paymentUrl, {
+            presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+            showTitle: true,
+          });
+        }
+
+        const latest = await verifyRenewalPayment(transactionId);
+        const paymentStatus = String(latest?.transaction?.status || "").toLowerCase();
+        if (paymentStatus === "success") {
+          Alert.alert(
+            isPendingPayment ? "Payment successful" : "Renewal successful",
+            isPendingPayment ? "Subscription activated successfully." : "Subscription renewed successfully.",
+            [{ text: "Continue", onPress: () => router.replace("/system") }]
+          );
+          return;
+        }
+        if (["failed", "cancelled", "canceled"].includes(paymentStatus)) {
+          Alert.alert("Payment not completed", "The subscription payment was not successful. Please try again.");
+          return;
+        }
+        Alert.alert("Payment pending", "We could not confirm the payment yet. If money was deducted, refresh after a minute.");
       } else {
         Alert.alert("Payment created", `Payment request created. Complete payment to ${isPendingPayment ? "activate" : "renew"} your subscription.`);
       }

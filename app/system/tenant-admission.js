@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { ArrowLeft, Camera, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react-native";
 
 import FormDateField from "../../src/components/FormDateField";
+import WebImageCropper from "../../src/components/WebImageCropper";
 import { getSystemDashboard } from "../../src/api/saasApi";
 import { getCanteenSettings } from "../../src/api/canteenApi";
 import { getRooms } from "../../src/api/roomApi";
@@ -23,6 +24,23 @@ const CANTEEN_MODE_LABELS = {
   per_meal: "Per meal pricing",
   meal_package: "Meal package monthly",
 };
+let preferredAssignmentType = "bed";
+
+async function lookupIndianPincode(pincode) {
+  const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+  const payload = await response.json();
+  const result = Array.isArray(payload) ? payload[0] : null;
+  const offices = Array.isArray(result?.PostOffice) ? result.PostOffice : [];
+  const office = offices.find((item) => item?.DeliveryStatus === "Delivery") || offices[0];
+  if (!office || String(result?.Status || "").toLowerCase() !== "success") {
+    throw new Error("PIN code details not found.");
+  }
+  return {
+    locality: office.Name || "",
+    city: office.District || office.Name || "",
+    state: office.State || "",
+  };
+}
 
 function localDateValue(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -84,19 +102,69 @@ function RelationPicker({ label, value, onChange }) {
 
 export default function TenantAdmissionScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const requestedType = Array.isArray(params.type) ? params.type[0] : params.type;
+  const requestedRoomId = Array.isArray(params.roomId) ? params.roomId[0] : params.roomId;
+  const requestedRoomNo = Array.isArray(params.roomNo) ? params.roomNo[0] : params.roomNo;
+  const requestedBedNo = Array.isArray(params.bedNo) ? params.bedNo[0] : params.bedNo;
+  const initialAssignmentType = ["bed", "room", "shop"].includes(requestedType) ? requestedType : preferredAssignmentType;
   const [step, setStep] = useState(0);
   const [vacancies, setVacancies] = useState([]);
   const [unitAccess, setUnitAccess] = useState(null);
   const [canteenEnabled, setCanteenEnabled] = useState(false);
   const [canteenSettings, setCanteenSettings] = useState(null);
-  const [assignmentType, setAssignmentType] = useState("bed");
+  const [assignmentType, setAssignmentType] = useState(initialAssignmentType);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showUnits, setShowUnits] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [pinLookupStatus, setPinLookupStatus] = useState("idle");
   const [form, setForm] = useState(blankForm);
   const [documents, setDocuments] = useState(blankDocuments);
+  const [cropRequest, setCropRequest] = useState(null);
+
+  useEffect(() => {
+    preferredAssignmentType = assignmentType;
+  }, [assignmentType]);
+
+  useEffect(() => {
+    let active = true;
+    const pincode = String(form.pincode || "").trim();
+
+    if (!/^\d{6}$/.test(pincode)) {
+      setPinLookupStatus("idle");
+      return () => {
+        active = false;
+      };
+    }
+
+    setPinLookupStatus("loading");
+    const timer = setTimeout(async () => {
+      try {
+        const result = await lookupIndianPincode(pincode);
+        if (!active) return;
+        setForm((current) => {
+          if (String(current.pincode || "").trim() !== pincode) return current;
+          return {
+            ...current,
+            nearbyPlace: result.locality || current.nearbyPlace,
+            city: result.city || current.city,
+            state: result.state || current.state,
+          };
+        });
+        setPinLookupStatus("success");
+      } catch (_error) {
+        if (!active) return;
+        setPinLookupStatus("error");
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [form.pincode]);
 
   const setValue = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const loadData = useCallback(async () => {
@@ -106,10 +174,17 @@ export default function TenantAdmissionScreen() {
       setUnitAccess(dashboardData?.units || dashboardData);
       setCanteenEnabled(hasCanteenFeature(dashboardData));
       setCanteenSettings(settingsData);
-      setAssignmentType((current) => allowedUnitTypes(dashboardData?.units || dashboardData).some((type) => type.value === current) ? current : firstAllowedType(dashboardData?.units || dashboardData));
+      setAssignmentType((current) => {
+        const allowed = allowedUnitTypes(dashboardData?.units || dashboardData);
+        const requested = ["bed", "room", "shop"].includes(requestedType) ? requestedType : null;
+        if (requested && allowed.some((type) => type.value === requested)) return requested;
+        if (allowed.some((type) => type.value === current)) return current;
+        if (allowed.some((type) => type.value === preferredAssignmentType)) return preferredAssignmentType;
+        return firstAllowedType(dashboardData?.units || dashboardData);
+      });
     } catch (err) { setError(err.response?.data?.message || "Unable to load vacant units."); }
     finally { setLoading(false); }
-  }, []);
+  }, [requestedType]);
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   const filteredVacancies = useMemo(() => filterVacanciesByType(vacancies, assignmentType), [assignmentType, vacancies]);
@@ -127,12 +202,28 @@ export default function TenantAdmissionScreen() {
     return { amount: 0, meals: [] };
   }, [canteenSettings, selectedCanteenPlan]);
 
+  useEffect(() => {
+    if (!filteredVacancies.length) return;
+    const matchedIndex = filteredVacancies.findIndex((vacancy) => {
+      const sameRoomId = requestedRoomId ? String(vacancy.unit?._id || "") === String(requestedRoomId) : true;
+      const sameRoomNo = requestedRoomNo ? String(vacancy.unit?.roomNo || "") === String(requestedRoomNo) : true;
+      const sameBedNo = requestedBedNo ? String(vacancy.bed?.bedNo || "") === String(requestedBedNo) : true;
+      return sameRoomId && sameRoomNo && sameBedNo;
+    });
+    if (matchedIndex >= 0) {
+      setSelectedIndex(matchedIndex);
+      setShowUnits(false);
+    } else {
+      setSelectedIndex(0);
+    }
+  }, [filteredVacancies, requestedBedNo, requestedRoomId, requestedRoomNo]);
+
   async function chooseImage(key) {
     setError("");
     const isSelfie = key === "photo";
     const options = {
       mediaTypes: ["images"],
-      allowsEditing: true,
+      allowsEditing: false,
       aspect: isSelfie ? [1, 1] : [4, 3],
       quality: 0.85,
     };
@@ -144,8 +235,16 @@ export default function TenantAdmissionScreen() {
       ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
       : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
-    const converted = await ImageManipulator.manipulateAsync(result.assets[0].uri, [], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG });
-    setDocuments((current) => ({ ...current, [key]: { uri: converted.uri, name: `${key}.jpg` } }));
+    if (Platform.OS === "web") {
+      setCropRequest({ key, uri: result.assets[0].uri, aspect: isSelfie ? 1 : 4 / 3 });
+      return;
+    }
+    const image = await ImageManipulator.manipulateAsync(
+      result.assets[0].uri,
+      [{ resize: { width: 1600 } }],
+      { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    setCropRequest({ key, uri: image.uri, aspect: isSelfie ? 1 : 4 / 3 });
   }
 
   function validateStep() {
@@ -176,7 +275,7 @@ export default function TenantAdmissionScreen() {
       setSaving(true); setError("");
       await createTenantWithDocuments({
         ...form,
-        roomId: selected.unit._id, propertyType: assignmentType, category: selected.unit.category || "", floorNo: selected.unit.floorNo || "",
+        roomId: selected.unit._id, propertyType: assignmentType, category: selected.unit.category || "", hasWing: Boolean(selected.unit.hasWing && selected.unit.wingName), wingName: selected.unit.wingName || "", floorNo: selected.unit.floorNo || "",
         roomNo: selected.unit.roomNo || "", bedNo: selected.bed.bedNo || "", baseRent: Number(selected.bed.price || 0),
         familyMembers: form.familyMembers ? Number(form.familyMembers) : 0,
         hasCanteen: assignmentType === "bed" && canteenEnabled ? Boolean(form.hasCanteen) : false,
@@ -204,6 +303,7 @@ export default function TenantAdmissionScreen() {
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
 
   return (
+    <>
     <View style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable onPress={() => step ? setStep(step - 1) : router.replace("/system/tenants")} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
@@ -273,6 +373,9 @@ export default function TenantAdmissionScreen() {
         {step === 1 ? <>
           <Text style={styles.sectionTitle}>Permanent address</Text>
           <Field label="Pincode" value={form.pincode} onChangeText={(value) => setValue("pincode", value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" placeholder="6-digit pincode" />
+          {pinLookupStatus === "loading" ? <Text style={styles.helperText}>Fetching city and state from PIN code...</Text> : null}
+          {pinLookupStatus === "success" ? <Text style={styles.helperText}>City and state updated from PIN code. You can still edit them.</Text> : null}
+          {pinLookupStatus === "error" ? <Text style={styles.error}>Could not fetch city/state for this PIN code. Please enter them manually.</Text> : null}
           <Field label="City" value={form.city} onChangeText={(value) => setValue("city", value)} />
           <Field label="State" value={form.state} onChangeText={(value) => setValue("state", value)} />
           <Field label="Address" value={form.address} onChangeText={(value) => setValue("address", value)} multiline placeholder="Street and locality" />
@@ -330,6 +433,22 @@ export default function TenantAdmissionScreen() {
         {step < STEPS.length - 1 ? <Pressable onPress={nextStep} style={styles.nextButton}><Text style={styles.nextText}>Continue</Text><ChevronRight size={20} color={colors.surface} /></Pressable> : <Pressable onPress={submit} disabled={saving} style={[styles.nextButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.nextText}>Save tenant</Text>}</Pressable>}
       </View>
     </View>
+    {cropRequest ? (
+      <WebImageCropper
+        sourceUri={cropRequest.uri}
+        aspect={cropRequest.aspect}
+        outputName={`${cropRequest.key}.jpg`}
+        onCancel={(cropError) => {
+          setCropRequest(null);
+          if (cropError) setError(cropError.message || "Unable to crop image.");
+        }}
+        onConfirm={(image) => {
+          setDocuments((current) => ({ ...current, [cropRequest.key]: image }));
+          setCropRequest(null);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 

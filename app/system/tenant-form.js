@@ -97,6 +97,8 @@ export default function TenantFormScreen() {
         address: address.trim(),
         category: selected.unit.category || "",
         roomId: selected.unit._id,
+        hasWing: Boolean(selected.unit.hasWing && selected.unit.wingName),
+        wingName: selected.unit.wingName || "",
         floorNo: selected.unit.floorNo || "",
         roomNo: selected.unit.roomNo || "",
         bedNo: selected.bed.bedNo || "",

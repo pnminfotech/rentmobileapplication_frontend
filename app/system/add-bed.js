@@ -93,13 +93,14 @@ export default function AddBedScreen() {
         </Pressable>
         <View style={styles.headerText}>
           <Text style={styles.title}>Add bed</Text>
-          {unit ? <Text style={styles.subtitle}>{unit.category} | Floor {unit.floorNo} | Room {unit.roomNo}</Text> : null}
+          {unit ? <Text style={styles.subtitle}>{[unit.category, unit.wingName ? `Wing ${unit.wingName}` : "", `Floor ${unit.floorNo}`, `Room ${unit.roomNo}`].filter(Boolean).join(" | ")}</Text> : null}
         </View>
       </View>
 
       {unit ? (
         <View style={styles.form}>
           <Text style={styles.remaining}>{remaining} purchased beds remaining</Text>
+          {unit.wingName ? <Text style={styles.contextText}>This bed will be added in Wing {unit.wingName}.</Text> : null}
 
           <Text style={styles.label}>Bed number</Text>
           <TextInput value={bedNo} onChangeText={setBedNo} placeholder="Example: B2" style={styles.input} />
@@ -132,6 +133,7 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 3, color: colors.muted, fontSize: 12 },
   form: { padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
   remaining: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+  contextText: { marginTop: 8, color: colors.muted, fontSize: 13 },
   label: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
   error: { marginTop: 14, color: colors.danger },

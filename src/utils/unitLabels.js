@@ -35,9 +35,11 @@ export function isPrimaryUnitSlot(bedNo) {
 export function formatTenantUnit(tenant = {}) {
   const type = propertyTypeFromTenant(tenant);
   const unitNo = tenant.roomNo || "-";
-  if (type === "shop") return `Shop ${unitNo}`;
-  if (type === "room") return `Rental room ${unitNo}`;
-  return `Room ${unitNo}${tenant.bedNo ? ` | Bed ${tenant.bedNo}` : ""}`;
+  const wing = String(tenant.wingName || "").trim();
+  const prefix = wing ? `Wing ${wing} | ` : "";
+  if (type === "shop") return `${prefix}Shop ${unitNo}`;
+  if (type === "room") return `${prefix}Rental room ${unitNo}`;
+  return `${prefix}Room ${unitNo}${tenant.bedNo ? ` | Bed ${tenant.bedNo}` : ""}`;
 }
 
 export function formatVacancyTitle(unit = {}) {

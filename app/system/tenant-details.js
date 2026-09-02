@@ -64,6 +64,41 @@ function currentMonthKey() {
   return `${date.toLocaleString("en-US", { month: "short" })}-${String(date.getFullYear()).slice(-2)}`;
 }
 
+function rentHistoryEntries(tenant) {
+  const rents = Array.isArray(tenant?.rents) ? tenant.rents : [];
+  return rents.flatMap((rent) => {
+    const payments = Array.isArray(rent.payments) && rent.payments.length
+      ? rent.payments
+      : [{ amount: rent.rentAmount, date: rent.date, paymentMode: rent.paymentMode, utr: rent.utr, note: rent.note }];
+    return payments.map((payment, index) => ({
+      key: `${rent.month || "month"}-${index}-${payment.date || ""}`,
+      month: rent.month || "-",
+      date: formatDate(payment.date),
+      amount: money(payment.amount),
+      mode: payment.paymentMode || rent.paymentMode || "-",
+      utr: payment.utr || "-",
+      note: payment.note || "-",
+      rentAmount: money(payment.rentAmount || rent.rentAmount || 0),
+      canteenAmount: Number(payment.canteenAmount || rent.canteenAmount || 0) > 0 ? money(payment.canteenAmount || rent.canteenAmount || 0) : "",
+      totalAmount: money(payment.amount || rent.totalAmount || rent.rentAmount || 0),
+    }));
+  }).sort((a, b) => monthTime(b.month) - monthTime(a.month));
+}
+
+function movementHistoryEntries(tenant) {
+  const history = Array.isArray(tenant?.rentHistory) ? tenant.rentHistory : [];
+  return [...history]
+    .sort((a, b) => new Date(b.effectiveFrom || 0).getTime() - new Date(a.effectiveFrom || 0).getTime())
+    .map((entry, index) => ({
+      key: `${entry.effectiveFrom || "move"}-${index}`,
+      effectiveFrom: formatDate(entry.effectiveFrom),
+      previousUnit: `${entry.previousRoomNo || "-"}${entry.previousBedNo ? ` / ${entry.previousBedNo}` : ""}`,
+      newUnit: `${entry.roomNo || "-"}${entry.bedNo ? ` / ${entry.bedNo}` : ""}`,
+      rent: money(entry.baseRent || entry.rentAmount || 0),
+      source: entry.source || "-",
+    }));
+}
+
 export default function TenantDetailsScreen() {
   const router = useRouter();
   const responsive = useResponsive();
@@ -77,6 +112,7 @@ export default function TenantDetailsScreen() {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   const loadTenant = useCallback(async () => {
     if (!id) return;
@@ -126,6 +162,8 @@ export default function TenantDetailsScreen() {
   const currentMonthSummary = rentSummary.get(currentMonthKey());
   const currentMonthBalance = Math.max(Number(currentMonthSummary?.totalBalance || 0), 0);
   const currentPending = currentMonthBalance + Number(due.totalDue || 0);
+  const paymentHistory = rentHistoryEntries(tenant);
+  const movementHistory = movementHistoryEntries(tenant);
 
   function confirmArchive() {
     Alert.alert(
@@ -209,7 +247,6 @@ export default function TenantDetailsScreen() {
                 <Text style={styles.heroPhone}>{tenant.phoneNo || "No phone number"}</Text>
               </View>
             </View>
-            <View style={[styles.status, !isActive && styles.statusInactive]}><Text style={[styles.statusText, !isActive && styles.statusInactiveText]}>{isActive ? "Active" : "Left"}</Text></View>
           </View>
         </View>
 
@@ -236,6 +273,10 @@ export default function TenantDetailsScreen() {
         </View>
 
         <View style={styles.actions}>
+          <Pressable onPress={() => setHistoryVisible(true)} style={styles.action}>
+            <FileText size={17} color={colors.primary} />
+            <Text style={styles.actionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>History</Text>
+          </Pressable>
           <Pressable onPress={() => router.push({ pathname: "/system/tenant-edit", params: { id: tenant._id, returnTo } })} style={styles.action}>
             <Pencil size={17} color={colors.primary} />
             <Text style={styles.actionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Edit</Text>
@@ -248,7 +289,7 @@ export default function TenantDetailsScreen() {
             <LogOut size={17} color={colors.warning} />
             <Text style={[styles.actionText, styles.leaveText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tenant.leaveDate ? "Leaving" : "Leaving"}</Text>
           </Pressable>
-          <Pressable onPress={() => setDeleteModalVisible(true)} style={[styles.action, styles.actionLast]}>
+          <Pressable onPress={() => setDeleteModalVisible(true)} style={styles.action}>
             <Trash2 size={17} color={colors.danger} />
             <Text style={[styles.actionText, styles.archiveText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Delete</Text>
           </Pressable>
@@ -438,6 +479,79 @@ export default function TenantDetailsScreen() {
           </View>
         </Section>
       </ScrollView>
+      <Modal transparent visible={historyVisible} animationType="fade" onRequestClose={() => setHistoryVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.historyModalCard}>
+            <Text style={styles.modalTitle}>Tenant history</Text>
+            <Text style={styles.modalText}>
+              {tenant.name} | {formatTenantUnit(tenant)} | Joined {formatDate(tenant.joiningDate)}
+            </Text>
+            <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.historySection}>
+                <Text style={styles.historyTitle}>Rent payment history</Text>
+                {paymentHistory.length ? (
+                  <View style={styles.historyTable}>
+                    <View style={styles.historyTableHeader}>
+                      <Text style={[styles.historyHeaderCell, styles.historyHeaderMonth]}>Month</Text>
+                      <Text style={[styles.historyHeaderCell, styles.historyHeaderDate]}>Date / Mode</Text>
+                      <Text style={[styles.historyHeaderCell, styles.historyHeaderAmount]}>Amount</Text>
+                    </View>
+                    {paymentHistory.map((entry) => (
+                      <View key={entry.key} style={styles.historyTableRow}>
+                        <View style={styles.historyMonthCell}>
+                          <Text style={styles.historyCellPrimary}>{entry.month}</Text>
+                          <Text style={styles.historyCellSecondary} numberOfLines={1}>UTR: {entry.utr}</Text>
+                        </View>
+                        <View style={styles.historyDateCell}>
+                          <Text style={styles.historyCellPrimary}>{entry.date}</Text>
+                          <Text style={styles.historyCellSecondary}>{entry.mode}</Text>
+                        </View>
+                        <View style={styles.historyAmountCell}>
+                          <Text style={styles.historyCellAmount}>{entry.amount}</Text>
+                          {entry.canteenAmount ? <Text style={styles.historyCellSecondary}>Canteen: {entry.canteenAmount}</Text> : null}
+                        </View>
+                        {entry.note !== "-" ? <Text style={styles.historyRowNote}>Note: {entry.note}</Text> : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : <Text style={styles.historyEmpty}>No rent history found.</Text>}
+              </View>
+              <View style={styles.historySection}>
+                <Text style={styles.historyTitle}>Room / rent movement history</Text>
+                {movementHistory.length ? (
+                  <View style={styles.historyTable}>
+                    <View style={styles.historyTableHeader}>
+                      <Text style={[styles.historyHeaderCell, styles.historyHeaderDate]}>Date</Text>
+                      <Text style={[styles.historyHeaderCell, styles.historyHeaderMove]}>Shift details</Text>
+                      <Text style={[styles.historyHeaderCell, styles.historyHeaderAmount]}>Rent</Text>
+                    </View>
+                    {movementHistory.map((entry) => (
+                      <View key={entry.key} style={styles.historyTableRow}>
+                        <View style={styles.historyDateCell}>
+                          <Text style={styles.historyCellPrimary}>{entry.effectiveFrom}</Text>
+                          <Text style={styles.historyCellSecondary}>{entry.source}</Text>
+                        </View>
+                        <View style={styles.historyMoveCell}>
+                          <Text style={styles.historyCellPrimary}>From: {entry.previousUnit}</Text>
+                          <Text style={styles.historyCellSecondary}>To: {entry.newUnit}</Text>
+                        </View>
+                        <View style={styles.historyAmountCell}>
+                          <Text style={styles.historyCellAmount}>{entry.rent}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : <Text style={styles.historyEmpty}>No room or rent movement recorded yet.</Text>}
+              </View>
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setHistoryVisible(false)} style={styles.cancelButton}>
+                <Text style={styles.cancelText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal transparent visible={deleteModalVisible} animationType="fade" onRequestClose={() => !deleting && setDeleteModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -511,7 +625,6 @@ const styles = StyleSheet.create({
   statusInactiveText: { color: colors.danger },
   actions: { minHeight: 62, flexDirection: "row", flexWrap: "nowrap", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   action: { flex: 1, minWidth: 0, minHeight: 58, paddingHorizontal: 2, alignItems: "center", justifyContent: "center", gap: 5, borderRightWidth: 1, borderRightColor: colors.surfaceSoft },
-  actionLast: { borderRightWidth: 0 },
   actionText: { width: "100%", color: colors.primary, fontSize: 10, fontWeight: "700", textAlign: "center" },
   leaveText: { color: colors.warning },
   archiveText: { color: colors.danger },
@@ -557,6 +670,28 @@ const styles = StyleSheet.create({
   transactionRef: { marginTop: 4, color: colors.primary, fontSize: 11 },
   transactionNote: { marginTop: 4, color: colors.muted, fontSize: 11 },
   noDocuments: { paddingVertical: 15, color: colors.muted, textAlign: "center" },
+  historyModalCard: { width: "100%", maxWidth: 520, maxHeight: "85%", padding: 18, borderRadius: 10, backgroundColor: colors.surface },
+  historyScroll: { maxHeight: 560 },
+  historyContent: { paddingBottom: 8 },
+  historySection: { marginTop: 14 },
+  historyTitle: { color: colors.text, fontSize: 16, fontWeight: "700", marginBottom: 10 },
+  historyTable: { overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface },
+  historyTableHeader: { minHeight: 42, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", backgroundColor: colors.primarySoft, borderBottomWidth: 1, borderBottomColor: colors.border },
+  historyHeaderCell: { color: colors.primary, fontSize: 11, fontWeight: "800" },
+  historyHeaderMonth: { flex: 1.05 },
+  historyHeaderDate: { flex: 1.05 },
+  historyHeaderMove: { flex: 1.4 },
+  historyHeaderAmount: { width: 96, textAlign: "right" },
+  historyTableRow: { paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft },
+  historyMonthCell: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
+  historyDateCell: { marginTop: 8 },
+  historyMoveCell: { marginTop: 8 },
+  historyAmountCell: { marginTop: 8, alignItems: "flex-end" },
+  historyCellPrimary: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  historyCellSecondary: { marginTop: 3, color: colors.muted, fontSize: 11, fontWeight: "600" },
+  historyCellAmount: { color: colors.primary, fontSize: 13, fontWeight: "800" },
+  historyRowNote: { marginTop: 8, color: colors.muted, fontSize: 11, lineHeight: 16 },
+  historyEmpty: { color: colors.muted, fontSize: 13 },
   documentSummary: { minHeight: 66, padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 14 },
   documentSummaryComplete: { borderColor: colors.successSoft, backgroundColor: colors.successSoft },
   documentSummaryMissing: { borderColor: colors.dangerSoft, backgroundColor: colors.dangerSoft },
