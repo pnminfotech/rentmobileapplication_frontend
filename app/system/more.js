@@ -195,11 +195,11 @@ export default function MoreScreen() {
           />
 
           <MoreItem
-            Icon={Zap}
-            title="Light bills"
-            subtitle="Meter bills by unit and month"
+            Icon={ReceiptText}
+            title="Payments"
+            subtitle="Monthly rent collection and payment status"
             onPress={() =>
-              router.push("/system/light-bills")
+              router.push("/system/payments")
             }
           />
 

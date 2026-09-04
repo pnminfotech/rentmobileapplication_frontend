@@ -20,21 +20,7 @@ const PROPERTY_FILTERS = [
   { label: "Residential Rooms", value: "room" },
   { label: "Commercial Shop", value: "shop" },
 ];
-const PAYER_FILTERS = [
-  { label: "All", value: "all" },
-  { label: "Tenant", value: "tenant" },
-  { label: "Owner", value: "owner" },
-];
 const PROPERTY_ORDER = ["room", "bed", "shop"];
-const MODE_LABELS = {
-  owner_only: "Owner paid",
-  tenant_unit_manual: "Tenant manual",
-  tenant_unit_meter: "Tenant meter",
-  fixed_monthly: "Fixed monthly",
-  room_meter_split: "Room meter split",
-  fixed_per_tenant: "Fixed per tenant",
-  common_meter_split: "Common hostel split",
-};
 const FIXED_SETTING_LABELS = {
   fixed_per_tenant: "Same fixed amount for every tenant",
   fixed_monthly: "Fixed amount every month",
@@ -62,6 +48,18 @@ function shiftMonth(date, offset) {
   return new Date(date.getFullYear(), date.getMonth() + offset, 1);
 }
 
+function billingMonthDate(value) {
+  const match = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/.exec(String(value || ""));
+  if (!match) return null;
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(match[1]);
+  return new Date(2000 + Number(match[2]), month, 1);
+}
+
+function monthFromBillingMonth(value) {
+  const date = billingMonthDate(value);
+  return date || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+}
+
 function startOfDay(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -84,19 +82,29 @@ function billAmount(bill) {
   return Number(bill.amount ?? bill.salary ?? 0);
 }
 
-function billTypeLabel(type) {
-  if (type === "maushi") return "Maushi";
-  if (type === "custom") return "Custom";
-  return "Meter";
-}
-
-function billModeLabel(bill) {
-  return MODE_LABELS[bill.billingMode] || (bill.billPayer === "owner" || bill.isUnitLinked === false ? "Owner paid" : "Tenant bill");
-}
-
 function isRecoverableBill(bill) {
   return !["owner_only", "fixed_monthly", "fixed_per_tenant"].includes(bill.billingMode)
     && !(bill.billPayer === "owner" && bill.billingMode !== "common_meter_split");
+}
+
+function includedUnitsForBill(bill, settings) {
+  if (Number.isFinite(Number(bill.includedUnits))) return Number(bill.includedUnits);
+  return Number(settings?.[propertyType(bill.propertyType)]?.includedUnits || 0);
+}
+
+function isWithinIncludedLimit(bill, settings) {
+  if (!["room_meter_split", "room_meter_rate", "room_meter_actual_bill"].includes(bill.billingMode)) return false;
+  const consumed = Number(bill.consumedUnits);
+  const included = includedUnitsForBill(bill, settings);
+  return Number.isFinite(consumed) && included > 0 && consumed <= included;
+}
+
+function meterUsageLabel(bill, settings) {
+  const consumed = Number(bill.consumedUnits);
+  if (!Number.isFinite(consumed)) return "";
+  const included = includedUnitsForBill(bill, settings);
+  if (!["room_meter_split", "room_meter_rate", "room_meter_actual_bill"].includes(bill.billingMode) || included <= 0) return `${consumed} units used`;
+  return `${consumed} used | ${Math.max(consumed - included, 0)} extra`;
 }
 
 function propertyType(value) {
@@ -125,27 +133,34 @@ function fixedSettingSummary(type, settings = {}) {
 }
 
 function unitLabel(bill) {
-  if (bill.billPayer === "owner" || bill.isUnitLinked === false) {
+  if (bill.isUnitLinked === false) {
     return bill.name || bill.customLabel || "Owner paid bill";
   }
   const roomNo = bill.roomNo || "-";
   const type = propertyType(bill.propertyType);
-  if (type === "room") return `Room ${roomNo}`;
-  if (type === "shop") return `Shop ${roomNo}`;
-  return `Hostel room ${roomNo}`;
+  const base = type === "room" ? `Room ${roomNo}` : type === "shop" ? `Shop ${roomNo}` : `Hostel room ${roomNo}`;
+  const location = [bill.category, bill.wingName ? `Wing ${bill.wingName}` : ""].filter(Boolean).join(" | ");
+  return location ? `${base} (${location})` : base;
 }
 
 function billTitle(bill) {
-  if (bill.billPayer === "owner" || bill.isUnitLinked === false) return bill.name || bill.customLabel || "Owner paid bill";
-  if (bill.type === "meter") return `${unitLabel(bill)} meter`;
-  return bill.name || bill.customLabel || billTypeLabel(bill.type);
+  if (bill.isUnitLinked === false) return bill.name || bill.customLabel || "Owner bill";
+  return unitLabel(bill);
 }
 
-function auditMeta(item) {
-  const changedAt = item.updatedAt || item.createdAt;
-  if (!changedAt) return "";
-  const name = item.updatedByName || item.createdByName || "Admin";
-  return `Last change ${formatDate(changedAt)} by ${name}`;
+function rentChargeLabel(bill, settings) {
+  if (isWithinIncludedLimit(bill, settings)) return "No rent charge";
+  return isRecoverableBill(bill) ? "Added to rent" : "Not added to rent";
+}
+
+function providerStatusLabel(bill) {
+  return bill.status === "paid" ? "Bill paid" : "Bill pending";
+}
+
+function tenantCollectionLabel(bill) {
+  const collection = bill.tenantCollection;
+  if (!collection?.applicable) return "No tenant collection";
+  return `Tenant collection: ${money(collection.collected)} of ${money(collection.expected)}`;
 }
 
 export default function LightBillsScreen() {
@@ -153,18 +168,20 @@ export default function LightBillsScreen() {
   const params = useLocalSearchParams();
   const initialStatus = Array.isArray(params.status) ? params.status[0] : params.status;
   const initialRange = Array.isArray(params.range) ? params.range[0] : params.range;
+  const initialBillingMonth = Array.isArray(params.billingMonth) ? params.billingMonth[0] : params.billingMonth;
   const [bills, setBills] = useState([]);
   const [allBills, setAllBills] = useState([]);
   const [settings, setSettings] = useState(null);
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [selectedMonth, setSelectedMonth] = useState(() => monthFromBillingMonth(initialBillingMonth));
   const [summaryMode, setSummaryMode] = useState(() => SUMMARY_FILTERS.some((item) => item.value === initialRange) ? initialRange : "month");
   const [statusFilter] = useState(() => ["pending", "paid"].includes(initialStatus) ? initialStatus : "all");
   const [showSummaryFilter, setShowSummaryFilter] = useState(false);
   const [summaryStart, setSummaryStart] = useState(toDateValue(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
   const [summaryEnd, setSummaryEnd] = useState(toDateValue());
   const [propertyFilter, setPropertyFilter] = useState("all");
-  const [payerFilter, setPayerFilter] = useState("all");
   const [showPropertyFilter, setShowPropertyFilter] = useState(false);
+  const [wingFilter, setWingFilter] = useState("all");
+  const [showWingFilter, setShowWingFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
   const [error, setError] = useState("");
@@ -212,28 +229,36 @@ export default function LightBillsScreen() {
   const visibleBills = useMemo(() => {
     const source = summaryMode === "month" ? monthBills : allBills.filter((bill) => (bill.type || "meter") === "meter");
     return source.filter((bill) => {
-      const date = new Date(bill.date);
+      // The billing month decides which Light bills month contains this entry.
+      // The bill date is only a reference date and may be from another month.
+      const date = billingMonthDate(bill.billingMonth) || new Date(bill.date);
       if (Number.isNaN(date.getTime())) return false;
       if (summaryRange.start && date < summaryRange.start) return false;
       if (summaryRange.end && date > summaryRange.end) return false;
-      const payer = bill.billPayer === "owner" || bill.isUnitLinked === false ? "owner" : "tenant";
-      if (payerFilter !== "all" && payer !== payerFilter) return false;
-      if (payer === "tenant" && propertyFilter !== "all" && propertyType(bill.propertyType) !== propertyFilter) return false;
-      if (payer === "owner" && propertyFilter !== "all") return false;
+      if (propertyFilter !== "all" && propertyType(bill.propertyType) !== propertyFilter) return false;
+      if (wingFilter !== "all" && String(bill.wingName || "").trim() !== wingFilter) return false;
       if (statusFilter !== "all" && (statusFilter === "paid" ? bill.status !== "paid" : bill.status === "paid")) return false;
       return true;
     });
-  }, [allBills, monthBills, payerFilter, propertyFilter, statusFilter, summaryMode, summaryRange]);
+  }, [allBills, monthBills, propertyFilter, statusFilter, summaryMode, summaryRange, wingFilter]);
   const propertyFilterLabel = PROPERTY_FILTERS.find((item) => item.value === propertyFilter)?.label || "All";
+  const wingOptions = useMemo(() => {
+    const names = [...new Set(
+      [...monthBills, ...allBills]
+        .filter((bill) => propertyFilter === "all" || propertyType(bill.propertyType) === propertyFilter)
+        .map((bill) => String(bill.wingName || "").trim())
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    return [{ label: "All wings", value: "all" }, ...names.map((name) => ({ label: `Wing ${name}`, value: name }))];
+  }, [allBills, monthBills, propertyFilter]);
   const total = useMemo(() => visibleBills.reduce((sum, bill) => sum + billAmount(bill), 0), [visibleBills]);
   const pending = useMemo(() => visibleBills.filter((bill) => bill.status !== "paid").reduce((sum, bill) => sum + billAmount(bill), 0), [visibleBills]);
   const automaticCharges = useMemo(() => {
-    if (payerFilter === "owner") return [];
     return ["bed", "room", "shop"]
       .map((type) => fixedSettingSummary(type, settings?.[type]))
       .filter(Boolean)
       .filter((item) => propertyFilter === "all" || item.type === propertyFilter);
-  }, [payerFilter, propertyFilter, settings]);
+  }, [propertyFilter, settings]);
   const groupedBills = useMemo(() => {
     const sections = PROPERTY_ORDER.map((type) => ({
       type,
@@ -244,7 +269,7 @@ export default function LightBillsScreen() {
     const ownerSection = { type: "owner", title: "Owner paid bills", units: [] };
 
     visibleBills.forEach((bill) => {
-      if (bill.billPayer === "owner" || bill.isUnitLinked === false) {
+      if (bill.isUnitLinked === false) {
         ownerSection.units.push({ label: billTitle(bill), bills: [bill] });
         return;
       }
@@ -319,7 +344,7 @@ export default function LightBillsScreen() {
           <View style={styles.summary}>
             <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Total | {summaryRange.label}</Text><Text style={styles.summaryValue}>{money(total)}</Text></View>
             <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Pending</Text><Text style={[styles.summaryValue, pending > 0 && styles.pending]}>{money(pending)}</Text></View>
+            <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Bills pending</Text><Text style={[styles.summaryValue, pending > 0 && styles.pending]}>{money(pending)}</Text></View>
             <Pressable onPress={() => setShowSummaryFilter((value) => !value)} style={styles.summaryFilterButton}>
               <SlidersHorizontal size={19} color={colors.primary} />
             </Pressable>
@@ -344,13 +369,6 @@ export default function LightBillsScreen() {
           ) : null}
 
           <View style={styles.propertyFilterWrap}>
-            <View style={styles.payerTabs}>
-              {PAYER_FILTERS.map((item) => (
-                <Pressable key={item.value} onPress={() => setPayerFilter(item.value)} style={[styles.payerTab, payerFilter === item.value && styles.payerTabActive]}>
-                  <Text style={[styles.payerTabText, payerFilter === item.value && styles.payerTabTextActive]}>{item.label}</Text>
-                </Pressable>
-              ))}
-            </View>
             <Pressable onPress={() => setShowPropertyFilter((value) => !value)} style={styles.propertySelect}>
               <Text style={styles.propertySelectLabel}>Property</Text>
               <Text style={styles.propertySelectValue}>{propertyFilter === "all" ? propertyFilterLabel : stackedPropertyLabel(propertyFilterLabel)}</Text>
@@ -359,8 +377,25 @@ export default function LightBillsScreen() {
             {showPropertyFilter ? (
               <View style={styles.propertyOptions}>
                 {PROPERTY_FILTERS.map((item) => (
-                  <Pressable key={item.value} onPress={() => { setPropertyFilter(item.value); setShowPropertyFilter(false); }} style={[styles.propertyOption, propertyFilter === item.value && styles.propertyOptionActive]}>
+                  <Pressable key={item.value} onPress={() => { setPropertyFilter(item.value); setWingFilter("all"); setShowPropertyFilter(false); }} style={[styles.propertyOption, propertyFilter === item.value && styles.propertyOptionActive]}>
                     <Text style={[styles.propertyOptionText, propertyFilter === item.value && styles.propertyOptionTextActive]}>{item.value === "all" ? item.label : stackedPropertyLabel(item.label)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.propertyFilterWrap}>
+            <Pressable onPress={() => setShowWingFilter((value) => !value)} style={styles.propertySelect}>
+              <Text style={styles.propertySelectLabel}>Wing</Text>
+              <Text style={styles.propertySelectValue}>{wingOptions.find((item) => item.value === wingFilter)?.label || "All wings"}</Text>
+              <ChevronRight size={18} color={colors.muted} style={showWingFilter && styles.chevronOpen} />
+            </Pressable>
+            {showWingFilter ? (
+              <View style={styles.propertyOptions}>
+                {wingOptions.map((item) => (
+                  <Pressable key={item.value} onPress={() => { setWingFilter(item.value); setShowWingFilter(false); }} style={[styles.propertyOption, wingFilter === item.value && styles.propertyOptionActive]}>
+                    <Text style={[styles.propertyOptionText, wingFilter === item.value && styles.propertyOptionTextActive]}>{item.label}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -389,7 +424,7 @@ export default function LightBillsScreen() {
                     <Text style={styles.rowTitle}>{item.title}</Text>
                     <Text style={styles.rowMeta}>{item.label} | {monthLabel(selectedMonth)}</Text>
                     <Text style={styles.recoverMeta}>Shown automatically in Add Rent for each applicable tenant</Text>
-                    {item.notes ? <Text style={styles.auditMeta}>{item.notes}</Text> : null}
+                    {item.notes ? <Text style={styles.rowMeta}>{item.notes}</Text> : null}
                   </View>
                   <View style={styles.amountBox}>
                     <Text style={styles.amount}>{money(item.amount)}</Text>
@@ -405,23 +440,19 @@ export default function LightBillsScreen() {
               <Text style={styles.sectionTitle}>{section.title}</Text>
               {section.units.map((unit) => (
                 <View key={unit.label} style={styles.unitGroup}>
-                  <Text style={styles.unitTitle}>{unit.label}</Text>
                   {unit.bills.map((bill) => (
                     <View key={bill._id} style={styles.row}>
                       <View style={styles.rowMain}>
                         <Text style={styles.rowTitle}>{billTitle(bill)}</Text>
-                        <Text style={styles.rowMeta}>
-                          {billTypeLabel(bill.type)} | {formatDate(bill.date)}
-                        </Text>
-                        <Text style={[styles.payerMeta, isRecoverableBill(bill) ? styles.recoverMeta : styles.ownerMeta]}>
-                          {billModeLabel(bill)} | {isRecoverableBill(bill) ? "Added in rent" : "Not added in rent"}
-                        </Text>
-                        {bill.meterNo || bill.totalReading ? <Text style={styles.rowMeta}>Meter {bill.meterNo || "-"} | Reading {bill.totalReading || 0}</Text> : null}
-                        {auditMeta(bill) ? <Text style={styles.auditMeta}>{auditMeta(bill)}</Text> : null}
+                        <Text style={styles.rowMeta}>{formatDate(bill.date)}</Text>
+                        {bill.meterNo || bill.totalReading !== undefined ? <Text style={styles.rowMeta}>Meter {bill.meterNo || "-"} | Reading {bill.totalReading ?? 0}</Text> : null}
+                        {meterUsageLabel(bill, settings) ? <Text style={styles.rowMeta}>{meterUsageLabel(bill, settings)}</Text> : null}
+                        <Text style={[styles.payerMeta, isRecoverableBill(bill) ? styles.recoverMeta : styles.ownerMeta]}>{rentChargeLabel(bill, settings)}</Text>
+                        <Text style={[styles.collectionMeta, bill.tenantCollection?.balance > 0 ? styles.collectionDue : styles.collectionComplete]}>{tenantCollectionLabel(bill)}</Text>
                       </View>
                       <View style={styles.amountBox}>
                         <Text style={styles.amount}>{money(billAmount(bill))}</Text>
-                        <Text style={[styles.status, bill.status === "paid" && styles.paid]}>{bill.status || "pending"}</Text>
+                        <Text style={[styles.status, bill.status === "paid" && styles.paid]}>{providerStatusLabel(bill)}</Text>
                       </View>
                       <View style={styles.actionStack}>
                         <Pressable onPress={() => router.push({ pathname: "/system/light-bill-form", params: { id: bill._id } })} style={styles.actionButton}>
@@ -441,7 +472,7 @@ export default function LightBillsScreen() {
             </View>
           ))}
         </ScrollView>
-        <Pressable onPress={() => router.push("/system/light-bill-form")} style={styles.fab}>
+        <Pressable onPress={() => router.push({ pathname: "/system/light-bill-form", params: { billingMonth: `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][selectedMonth.getMonth()]}-${String(selectedMonth.getFullYear()).slice(-2)}` } })} style={styles.fab}>
           <Plus size={24} color={colors.surface} />
         </Pressable>
       </View>
@@ -477,11 +508,6 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: "row", gap: 10 },
   dateField: { flex: 1, minWidth: 0 },
   propertyFilterWrap: { position: "relative", zIndex: 2 },
-  payerTabs: { minHeight: 44, marginBottom: 8, flexDirection: "row", gap: 6, padding: 4, borderRadius: 7, backgroundColor: colors.border },
-  payerTab: { flex: 1, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: 5 },
-  payerTabActive: { backgroundColor: colors.surface },
-  payerTabText: { color: colors.muted, fontSize: 12, fontWeight: "800" },
-  payerTabTextActive: { color: colors.primary },
   propertySelect: { minHeight: 48, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
   propertySelectLabel: { color: colors.muted, fontSize: 12, fontWeight: "700" },
   propertySelectValue: { flex: 1, marginLeft: 8, color: colors.text, fontSize: 14, fontWeight: "800" },
@@ -496,17 +522,18 @@ const styles = StyleSheet.create({
   section: { gap: 8 },
   sectionTitle: { marginTop: 8, color: colors.text, fontSize: 16, fontWeight: "800" },
   unitGroup: { gap: 6 },
-  unitTitle: { color: colors.primary, fontSize: 13, fontWeight: "800" },
   autoChargeCard: { minHeight: 76, flexDirection: "row", alignItems: "center", paddingRight: 8, borderWidth: 1, borderColor: colors.primarySoft, borderRadius: 7, backgroundColor: colors.surface },
   autoChargeIcon: { width: 42, height: 42, marginLeft: 10, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: colors.primarySoft },
-  row: { minHeight: 78, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  row: { minHeight: 72, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
   rowMain: { flex: 1, minWidth: 0, padding: 12 },
   rowTitle: { color: colors.text, fontWeight: "800" },
   rowMeta: { marginTop: 4, color: colors.muted, fontSize: 11 },
   payerMeta: { marginTop: 4, color: colors.primary, fontSize: 11, fontWeight: "800" },
+  collectionMeta: { marginTop: 3, fontSize: 10, fontWeight: "700" },
+  collectionDue: { color: colors.warning },
+  collectionComplete: { color: colors.success },
   recoverMeta: { color: colors.success },
   ownerMeta: { color: colors.warning },
-  auditMeta: { marginTop: 4, color: colors.primary, fontSize: 10, fontWeight: "700" },
   amountBox: { width: 78, alignItems: "flex-end", paddingVertical: 10, paddingRight: 8 },
   amount: { color: colors.text, fontSize: 12, fontWeight: "800", textAlign: "right" },
   status: { marginTop: 4, color: colors.warning, fontSize: 11, fontWeight: "700", textTransform: "capitalize" },

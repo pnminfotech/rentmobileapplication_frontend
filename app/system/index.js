@@ -32,7 +32,7 @@ import {
   Users,
   WalletCards,
 } from "lucide-react-native";
-import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
+import Svg, { Path, Rect } from "react-native-svg";
 
 import { getSystemDashboard } from "../../src/api/saasApi";
 import { getExpenses } from "../../src/api/expenseApi";
@@ -122,38 +122,6 @@ function IconTile({ Icon, color = GREEN.deep, bg = GREEN.soft, size = 44 }) {
   );
 }
 
-function CityIllustration() {
-  return (
-    <Svg width="190" height="96" viewBox="0 0 260 130" style={styles.citySvg}>
-      <Defs>
-        <LinearGradient id="buildingGlow" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#DDEBCD" stopOpacity="0.88" />
-          <Stop offset="1" stopColor="#86A578" stopOpacity="0.58" />
-        </LinearGradient>
-      </Defs>
-      <Circle cx="147" cy="54" r="26" fill="#D8C96E" opacity="0.32" />
-      <Path d="M205 53l7 4 7-4M225 68l6 3 6-3" stroke="#AEC39A" strokeWidth="2" strokeLinecap="round" opacity="0.45" />
-      <Path d="M20 112h218" stroke="#BFD4B2" strokeWidth="3" strokeLinecap="round" opacity="0.45" />
-      <Path d="M42 112c-3-24 15-28 24-13 4-21 30-23 34 13" fill="#6F8F5E" opacity="0.42" />
-      <Path d="M190 112c0-19 11-26 23-19 2-23 30-23 34 19" fill="#5B7C4E" opacity="0.38" />
-      <Rect x="90" y="80" width="48" height="32" rx="3" fill="#9DB58B" opacity="0.74" />
-      <Path d="M86 81h57l-13-16h-31z" fill="#304F35" opacity="0.7" />
-      <Rect x="100" y="91" width="9" height="10" rx="1.5" fill="#F7F0E3" opacity="0.72" />
-      <Rect x="119" y="91" width="9" height="10" rx="1.5" fill="#F7F0E3" opacity="0.72" />
-      <Rect x="137" y="42" width="55" height="70" rx="3" fill="url(#buildingGlow)" />
-      <Path d="M132 44h65l-16-17h-33z" fill="#25472F" opacity="0.78" />
-      <Rect x="150" y="55" width="10" height="11" rx="1.5" fill="#F7F0E3" opacity="0.8" />
-      <Rect x="170" y="55" width="10" height="11" rx="1.5" fill="#F7F0E3" opacity="0.8" />
-      <Rect x="150" y="77" width="10" height="11" rx="1.5" fill="#F7F0E3" opacity="0.66" />
-      <Rect x="170" y="77" width="10" height="11" rx="1.5" fill="#F7F0E3" opacity="0.66" />
-      <Rect x="205" y="70" width="32" height="42" rx="3" fill="#789767" opacity="0.46" />
-      <Rect x="214" y="80" width="6" height="7" rx="1" fill="#E9F0DF" opacity="0.55" />
-      <Rect x="226" y="80" width="6" height="7" rx="1" fill="#E9F0DF" opacity="0.55" />
-      <Path d="M82 113h154" stroke="#E4EED9" strokeWidth="5" strokeLinecap="round" opacity="0.52" />
-    </Svg>
-  );
-}
-
 function EmptyTransactions() {
   return (
     <View style={styles.emptyTransactionWrap}>
@@ -228,34 +196,57 @@ function RevenueMini({ label, value, percent, color, Icon }) {
   );
 }
 
+function CityIllustration() {
+  return (
+    <View pointerEvents="none" style={styles.heroArtwork}>
+      <Svg width="174" height="112" viewBox="0 0 174 112">
+        <Path d="M5 104h164" stroke="#CFE8C7" strokeWidth="3" strokeLinecap="round" opacity="0.75" />
+        <Rect x="104" y="36" width="44" height="68" rx="3" fill="#B6DAB0" />
+        <Rect x="111" y="46" width="8" height="10" rx="1" fill="#EAF7E5" />
+        <Rect x="126" y="46" width="8" height="10" rx="1" fill="#EAF7E5" />
+        <Rect x="111" y="64" width="8" height="10" rx="1" fill="#EAF7E5" />
+        <Rect x="126" y="64" width="8" height="10" rx="1" fill="#EAF7E5" />
+        <Rect x="111" y="82" width="8" height="10" rx="1" fill="#EAF7E5" />
+        <Rect x="126" y="82" width="8" height="10" rx="1" fill="#EAF7E5" />
+        <Path d="M37 54 75 23l38 31v50H37z" fill="#D8ECD1" />
+        <Path d="M29 55 75 16l46 39-8 8-38-31-38 31z" fill="#A9D0A3" />
+        <Rect x="50" y="63" width="16" height="15" rx="2" fill="#6C9C70" />
+        <Rect x="84" y="63" width="16" height="15" rx="2" fill="#6C9C70" />
+        <Rect x="69" y="79" width="13" height="25" rx="2" fill="#7CAA77" />
+        <Path d="M150 104V69l13-11 12 11v35z" fill="#9EC99B" />
+        <Path d="M148 69l15-14 15 14" fill="none" stroke="#CFE8C7" strokeWidth="4" strokeLinejoin="round" />
+      </Svg>
+    </View>
+  );
+}
+
 function HeroCard({ organizationName, totalDue, pendingCount, onPress, onWalletPress }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.heroCard, pressed && styles.pressed]}>
+      <CityIllustration />
       <View style={styles.heroContent}>
-        <Text style={styles.heroLabel}>Total Revenue</Text>
+        <Text style={styles.heroLabel}>Total due this month</Text>
         <Text style={styles.heroAmount}>{money(totalDue)}</Text>
+        <Text style={styles.heroOrg} numberOfLines={1}>{organizationName}</Text>
         <View style={styles.heroPill}>
           <Text style={styles.heroPillText}>• {pendingCount} pending rents</Text>
         </View>
       </View>
       <Pressable onPress={onWalletPress} style={styles.walletBubble}>
-        <WalletCards size={26} color={colors.surface} />
+        <WalletCards size={24} color={GREEN.deep} />
       </Pressable>
-      <CityIllustration />
-      <Text style={styles.heroOrg} numberOfLines={1}>{organizationName}</Text>
     </Pressable>
   );
 }
 
-function KpiCard({ Icon, label, value, color, bg, onPress, width }) {
+function KpiCard({ Icon, label, value, color, bg, onPress, width, dark = false }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.kpiCard, { width }, pressed && styles.pressed]}>
-      <IconTile Icon={Icon} color={color} bg={bg} size={42} />
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.kpiCard, { width, backgroundColor: bg, borderColor: bg }, pressed && styles.pressed]}>
+      <IconTile Icon={Icon} color={color} bg={dark ? "rgba(255,255,255,0.16)" : GREEN.soft} size={38} />
       <View style={styles.kpiCopy}>
-        <Text style={styles.kpiValue}>{value}</Text>
-        <Text style={styles.kpiLabel} numberOfLines={2}>{label}</Text>
+        <Text style={[styles.kpiValue, dark && styles.kpiValueOnDark]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{value}</Text>
+        <Text style={[styles.kpiLabel, dark && styles.kpiLabelOnDark]} numberOfLines={2}>{label}</Text>
       </View>
-      {onPress ? <ChevronRight size={17} color={GREEN.muted} /> : null}
     </Pressable>
   );
 }
@@ -389,6 +380,8 @@ export default function SystemAdminScreen() {
         currentPendingCount: rentRows.filter((row) => Math.max(Number(row.expected || 0) - Number(row.paid || 0), 0) > 0).length,
         currentPaidCount: rentRows.filter((row) => Number(row.expected || 0) > 0 && Number(row.paid || 0) >= Number(row.expected || 0)).length,
         expensePaid: light.paid + staff.paid + other.paid,
+        lightPaid: light.paid,
+        lightPending: light.pending,
       });
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load dashboard.");
@@ -453,17 +446,16 @@ export default function SystemAdminScreen() {
       contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding }]}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { marginHorizontal: -responsive.pagePadding, paddingHorizontal: responsive.pagePadding }]}>
         <Pressable onPress={() => router.push("/system/more")} style={styles.menuButton}>
-          <Menu size={24} color={GREEN.text} />
+          <Menu size={24} color={GREEN.deep} />
         </Pressable>
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.eyebrow}>SYSTEM CONTROL CENTER</Text>
           <Text style={styles.title}>Dashboard</Text>
         </View>
         <View style={styles.headerActions}>
           <Pressable onPress={() => router.push("/system/notifications")} style={styles.headerIcon}>
-            <Bell size={21} color={GREEN.text} />
+            <Bell size={21} color={GREEN.deep} />
             {unreadNotifications > 0 ? (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadNotifications > 99 ? "99+" : unreadNotifications}</Text>
@@ -471,7 +463,7 @@ export default function SystemAdminScreen() {
             ) : null}
           </Pressable>
           <Pressable onPress={logout} style={styles.headerIcon}>
-            <LogOut size={21} color={GREEN.orange} />
+            <LogOut size={21} color={GREEN.deep} />
           </Pressable>
         </View>
       </View>
@@ -489,10 +481,10 @@ export default function SystemAdminScreen() {
           />
 
           <View style={styles.kpiGrid}>
-            <KpiCard width={kpiWidth} Icon={Building2} label="Units" value={totalUnits} color={GREEN.orange} bg={GREEN.peach} onPress={() => router.push("/system/units")} />
-            <KpiCard width={kpiWidth} Icon={Users} label="Active Tenants" value={totals.activeTenants ?? 0} color={GREEN.mid} bg={GREEN.soft} onPress={() => router.push("/system/tenants")} />
-            <KpiCard width={kpiWidth} Icon={FileClock} label="Pending Payments" value={pendingRentCount} color={GREEN.orange} bg={GREEN.peach} onPress={() => router.push({ pathname: "/system/payments", params: { filter: "Overdue" } })} />
-            <KpiCard width={kpiWidth} Icon={ShieldCheck} label="Confirmed" value={confirmedRentCount} color={GREEN.deep} bg={GREEN.soft} onPress={() => router.push({ pathname: "/system/payments", params: { filter: "Paid" } })} />
+            <KpiCard width={kpiWidth} Icon={Building2} label="Total Units" value={totalUnits} color={colors.surface} bg={GREEN.deep} dark onPress={() => router.push("/system/units")} />
+            <KpiCard width={kpiWidth} Icon={Users} label="Active Tenants" value={totals.activeTenants ?? 0} color={colors.surface} bg={GREEN.deep} dark onPress={() => router.push("/system/tenants")} />
+            <KpiCard width={kpiWidth} Icon={FileClock} label="Pending Rents" value={pendingRentCount} color={colors.surface} bg={GREEN.deep} dark onPress={() => router.push({ pathname: "/system/payments", params: { filter: "Overdue" } })} />
+            <KpiCard width={kpiWidth} Icon={ShieldCheck} label="Rent Paid" value={confirmedRentCount} color={colors.surface} bg={GREEN.deep} dark onPress={() => router.push({ pathname: "/system/payments", params: { filter: "Paid" } })} />
           </View>
 
           <View style={styles.unitStrip}>
@@ -598,16 +590,16 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: GREEN.screen },
   content: { paddingTop: 8, paddingBottom: 104 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: GREEN.screen },
-  header: { marginBottom: 12, flexDirection: "row", alignItems: "center" },
-  menuButton: { width: 36, height: 42, alignItems: "flex-start", justifyContent: "center" },
+  header: { minHeight: 64, marginBottom: 14, flexDirection: "row", alignItems: "center" },
+  menuButton: { width: 42, height: 48, alignItems: "flex-start", justifyContent: "center" },
   headerTitleWrap: { flex: 1 },
-  eyebrow: { color: GREEN.deep, fontSize: 11, fontWeight: "900", textTransform: "uppercase" },
-  title: { marginTop: 2, color: GREEN.text, fontSize: 28, lineHeight: 32, fontWeight: "900" },
+  eyebrow: { color: GREEN.muted, fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
+  title: { color: GREEN.text, fontSize: 25, lineHeight: 30, fontWeight: "900" },
   headerActions: { flexDirection: "row", gap: 8 },
-  headerIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "#FFF7EC" },
+  headerIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: GREEN.card },
   badge: { position: "absolute", top: -4, right: -2, minWidth: 18, height: 18, paddingHorizontal: 5, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: colors.danger },
   badgeText: { color: colors.surface, fontSize: 10, fontWeight: "900" },
-  revenueCard: { marginTop: 14, padding: 12, borderRadius: 18, backgroundColor: GREEN.deep, ...shadow },
+  revenueCard: { marginTop: 14, padding: 16, borderRadius: 30, backgroundColor: GREEN.deep, ...shadow },
   revenueTop: { flexDirection: "row", alignItems: "center", minHeight: 126 },
   revenueChart: { width: 118, alignItems: "center" },
   donutWrap: { width: 108, height: 108, alignItems: "center", justifyContent: "center" },
@@ -623,7 +615,7 @@ const styles = StyleSheet.create({
   growthPill: { alignSelf: "flex-start", marginTop: 12, paddingHorizontal: 10, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.15)" },
   growthText: { color: "#E8F7D9", fontSize: 11, fontWeight: "800" },
   revenueBreakdown: { marginTop: 10, flexDirection: "row", gap: 7 },
-  revenueMini: { flex: 1, minHeight: 70, padding: 8, borderRadius: 11, backgroundColor: "#FFF8EA" },
+  revenueMini: { flex: 1, minHeight: 70, padding: 10, borderRadius: 20, backgroundColor: "#FFF8EA" },
   revenueMiniTop: { flexDirection: "row", alignItems: "center", gap: 5 },
   revenueMiniIcon: { width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: 12 },
   revenueMiniLabel: { flex: 1, color: GREEN.text, fontSize: 10, fontWeight: "900" },
@@ -634,7 +626,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: GREEN.text, fontSize: 18, fontWeight: "900" },
   viewAllButton: { flexDirection: "row", alignItems: "center", gap: 2 },
   viewAllText: { color: GREEN.deep, fontSize: 12, fontWeight: "900" },
-  transactionPanel: { minHeight: 190, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: GREEN.border, backgroundColor: GREEN.card, ...shadow },
+  transactionPanel: { minHeight: 190, padding: 16, borderRadius: 30, borderWidth: 1, borderColor: GREEN.border, backgroundColor: GREEN.card, ...shadow },
   panelHeader: { marginBottom: 3, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   panelSubTitle: { color: GREEN.muted, fontSize: 12, fontWeight: "800" },
   refreshButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "#F6EEE8" },
@@ -646,28 +638,30 @@ const styles = StyleSheet.create({
   transactionAmount: { color: GREEN.text, fontSize: 13, fontWeight: "900" },
   statusPill: { marginTop: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 13 },
   statusText: { fontSize: 10, fontWeight: "900" },
-  heroCard: { marginTop: 14, minHeight: 166, overflow: "hidden", borderRadius: 15, backgroundColor: GREEN.deep, padding: 16, ...shadow },
-  heroContent: { zIndex: 3 },
-  heroLabel: { color: "#DDEBD3", fontSize: 13, fontWeight: "800" },
-  heroAmount: { marginTop: 8, color: colors.surface, fontSize: 30, fontWeight: "900" },
-  heroPill: { alignSelf: "flex-start", marginTop: 14, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.16)" },
-  heroPillText: { color: "#E8F7D9", fontSize: 11, fontWeight: "900" },
-  walletBubble: { position: "absolute", top: 18, right: 18, zIndex: 4, width: 54, height: 54, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: "rgba(255,255,255,0.16)" },
-  citySvg: { position: "absolute", right: -2, bottom: -1, opacity: 0.94 },
-  heroOrg: { position: "absolute", left: 16, bottom: 14, maxWidth: "52%", color: "#DBE8D3", fontSize: 11, fontWeight: "800" },
+  heroCard: { minHeight: 148, overflow: "hidden", borderRadius: 16, borderWidth: 1, borderColor: "#DDE9D5", backgroundColor: "#EAF6E7", padding: 16, ...shadow },
+  heroContent: { flex: 1, paddingRight: 84, zIndex: 1 },
+  heroLabel: { color: GREEN.deeper, fontSize: 12, fontWeight: "800" },
+  heroAmount: { marginTop: 8, color: GREEN.text, fontSize: 29, fontWeight: "900" },
+  heroPill: { alignSelf: "flex-start", marginTop: 13, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 7, backgroundColor: colors.surface },
+  heroPillText: { color: GREEN.deeper, fontSize: 11, fontWeight: "900" },
+  walletBubble: { position: "absolute", top: 16, right: 16, width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.surface },
+  heroArtwork: { position: "absolute", right: -8, bottom: 0, width: 174, height: 112, opacity: 0.92 },
+  heroOrg: { marginTop: 6, color: GREEN.muted, fontSize: 11, fontWeight: "800" },
   kpiGrid: { marginTop: 13, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  kpiCard: { minHeight: 86, marginBottom: 10, padding: 13, flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, borderColor: GREEN.border, backgroundColor: GREEN.card, ...shadow },
+  kpiCard: { minHeight: 64, marginBottom: 10, paddingHorizontal: 11, paddingVertical: 8, flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, borderColor: GREEN.border, ...shadow },
   iconTile: { alignItems: "center", justifyContent: "center" },
   kpiCopy: { flex: 1, minWidth: 0, marginLeft: 10 },
-  kpiValue: { color: GREEN.text, fontSize: 22, fontWeight: "900" },
-  kpiLabel: { marginTop: 2, color: GREEN.muted, fontSize: 12, lineHeight: 16, fontWeight: "800" },
-  unitStrip: { marginTop: 2, padding: 10, flexDirection: "row", borderRadius: 15, borderWidth: 1, borderColor: GREEN.border, backgroundColor: "#FFF7EC" },
+  kpiValue: { color: GREEN.text, fontSize: 21, fontWeight: "900" },
+  kpiValueOnDark: { color: colors.surface },
+  kpiLabel: { marginTop: 3, color: GREEN.muted, fontSize: 11, lineHeight: 15, fontWeight: "800", textTransform: "uppercase" },
+  kpiLabelOnDark: { color: "#D8ECD1" },
+  unitStrip: { marginTop: 2, padding: 10, flexDirection: "row", borderRadius: 16, borderWidth: 1, borderColor: GREEN.border, backgroundColor: GREEN.card },
   unitItem: { flex: 1, alignItems: "center", paddingHorizontal: 3, borderRightWidth: 1, borderRightColor: GREEN.border },
   unitValue: { marginTop: 4, color: GREEN.deep, fontSize: 18, fontWeight: "900" },
   unitLabel: { marginTop: 2, color: GREEN.muted, fontSize: 10, lineHeight: 12, fontWeight: "800", textAlign: "center" },
   quickSectionTitle: { marginTop: 16, color: GREEN.text, fontSize: 18, fontWeight: "900" },
   quickGrid: { marginTop: 10, flexDirection: "row", gap: 8 },
-  quickCard: { flex: 1, minHeight: 78, padding: 9, alignItems: "center", justifyContent: "center", borderRadius: 14, borderWidth: 1, borderColor: GREEN.border, backgroundColor: GREEN.card, ...shadow },
+  quickCard: { flex: 1, minHeight: 96, padding: 9, alignItems: "center", justifyContent: "center", borderRadius: 24, borderWidth: 1, borderColor: GREEN.border, backgroundColor: GREEN.card, ...shadow },
   quickText: { marginTop: 7, color: GREEN.text, fontSize: 11, fontWeight: "900", textAlign: "center" },
   trackCard: { marginTop: 14, minHeight: 88, padding: 11, flexDirection: "row", alignItems: "center", borderRadius: 13, backgroundColor: "#FFEBD5", ...shadow },
   trackImage: { width: 92, height: 64, marginRight: 8 },
@@ -693,4 +687,3 @@ const styles = StyleSheet.create({
   error: { marginBottom: 12, padding: 12, borderRadius: 12, color: colors.danger, backgroundColor: colors.dangerSoft, fontSize: 13, fontWeight: "800" },
   pressed: { opacity: 0.84, transform: [{ scale: 0.985 }] },
 });
-

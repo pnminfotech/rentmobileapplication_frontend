@@ -107,6 +107,11 @@ export default function TenantInviteScreen() {
     firstRentStatus: "NOT_PAID", paymentMode: "Cash", hasCanteen: false, canteenPlanType: "",
   });
 
+  function updateForm(values) {
+    setGeneratedLink("");
+    setForm((current) => ({ ...current, ...values }));
+  }
+
   useEffect(() => {
     if (!isResidentialRoom && !isShop) {
       setPinLookupStatus("idle");
@@ -301,16 +306,16 @@ export default function TenantInviteScreen() {
         })}</View>
         <Text style={styles.label}>Vacant unit</Text>
         <Pressable onPress={() => setShowUnits((current) => !current)} disabled={!filteredVacancies.length} style={[styles.select, !filteredVacancies.length && styles.disabled]}><Text style={styles.selectText}>{unitLabel}</Text><ChevronDown size={19} color={colors.muted} /></Pressable>
-        {showUnits ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => { setSelectedIndex(index); setShowUnits(false); }} style={[styles.option, index === selectedIndex && styles.optionActive]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
-        <Field label="Tenant name" value={form.name} onChangeText={(name) => setForm((current) => ({ ...current, name }))} placeholder="Full name" />
-        {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(shopName) => setForm((current) => ({ ...current, shopName }))} placeholder="Enter shop name" /> : null}
-        <Field label="Mobile number" value={form.phoneNo} onChangeText={(phoneNo) => setForm((current) => ({ ...current, phoneNo: phoneNo.replace(/\D/g, "").slice(0, 10) }))} keyboardType="phone-pad" placeholder="10-digit number" />
-        <FormDateField label="Joining date" value={form.joiningDate} onChange={(joiningDate) => setForm((current) => ({ ...current, joiningDate }))} />
+        {showUnits ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => { setSelectedIndex(index); setShowUnits(false); setGeneratedLink(""); }} style={[styles.option, index === selectedIndex && styles.optionActive]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
+        <Field label="Tenant name" value={form.name} onChangeText={(name) => updateForm({ name })} placeholder="Full name" />
+        {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(shopName) => updateForm({ shopName })} placeholder="Enter shop name" /> : null}
+        <Field label="Mobile number" value={form.phoneNo} onChangeText={(phoneNo) => updateForm({ phoneNo: phoneNo.replace(/\D/g, "").slice(0, 10) })} keyboardType="phone-pad" placeholder="10-digit number" />
+        <FormDateField label="Joining date" value={form.joiningDate} onChange={(joiningDate) => updateForm({ joiningDate })} />
         {!isResidentialRoom && !isShop && canteenEnabled ? <>
           <Text style={styles.label}>Canteen facility</Text>
           <View style={styles.segment}>
             {[[true, "Yes"], [false, "No"]].map(([value, label]) => (
-              <Pressable key={label} onPress={() => setForm((current) => ({ ...current, hasCanteen: value }))} style={[styles.segmentButton, form.hasCanteen === value && styles.segmentActive]}>
+              <Pressable key={label} onPress={() => updateForm({ hasCanteen: value })} style={[styles.segmentButton, form.hasCanteen === value && styles.segmentActive]}>
                 <Text style={[styles.segmentText, form.hasCanteen === value && styles.segmentTextActive]}>{label}</Text>
               </Pressable>
             ))}
@@ -321,7 +326,7 @@ export default function TenantInviteScreen() {
               <Text style={styles.label}>Canteen billing plan</Text>
               <View style={styles.segment}>
                 {canteenPlans.map((plan) => (
-                  <Pressable key={plan} onPress={() => setForm((current) => ({ ...current, canteenPlanType: plan }))} style={[styles.segmentButton, selectedCanteenPlan === plan && styles.segmentActive]}>
+                  <Pressable key={plan} onPress={() => updateForm({ canteenPlanType: plan })} style={[styles.segmentButton, selectedCanteenPlan === plan && styles.segmentActive]}>
                     <Text style={[styles.segmentText, selectedCanteenPlan === plan && styles.segmentTextActive]}>{CANTEEN_MODE_LABELS[plan] || plan}</Text>
                   </Pressable>
                 ))}
@@ -340,28 +345,28 @@ export default function TenantInviteScreen() {
           </View>
         </View> : null}
         {isResidentialRoom || isShop ? <>
-          <Field label="Pincode" value={form.pincode} onChangeText={(pincode) => setForm((current) => ({ ...current, pincode: pincode.replace(/\D/g, "").slice(0, 6) }))} keyboardType="number-pad" placeholder="6-digit pincode" />
+          <Field label="Pincode" value={form.pincode} onChangeText={(pincode) => updateForm({ pincode: pincode.replace(/\D/g, "").slice(0, 6) })} keyboardType="number-pad" placeholder="6-digit pincode" />
           {pinLookupStatus === "loading" ? <Text style={styles.helperText}>Fetching city and state from PIN code...</Text> : null}
           {pinLookupStatus === "success" ? <Text style={styles.helperText}>City and state updated from PIN code. You can still edit them.</Text> : null}
           {pinLookupStatus === "error" ? <Text style={styles.error}>Could not fetch city/state for this PIN code. Please enter them manually.</Text> : null}
-          <Field label="City" value={form.city} onChangeText={(city) => setForm((current) => ({ ...current, city }))} />
-          <Field label="State" value={form.state} onChangeText={(state) => setForm((current) => ({ ...current, state }))} />
-          <Field label="Local Address" value={form.address} onChangeText={(address) => setForm((current) => ({ ...current, address }))} placeholder="House, Street, Area" />
-          <Field label="House No" value={form.houseNo} onChangeText={(houseNo) => setForm((current) => ({ ...current, houseNo }))} />
-          <Field label="Nearby Place" value={form.nearbyPlace} onChangeText={(nearbyPlace) => setForm((current) => ({ ...current, nearbyPlace }))} />
+          <Field label="City" value={form.city} onChangeText={(city) => updateForm({ city })} />
+          <Field label="State" value={form.state} onChangeText={(state) => updateForm({ state })} />
+          <Field label="Local Address" value={form.address} onChangeText={(address) => updateForm({ address })} placeholder="House, Street, Area" />
+          <Field label="House No" value={form.houseNo} onChangeText={(houseNo) => updateForm({ houseNo })} />
+          <Field label="Nearby Place" value={form.nearbyPlace} onChangeText={(nearbyPlace) => updateForm({ nearbyPlace })} />
           {isResidentialRoom ? <>
-            <Field label="No. of Family Members" value={form.familyMembers} onChangeText={(familyMembers) => setForm((current) => ({ ...current, familyMembers: familyMembers.replace(/\D/g, "").slice(0, 3) }))} keyboardType="number-pad" placeholder="Enter family members count" />
-            <Field label="Company Address / College" value={form.companyAddress} onChangeText={(companyAddress) => setForm((current) => ({ ...current, companyAddress }))} />
-            <FormDateField label="Date of Joining College / Company" value={form.dateOfJoiningCollege} onChange={(dateOfJoiningCollege) => setForm((current) => ({ ...current, dateOfJoiningCollege }))} />
-          </> : <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(shopBusiness) => setForm((current) => ({ ...current, shopBusiness }))} multiline placeholder="Example: Grocery, mobile repair, salon, tailoring..." />}
-          <FormDateField label="Date of Birth" value={form.dob} onChange={(dob) => setForm((current) => ({ ...current, dob }))} maximumDate={new Date()} />
+            <Field label="No. of Family Members" value={form.familyMembers} onChangeText={(familyMembers) => updateForm({ familyMembers: familyMembers.replace(/\D/g, "").slice(0, 3) })} keyboardType="number-pad" placeholder="Enter family members count" />
+            <Field label="Company Address / College" value={form.companyAddress} onChangeText={(companyAddress) => updateForm({ companyAddress })} />
+            <FormDateField label="Date of Joining College / Company" value={form.dateOfJoiningCollege} onChange={(dateOfJoiningCollege) => updateForm({ dateOfJoiningCollege })} />
+          </> : <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(shopBusiness) => updateForm({ shopBusiness })} multiline placeholder="Example: Grocery, mobile repair, salon, tailoring..." />}
+          <FormDateField label="Date of Birth" value={form.dob} onChange={(dob) => updateForm({ dob })} maximumDate={new Date()} />
         </> : null}
         <View style={styles.rentRow}><Text style={styles.rentLabel}>Monthly rent</Text><Text style={styles.rentValue}>Rs. {selected?.bed?.price || 0}</Text></View>
-        <Field label="Deposit amount" value={form.depositAmount} onChangeText={(depositAmount) => setForm((current) => ({ ...current, depositAmount }))} keyboardType="numeric" placeholder="Example: 10000" />
+        <Field label="Deposit amount" value={form.depositAmount} onChangeText={(depositAmount) => updateForm({ depositAmount })} keyboardType="numeric" placeholder="Example: 10000" />
         <Text style={styles.label}>Payment cycle</Text>
         <View style={styles.segment}>
           {FIRST_RENT_OPTIONS.map((option) => (
-            <Pressable key={option.value} onPress={() => setForm((current) => ({ ...current, firstRentStatus: option.value }))} style={[styles.segmentButton, form.firstRentStatus === option.value && styles.segmentActive]}>
+            <Pressable key={option.value} onPress={() => updateForm({ firstRentStatus: option.value })} style={[styles.segmentButton, form.firstRentStatus === option.value && styles.segmentActive]}>
               <Text style={[styles.segmentText, form.firstRentStatus === option.value && styles.segmentTextActive]}>{option.label}</Text>
             </Pressable>
           ))}
@@ -370,7 +375,7 @@ export default function TenantInviteScreen() {
           <Text style={styles.label}>Payment mode</Text>
           <View style={styles.segment}>
             {["Cash", "Online"].map((value) => (
-              <Pressable key={value} onPress={() => setForm((current) => ({ ...current, paymentMode: value }))} style={[styles.segmentButton, form.paymentMode === value && styles.segmentActive]}>
+              <Pressable key={value} onPress={() => updateForm({ paymentMode: value })} style={[styles.segmentButton, form.paymentMode === value && styles.segmentActive]}>
                 <Text style={[styles.segmentText, form.paymentMode === value && styles.segmentTextActive]}>{value}</Text>
               </Pressable>
             ))}

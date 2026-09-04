@@ -25,7 +25,9 @@ function buildVacancies(units, tenants) {
   const occupied = (unit, bed) => active.some((tenant) => {
     const sameRoom = tenant.roomId
       ? String(tenant.roomId) === String(unit._id)
-      : String(tenant.category || "") === String(unit.category || "") && String(tenant.roomNo || "") === String(unit.roomNo || "");
+      : String(tenant.category || "") === String(unit.category || "") &&
+        String(tenant.wingName || "") === String(unit.wingName || "") &&
+        String(tenant.roomNo || "") === String(unit.roomNo || "");
     if (!sameRoom) return false;
     return unit.propertyType === "bed" ? String(tenant.bedNo || "") === String(bed.bedNo || "") : true;
   });

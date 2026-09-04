@@ -49,7 +49,8 @@ export function formatVacancyTitle(unit = {}) {
 export function formatVacancyMeta(unit = {}, bed = {}) {
   const type = normalizePropertyType(unit.propertyType);
   const rent = Number(bed?.price || 0).toLocaleString("en-IN");
-  const prefix = `Floor ${unit.floorNo || "-"} | `;
+  const wing = String(unit.wingName || "").trim();
+  const prefix = `${wing ? `Wing ${wing} | ` : ""}Floor ${unit.floorNo || "-"} | `;
   if (type === "shop") return `${prefix}Shop ${unit.roomNo || "-"} | Rs. ${rent}`;
   if (type === "room") return `${prefix}Rental room ${unit.roomNo || "-"} | Rs. ${rent}`;
   return `${prefix}Room ${unit.roomNo || "-"}${bed?.bedNo ? ` | Bed ${bed.bedNo}` : ""} | Rs. ${rent}`;

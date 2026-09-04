@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Check, ChevronDown } from "lucide-react-native";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { createLightBill, getLightBillSettings, getLightBills, updateLightBill } from "../../src/api/lightBillApi";
@@ -27,8 +27,11 @@ const MODE_LABELS = {
   tenant_unit_meter: "Use meter reading",
   tenant_direct: "Owner pays the bill",
   fixed_monthly: "Fixed amount every month",
-  room_meter_split: "Each room has a meter",
+  room_meter_split: "Meter rate",
+  room_meter_rate: "Meter rate",
+  room_meter_actual_bill: "Actual bill split",
   fixed_per_tenant: "Same fixed amount for every tenant",
+  common_owner_bill: "One common hostel bill",
   included_extra_split: "Each room has a meter",
   common_meter_split: "One common hostel bill",
   record_only: "Owner pays the bill",
@@ -37,13 +40,34 @@ const MODE_LABELS = {
 const LEGACY_MODE_ALIASES = {
   record_only: "owner_only",
   tenant_direct: "owner_only",
-  included_extra_split: "room_meter_split",
+  included_extra_split: "room_meter_rate",
+  room_meter_split: "room_meter_rate",
 };
-const OWNER_STYLE_MODES = new Set(["owner_only", "record_only", "common_meter_split"]);
-const METER_MODES = new Set(["tenant_unit_meter", "room_meter_split", "common_meter_split"]);
+const OWNER_STYLE_MODES = new Set(["owner_only", "record_only", "common_owner_bill", "common_meter_split"]);
+const METER_MODES = new Set(["tenant_unit_meter", "room_meter_split", "room_meter_rate", "room_meter_actual_bill"]);
+const ROOM_METER_MODES = new Set(["room_meter_split", "room_meter_rate", "room_meter_actual_bill"]);
 const MANUAL_MODES = new Set(["tenant_unit_manual"]);
 const FIXED_MODES = new Set(["fixed_monthly", "fixed_per_tenant"]);
 const NO_ENTRY_MODES = new Set(["fixed_monthly", "fixed_per_tenant"]);
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function billingMonthFromDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${MONTH_NAMES[date.getMonth()]}-${String(date.getFullYear()).slice(-2)}`;
+}
+
+function billingMonthLabel(value) {
+  const match = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/.exec(String(value || ""));
+  if (!match) return "Select month";
+  return `${match[1]} 20${match[2]}`;
+}
+
+function shiftBillingMonth(value, offset) {
+  const match = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/.exec(String(value || ""));
+  const current = match ? new Date(2000 + Number(match[2]), MONTH_NAMES.indexOf(match[1]), 1) : new Date();
+  return billingMonthFromDate(new Date(current.getFullYear(), current.getMonth() + offset, 1));
+}
 
 function normalizeIdentifier(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
@@ -97,16 +121,28 @@ function unitMeta(unit) {
 
 export default function LightBillFormScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
+  const {
+    id,
+    billingMonth: initialBillingMonth,
+    unitId: requestedUnitId,
+    propertyType: requestedPropertyType,
+    returnTo,
+    tenantId,
+    rentReturnTo,
+  } = useLocalSearchParams();
   const editing = Boolean(id);
   const type = "meter";
   const [propertyType, setPropertyType] = useState("bed");
-  const [ownerBillName, setOwnerBillName] = useState("");
   const [roomNo, setRoomNo] = useState("");
   const [meterNo, setMeterNo] = useState("");
+  const [entryPreviousReading, setEntryPreviousReading] = useState(null);
   const [totalReading, setTotalReading] = useState("");
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("pending");
+  const [billingMonth, setBillingMonth] = useState(() => {
+    const value = Array.isArray(initialBillingMonth) ? initialBillingMonth[0] : initialBillingMonth;
+    return /^\w{3}-\d{2}$/.test(String(value || "")) ? String(value) : billingMonthFromDate(new Date());
+  });
   const [date, setDate] = useState(toDateValue());
   const [lightSettings, setLightSettings] = useState(null);
   const [units, setUnits] = useState([]);
@@ -132,23 +168,45 @@ export default function LightBillFormScreen() {
       const unitList = Array.isArray(roomData) ? roomData : [];
       setUnits(unitList);
       setLightSettings(settings);
-      if (!editing) return;
+      if (!editing) {
+        const unitId = Array.isArray(requestedUnitId) ? requestedUnitId[0] : requestedUnitId;
+        const requestedUnit = unitList.find((unit) => String(unit._id) === String(unitId || ""));
+        if (requestedUnit) {
+          setPropertyType(normalizePropertyType(requestedUnit.propertyType));
+          setSelectedUnitId(String(requestedUnit._id));
+          setSelectedPropertyName(requestedUnit.category || "");
+          setRoomNo(requestedUnit.roomNo || "");
+          setMeterNo(requestedUnit.meterNo || "");
+          setEntryPreviousReading(requestedUnit.lastMeterReading ?? null);
+        } else {
+          const typeValue = Array.isArray(requestedPropertyType) ? requestedPropertyType[0] : requestedPropertyType;
+          if (typeValue) setPropertyType(normalizePropertyType(typeValue));
+        }
+        return;
+      }
 
       const bill = (Array.isArray(bills) ? bills : []).find((item) => String(item._id) === String(id));
       if (!bill) {
         setError("Light bill not found.");
         return;
       }
-      setOwnerBillName(bill.name || bill.customLabel || "");
       setPropertyType(bill.propertyType || "bed");
       setRoomNo(bill.roomNo || "");
       setMeterNo(bill.meterNo || "");
+      setEntryPreviousReading(bill.previousReading ?? null);
       setTotalReading(String(bill.totalReading ?? ""));
       setAmount(String(bill.amount ?? bill.salary ?? ""));
       setStatus(bill.status || "pending");
+      setBillingMonth(bill.billingMonth || billingMonthFromDate(bill.date));
       setDate(toDateValue(bill.date));
       const matchedUnit = unitList.find((unit) => String(unit._id) === String(bill.roomId))
-        || unitList.find((unit) => unit.propertyType === bill.propertyType && unit.roomNo === bill.roomNo);
+        || unitList.find((unit) =>
+          unit.propertyType === bill.propertyType &&
+          unit.roomNo === bill.roomNo &&
+          (!bill.category || unit.category === bill.category) &&
+          (!bill.wingName || unit.wingName === bill.wingName) &&
+          (!bill.floorNo || unit.floorNo === bill.floorNo)
+        );
       setSelectedUnitId(matchedUnit?._id || "");
       setSelectedPropertyName(matchedUnit?.category || "");
     } catch (err) {
@@ -156,7 +214,7 @@ export default function LightBillFormScreen() {
     } finally {
       setLoading(false);
     }
-  }, [editing, id]);
+  }, [editing, id, requestedPropertyType, requestedUnitId]);
 
   useFocusEffect(useCallback(() => { loadBill(); }, [loadBill]));
 
@@ -183,24 +241,29 @@ export default function LightBillFormScreen() {
   const manualMode = MANUAL_MODES.has(activeMode);
   const fixedMode = FIXED_MODES.has(activeMode);
   const entryNotNeeded = !editing && NO_ENTRY_MODES.has(activeMode);
-  const requiresUnit = !ownerStyleMode && activeMode !== "none";
+  // Owner-paid bills still need a unit so the record identifies which room's
+  // electricity bill was paid; they simply never create a tenant charge.
+  const requiresUnit = activeMode !== "none" && !["common_owner_bill", "common_meter_split"].includes(activeMode);
   const ratePerUnit = Number(propertySettings.ratePerUnit || 0);
-  const fixedCharge = Number(propertySettings.fixedCharge || 0);
   const fixedAmount = Number(propertySettings.fixedAmount || 0);
   const includedAmount = Number(propertySettings.includedAmount || 0);
   const includedUnits = Number(propertySettings.includedUnits || 0);
   const effectiveBillPayer = ownerStyleMode ? "owner" : "tenant";
-  const previousReading = Number(selectedUnit?.lastMeterReading || 0);
+  const previousReading = editing && Number.isFinite(Number(entryPreviousReading))
+    ? Number(entryPreviousReading)
+    : Number(selectedUnit?.lastMeterReading || 0);
   const currentReading = Number(totalReading || 0);
   const consumedUnits = meterMode && Number.isFinite(currentReading) && currentReading >= previousReading ? currentReading - previousReading : 0;
-  const calculatedAmount = meterMode && ratePerUnit > 0 ? Math.max(consumedUnits * ratePerUnit + fixedCharge, 0) : 0;
+  const roomMeterRateMode = activeMode === "room_meter_rate" || activeMode === "room_meter_split";
+  const roomMeterActualBillMode = activeMode === "room_meter_actual_bill";
+  const usesCalculatedMeterAmount = meterMode && !roomMeterActualBillMode;
+  const calculatedAmount = meterMode && ratePerUnit > 0 ? Math.max(consumedUnits * ratePerUnit, 0) : 0;
   const extraUnits = meterMode ? Math.max(consumedUnits - includedUnits, 0) : 0;
-  const includedValue = includedUnits * ratePerUnit;
-  const recoverableAmount = meterMode && ratePerUnit > 0
-    ? activeMode === "room_meter_split"
-      ? Math.max(Number(amount || 0) - includedValue, 0)
-      : Math.max(extraUnits * ratePerUnit + (extraUnits > 0 ? fixedCharge : 0), 0)
-    : 0;
+  const tenantCharge = roomMeterActualBillMode
+    ? (consumedUnits > 0 ? Math.max(Number(amount || 0) * extraUnits / consumedUnits, 0) : 0)
+    : meterMode && ratePerUnit > 0
+      ? Math.max(extraUnits * ratePerUnit, 0)
+      : 0;
 
   useEffect(() => {
     if (editing) return;
@@ -208,9 +271,9 @@ export default function LightBillFormScreen() {
   }, [editing, fixedAmount, fixedMode]);
 
   useEffect(() => {
-    if (editing || !meterMode || activeMode === "room_meter_split" || !totalReading || ratePerUnit <= 0) return;
-    setAmount(String(Math.round(calculatedAmount)));
-  }, [activeMode, calculatedAmount, editing, meterMode, ratePerUnit, totalReading]);
+    if (editing || !usesCalculatedMeterAmount || !totalReading || ratePerUnit <= 0) return;
+    setAmount((current) => current === "" ? String(Math.round(calculatedAmount)) : current);
+  }, [calculatedAmount, editing, ratePerUnit, totalReading, usesCalculatedMeterAmount]);
 
   function selectPropertyType(value) {
     setPropertyType(value);
@@ -249,13 +312,13 @@ export default function LightBillFormScreen() {
 
   const generatedName = useMemo(() => {
     if (effectiveBillPayer === "owner") {
-      if (activeMode === "common_meter_split") return `Common hostel light bill ${date || ""}`.trim();
-      return String(ownerBillName || "").trim().replace(/\s+/g, " ") || `Owner light bill ${date || ""}`.trim();
+      if (["common_owner_bill", "common_meter_split"].includes(activeMode)) return `Common hostel light bill ${date || ""}`.trim();
+      return selectedUnit ? `Owner paid - ${unitTitle(selectedUnit)}` : "Owner paid light bill";
     }
     if (fixedMode) return `Fixed light ${roomNo || propertyLabel(propertyType)}`.trim();
     if (manualMode) return `Light bill ${roomNo || propertyLabel(propertyType)}`.trim();
     return `Meter ${roomNo || meterNo || ""}`.trim();
-  }, [activeMode, date, effectiveBillPayer, fixedMode, manualMode, meterNo, ownerBillName, propertyType, roomNo]);
+  }, [activeMode, date, effectiveBillPayer, fixedMode, manualMode, meterNo, propertyType, roomNo, selectedUnit]);
 
   function validate() {
     const numericAmount = Number(amount);
@@ -268,13 +331,15 @@ export default function LightBillFormScreen() {
       if (meterMode && !meterNo.trim()) return "Enter the meter number.";
       if (meterMode && (!Number.isFinite(reading) || reading < 0)) return "Enter a valid meter reading.";
       if (meterMode && selectedUnit && Number(reading) < previousReading) return "Current reading cannot be less than previous reading.";
-    } else if (activeMode !== "common_meter_split" && !ownerBillName.trim()) {
-      return "Enter bill name.";
     } else if (totalReading && (!Number.isFinite(reading) || reading < 0)) {
       return "Enter a valid meter reading.";
     }
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) return "Enter a valid amount.";
+    const allowsZeroAmount = usesCalculatedMeterAmount;
+    if (!Number.isFinite(numericAmount) || numericAmount < 0 || (!allowsZeroAmount && numericAmount <= 0)) {
+      return allowsZeroAmount ? "Enter zero or a valid bill amount." : "Enter a valid amount.";
+    }
     if (!date) return "Select a date.";
+    if (!billingMonth) return "Select a billing month.";
     return "";
   }
 
@@ -285,7 +350,7 @@ export default function LightBillFormScreen() {
       return;
     }
 
-    const numericAmount = Number(amount);
+    const numericAmount = usesCalculatedMeterAmount ? Math.round(calculatedAmount) : Number(amount);
     const payload = {
       name: generatedName,
       type,
@@ -299,12 +364,14 @@ export default function LightBillFormScreen() {
       previousReading: meterMode ? previousReading : undefined,
       totalReading: totalReading === "" ? undefined : Number(totalReading),
       consumedUnits: meterMode ? consumedUnits : undefined,
-      ratePerUnit: meterMode ? ratePerUnit : undefined,
-      fixedCharge: meterMode ? fixedCharge : undefined,
+      includedUnits: ROOM_METER_MODES.has(activeMode) ? includedUnits : undefined,
+      ratePerUnit: roomMeterRateMode ? ratePerUnit : undefined,
+      fixedCharge: 0,
       amount: numericAmount,
       salary: undefined,
       customLabel: "",
       status,
+      billingMonth,
       date,
     };
 
@@ -313,7 +380,17 @@ export default function LightBillFormScreen() {
       setError("");
       if (editing) await updateLightBill(id, payload);
       else await createLightBill(payload);
-      router.replace("/system/light-bills");
+      const target = Array.isArray(returnTo) ? returnTo[0] : returnTo;
+      const targetTenantId = Array.isArray(tenantId) ? tenantId[0] : tenantId;
+      const targetRentReturnTo = Array.isArray(rentReturnTo) ? rentReturnTo[0] : rentReturnTo;
+      if (target === "/system/rent-form" && targetTenantId) {
+        router.replace({
+          pathname: "/system/rent-form",
+          params: { id: targetTenantId, month: billingMonth, returnTo: targetRentReturnTo || "/system/tenants" },
+        });
+      } else {
+        router.replace({ pathname: "/system/light-bills", params: { billingMonth } });
+      }
     } catch (err) {
       setError(err.response?.data?.message || "Unable to save light bill.");
     } finally {
@@ -345,11 +422,15 @@ export default function LightBillFormScreen() {
             ? "Open settings once and choose how light bill should work for this property type."
             : entryNotNeeded
               ? "No monthly bill entry is needed. This fixed amount will be added automatically in Add Rent."
+            : activeMode === "common_owner_bill"
+              ? "Record one bill for the whole hostel. It will not be added to tenant rent."
+              : activeMode === "common_meter_split"
+                ? "Record one bill for the whole hostel. The amount will be divided equally across all active hostel tenants."
             : ownerStyleMode
-              ? "This bill will be saved in Light bills and reports. It will not be attached to one tenant."
+              ? "Select the unit this bill belongs to. It will be recorded for that unit, but not added to tenant rent."
               : meterMode
-                ? activeMode === "room_meter_split" && includedUnits > 0
-                  ? "Select the unit, enter the meter units for this month, and the app will recover only the amount above the included limit."
+                ? ROOM_METER_MODES.has(activeMode) && includedUnits > 0
+                  ? "Select the unit and enter this month's reading. The app will calculate and split only usage above the included limit."
                   : "Select the unit, enter the current reading, and the app will calculate the amount."
                 : fixedMode
                   ? "The fixed monthly amount from settings will be used."
@@ -447,18 +528,15 @@ export default function LightBillFormScreen() {
 
               <Text style={styles.label}>Current reading</Text>
               <TextInput value={totalReading} onChangeText={setTotalReading} keyboardType="numeric" placeholder="Example: 250" style={styles.input} />
-              <Text style={styles.helper}>Units consumed: {consumedUnits} | Rate Rs. {ratePerUnit || 0} | Fixed Rs. {fixedCharge || 0}</Text>
-              {activeMode === "room_meter_split" && includedUnits > 0 ? (
-                <Text style={styles.helper}>Included units per month: {includedUnits} | Included value: Rs. {Math.round(includedValue).toLocaleString("en-IN")} | Recoverable from admin bill: Rs. {Math.round(recoverableAmount).toLocaleString("en-IN")}</Text>
+              <Text style={styles.helper}>Units consumed: {consumedUnits}{roomMeterRateMode ? ` | Rate Rs. ${ratePerUnit || 0}` : ""}</Text>
+              {ROOM_METER_MODES.has(activeMode) && includedUnits > 0 ? (
+                <Text style={styles.helper}>Included units: {includedUnits} | Extra units: {extraUnits} | Tenant charge: Rs. {Math.round(tenantCharge).toLocaleString("en-IN")}</Text>
               ) : null}
             </>
           ) : null}
         </>
-      ) : (
+      ) : meterMode ? (
         <>
-          <Text style={styles.label}>Bill name</Text>
-          <TextInput value={ownerBillName} onChangeText={setOwnerBillName} placeholder="Example: Office light bill" style={styles.input} />
-
           {meterMode ? (
             <>
               <Text style={styles.label}>Meter number (optional)</Text>
@@ -469,21 +547,36 @@ export default function LightBillFormScreen() {
             </>
           ) : null}
         </>
-      )}
+      ) : null}
 
       {fixedMode && fixedAmount > 0 ? <Text style={styles.helper}>Fixed amount from settings: Rs. {fixedAmount.toLocaleString("en-IN")}</Text> : null}
       {activeMode === "included_extra_split" ? <Text style={styles.helper}>Included amount per tenant: Rs. {includedAmount.toLocaleString("en-IN")}</Text> : null}
-      {meterMode && activeMode !== "room_meter_split" && calculatedAmount > 0 ? <Text style={styles.helper}>Calculated bill amount: Rs. {Math.round(calculatedAmount).toLocaleString("en-IN")}</Text> : null}
-      {activeMode === "room_meter_split" && includedUnits > 0 && meterMode ? <Text style={styles.helper}>Tenant split happens only when the entered month units are more than {includedUnits}. Example: if this month units are 128 and included units are 100, then 28 units are split between room members.</Text> : null}
+      {roomMeterRateMode && calculatedAmount >= 0 ? <Text style={styles.helper}>Calculated meter amount: Rs. {Math.round(calculatedAmount).toLocaleString("en-IN")}</Text> : null}
+      {ROOM_METER_MODES.has(activeMode) && includedUnits > 0 && meterMode ? <Text style={styles.helper}>The reading is saved even when it is within the included limit. In that case, Rs. 0 is added to rent.</Text> : null}
 
-      {!entryNotNeeded ? (
+      {!entryNotNeeded && !roomMeterRateMode ? (
         <>
-          <Text style={styles.label}>Bill amount</Text>
+          <Text style={styles.label}>{roomMeterActualBillMode ? "Actual bill amount" : "Bill amount"}</Text>
           <TextInput value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Example: 1500" style={styles.input} />
         </>
       ) : null}
 
-      {!entryNotNeeded ? <FormDateField label="Date" value={date} onChange={setDate} maximumDate={new Date()} /> : null}
+      {!entryNotNeeded ? (
+        <>
+          <Text style={styles.label}>Billing month</Text>
+          <View style={styles.monthPicker}>
+            <Pressable onPress={() => setBillingMonth((current) => shiftBillingMonth(current, -1))} style={styles.monthButton} accessibilityLabel="Previous billing month">
+              <ChevronLeft size={20} color={colors.primary} />
+            </Pressable>
+            <Text style={styles.monthText}>{billingMonthLabel(billingMonth)}</Text>
+            <Pressable onPress={() => setBillingMonth((current) => shiftBillingMonth(current, 1))} style={styles.monthButton} accessibilityLabel="Next billing month">
+              <ChevronRight size={20} color={colors.primary} />
+            </Pressable>
+          </View>
+          <Text style={styles.helper}>This month decides where the light bill is added in tenant rent.</Text>
+          <FormDateField label="Bill date (reference)" value={date} onChange={setDate} maximumDate={new Date()} />
+        </>
+      ) : null}
 
       {!entryNotNeeded ? (
         <>
@@ -519,6 +612,9 @@ const styles = StyleSheet.create({
   settingsLinkText: { color: colors.surface, fontSize: 12, fontWeight: "900" },
   label: { marginTop: 15, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
+  monthPicker: { height: 50, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  monthButton: { width: 50, height: 48, alignItems: "center", justifyContent: "center" },
+  monthText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: "800", textAlign: "center" },
   select: { minHeight: 58, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
   selectDisabled: { opacity: 0.6 },
   selectText: { flex: 1, minWidth: 0 },

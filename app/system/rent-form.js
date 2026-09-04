@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, BackHandler, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react-native";
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { addTenantRent, getTenant, getTenantRentDue, getTenantRentQuote } from "../../src/api/tenantApi";
@@ -138,6 +138,24 @@ export default function RentFormScreen() {
     setError("");
   }
 
+  function addLightBillForTenant() {
+    if (!tenant?.roomId) {
+      setError("This tenant is not linked to a unit yet.");
+      return;
+    }
+    router.push({
+      pathname: "/system/light-bill-form",
+      params: {
+        billingMonth: key,
+        unitId: String(tenant.roomId),
+        propertyType: tenant.propertyType || "bed",
+        returnTo: "/system/rent-form",
+        tenantId: String(id),
+        rentReturnTo: String(returnTo),
+      },
+    });
+  }
+
   const goBack = useCallback(() => {
     router.replace(String(returnTo || "/system/tenants"));
   }, [returnTo, router]);
@@ -254,6 +272,12 @@ export default function RentFormScreen() {
             ) : null}
           </View>
         ) : null}
+        {!quote?.lightBill?.applicable && !isLightBillIncluded(quote) ? (
+          <Pressable onPress={addLightBillForTenant} style={styles.addLightBillButton}>
+            <Plus size={17} color={colors.primary} />
+            <Text style={styles.addLightBillText}>Add light bill for this tenant</Text>
+          </Pressable>
+        ) : null}
         <View style={styles.totalRow}>
           <View>
             <Text style={styles.summaryLabel}>Total payable</Text>
@@ -328,6 +352,8 @@ const styles = StyleSheet.create({
   splitLabel: { color: colors.text, fontSize: 13, fontWeight: "800" },
   splitValue: { marginTop: 3, color: colors.primaryDark, fontSize: 18, fontWeight: "900" },
   splitMeta: { marginTop: 3, color: colors.muted, fontSize: 11, fontWeight: "700" },
+  addLightBillButton: { minHeight: 42, marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderColor: colors.primary, borderRadius: 7, backgroundColor: colors.surface },
+  addLightBillText: { color: colors.primary, fontSize: 13, fontWeight: "800" },
   totalRow: { marginTop: 12, flexDirection: "row", justifyContent: "space-between", gap: 8 },
   summaryLabel: { color: colors.muted, fontSize: 11 },
   summaryValue: { marginTop: 5, color: colors.primaryDark, fontSize: 14, fontWeight: "700" },

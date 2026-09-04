@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   Menu,
   Users,
-  WalletCards,
+  Zap,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAppBootstrap } from "../../src/api/saasApi";
@@ -119,11 +119,11 @@ export default function SystemTabsLayout() {
       />
 
       <Tabs.Screen
-        name="payments"
+        name="light-bills"
         options={{
-          title: "Payments",
+          title: "Light bills",
           tabBarIcon: ({ color, size }) => (
-            <WalletCards color={color} size={size} />
+            <Zap color={color} size={size} />
           ),
         }}
       />
@@ -224,7 +224,7 @@ export default function SystemTabsLayout() {
         options={{ href: null, tabBarStyle: { display: "none" } }}
       />
       <Tabs.Screen
-        name="light-bills"
+        name="payments"
         options={{ href: null, tabBarStyle: { display: "none" } }}
       />
       <Tabs.Screen

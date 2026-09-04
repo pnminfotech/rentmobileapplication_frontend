@@ -69,6 +69,12 @@ function compactMoney(value) {
   return `Rs. ${Number(value || 0).toLocaleString("en-IN")}`;
 }
 
+function monthStatusLabel(item) {
+  if (item.status === "-") return "-";
+  if (item.status === "Pending") return `Pending ${compactMoney(item.balance)}`;
+  return `${item.status} ${item.statusDate}`;
+}
+
 function latestPaymentDate(rentEntry) {
   const payments = Array.isArray(rentEntry?.payments) ? rentEntry.payments : [];
   const dates = [
@@ -120,6 +126,13 @@ function rentMonthStatus(summary, tenant, month) {
   const startDate = cycleStartForMonth(tenant, month.date);
   const endDate = cycleStartForMonth(tenant, shiftMonth(month.date, 1));
   const paymentDate = latestPaymentDate(rentEntry);
+  const now = new Date();
+  const cycleStarted = startDate <= now;
+
+  // For normal cycles, rent is only due after the cycle completes (endDate passes)
+  const isAdvancePaid = String(tenant.firstRentStatus || "").trim() === "ADVANCE_PAID";
+  const cycleCompleted = endDate <= now;
+  
   const status = beforeJoining
     ? "-"
     : totalExpected <= 0 && paid <= 0
@@ -128,9 +141,11 @@ function rentMonthStatus(summary, tenant, month) {
       ? "Paid"
       : paid > 0
         ? "Pending"
-        : month.offset > 0
+        : month.offset > 0 || !cycleStarted
           ? "Upcoming"
-          : "Due";
+          : !isAdvancePaid && !cycleCompleted
+            ? "Upcoming"
+            : "Due";
   const statusDate = status === "-" ? "" : status === "Paid" && paymentDate ? formatDayMonth(paymentDate) : formatDayMonth(startDate);
   return {
     expected: rentExpected,
@@ -166,7 +181,9 @@ function buildVacancies(units, tenants) {
   const isOccupied = (unit, bed) => activeTenants.some((tenant) => {
     const sameUnit = tenant.roomId
       ? String(tenant.roomId) === String(unit._id)
-      : String(tenant.category || "") === String(unit.category || "") && String(tenant.roomNo || "") === String(unit.roomNo || "");
+      : String(tenant.category || "") === String(unit.category || "") &&
+        String(tenant.wingName || "") === String(unit.wingName || "") &&
+        String(tenant.roomNo || "") === String(unit.roomNo || "");
     if (!sameUnit) return false;
     return unit.propertyType === "bed" ? String(tenant.bedNo || "") === String(bed.bedNo || "") : true;
   });
@@ -433,7 +450,12 @@ export default function TenantsScreen() {
       const balance = Math.max(expected - paid, 0);
       const dueInfo = dueMap.get(String(tenant._id));
       const overdue = Number(dueInfo?.totalDue || 0);
-      const totalDue = balance + overdue;
+      
+      // Only include current month's balance if its rent cycle has started
+      const cycleStartDate = cycleStartForMonth(tenant, new Date());
+      const cycleHasStarted = cycleStartDate <= new Date();
+      const totalDue = (cycleHasStarted ? balance : 0) + overdue;
+      
       const dueMonths = Array.isArray(dueInfo?.dueMonths) ? dueInfo.dueMonths : [];
       const docStatus = documentStatusForTenant(tenant);
       return {
@@ -876,10 +898,10 @@ export default function TenantsScreen() {
                         </View>
                       ) : null}
                       {wingGroup.rows.map((row) => {
-                    const { tenant, overdue, totalDue, awaitingForm, docStatus } = row;
+                    const { tenant, totalDue, awaitingForm } = row;
                     const photoUrl = tenantPhotoUrl(tenant);
                     return (
-                <View key={tenant._id} style={[styles.tenantRow, responsive.isTiny && styles.tenantRowTiny, (overdue > 0 || !docStatus.complete) && styles.tenantAlert]}>
+                <View key={tenant._id} style={[styles.tenantRow, responsive.isTiny && styles.tenantRowTiny, totalDue > 0 && styles.tenantAlert]}>
                   <View style={styles.tenantTopRow}>
                     {!awaitingForm ? (
                       <View style={styles.cardDueTopRight}>
@@ -899,6 +921,13 @@ export default function TenantsScreen() {
                         <Text style={styles.tenantName}>{toDisplayName(tenant.name)}</Text>
                         <View style={styles.badgeRow}>
                           <Text style={styles.cycleBadge} numberOfLines={1}>{paymentCycleLabel(tenant)}</Text>
+                          {propertyTypeFromTenant(tenant) === "bed" && canteenEnabled && tenant.hasCanteen ? (
+                            <View style={[styles.canteenBadge, styles.canteenTaken]}>
+                              <Text style={[styles.canteenText, styles.canteenTakenText]}>
+                                Canteen
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                         <Text style={styles.unitPill} numberOfLines={1}>{tenantUnitBadgeLabel(tenant)}</Text>
                         <View style={styles.depositPhoneRow}>
@@ -911,13 +940,6 @@ export default function TenantsScreen() {
                             </>
                           ) : null}
                         </View>
-                        {propertyTypeFromTenant(tenant) === "bed" && canteenEnabled ? (
-                          <View style={[styles.canteenBadge, tenant.hasCanteen ? styles.canteenTaken : styles.canteenNotTaken]}>
-                            <Text style={[styles.canteenText, tenant.hasCanteen ? styles.canteenTakenText : styles.canteenNotTakenText]}>
-                              {tenant.hasCanteen ? "Canteen" : "No canteen"}
-                            </Text>
-                          </View>
-                        ) : null}
                         {awaitingForm ? (
                           <View style={styles.statusRow}>
                             <Text style={styles.paymentStatus}>Waiting for tenant form</Text>
@@ -963,7 +985,7 @@ export default function TenantsScreen() {
                             <Text style={styles.monthName} numberOfLines={1}>{item.monthLabel}</Text>
                             <View style={[styles.monthStatusPill, paidMonth && styles.monthPaidPill, dueMonth && styles.monthDuePill, item.status === "Upcoming" && styles.monthUpcomingPill, inactiveMonth && styles.monthInactivePill]}>
                               <Text style={[styles.monthStatusText, paidMonth && styles.monthPaidText, dueMonth && styles.monthDueText, item.status === "Upcoming" && styles.monthUpcomingText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62}>
-                                {inactiveMonth ? "-" : `${item.status} ${item.statusDate}`}
+                                {monthStatusLabel(item)}
                               </Text>
                             </View>
                             <Text style={[styles.monthRange, inactiveMonth && styles.monthPlaceholderText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
@@ -1057,7 +1079,7 @@ const styles = StyleSheet.create({
   vacancyButtonText: { color: colors.surface, fontSize: 12, fontWeight: "900" },
   loadMoreButton: { minHeight: 44, marginTop: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: S.border, borderRadius: 14, backgroundColor: S.card, ...systemShadow },
   loadMoreButtonText: { color: S.deep, fontSize: 13, fontWeight: "900" },
-  tenantRow: { minHeight: 82, overflow: "hidden", borderWidth: 1, borderLeftWidth: 4, borderColor: S.border, borderLeftColor: S.deep, borderRadius: 22, backgroundColor: S.card, ...systemShadow, position: "relative" },
+  tenantRow: { minHeight: 82, overflow: "hidden", borderWidth: 1, borderLeftWidth: 4, borderColor: S.border, borderLeftColor: "#7C98F9", borderRadius: 22, backgroundColor: S.card, ...systemShadow, position: "relative" },
   tenantRowTiny: { alignItems: "stretch" },
   tenantAlert: { borderColor: "#F1D3CB", borderLeftColor: S.red },
   tenantTopRow: { width: "100%", flexDirection: "row", alignItems: "center" },
@@ -1104,10 +1126,10 @@ const styles = StyleSheet.create({
   monthRent: { width: "100%", height: 14, marginTop: 6, color: S.text, fontSize: 9, lineHeight: 12, fontWeight: "900", textAlign: "center" },
   monthTotal: { width: "100%", height: 14, marginTop: 5, color: "#1478D4", fontSize: 9, lineHeight: 12, fontWeight: "900", textAlign: "center" },
   monthPlaceholderText: { color: S.subtle },
-  canteenBadge: { alignSelf: "flex-start", marginTop: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  canteenTaken: { backgroundColor: S.soft },
+  canteenBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden" },
+  canteenTaken: { backgroundColor: "#DDF3E5" },
   canteenNotTaken: { backgroundColor: S.pale },
-  canteenText: { fontSize: 10, fontWeight: "800" },
+  canteenText: { fontSize: 10, fontWeight: "900" },
   canteenTakenText: { color: S.mid },
   canteenNotTakenText: { color: S.muted },
   paymentStatus: { marginTop: 5, color: S.orange, fontSize: 11, fontWeight: "800" },

@@ -329,6 +329,7 @@ export default function TenantDetailsScreen() {
         <Section title="Unit assignment">
           <Row label="Type" value={typeLabel} />
           <Row label={isShop || isResidentialRoom ? "Building" : "Hostel/building"} value={tenant.category} />
+          <Row label="Wing/block" value={tenant.wingName} />
           <Row label="Floor" value={tenant.floorNo} />
           <Row label={isShop ? "Shop" : isResidentialRoom ? "Flat/room" : "Room"} value={tenant.roomNo} />
           {!isShop && !isResidentialRoom && !isPrimaryUnitSlot(tenant.bedNo) ? <Row label="Bed number" value={tenant.bedNo} /> : null}

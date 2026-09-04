@@ -13,8 +13,9 @@ const MODE_OPTIONS = {
   bed: [
     { value: "owner_only", title: "Owner pays the bill", subtitle: "Only record the hostel light bill. It will not be added to tenant rent." },
     { value: "fixed_per_tenant", title: "Same fixed amount for every tenant", subtitle: "Example: collect Rs. 300 per tenant every month with rent." },
-    { value: "room_meter_split", title: "Each room has a meter", subtitle: "Add one bill for a hostel room. Extra amount after included units splits between tenants in that room." },
-    // { value: "common_meter_split", title: "One common hostel bill", subtitle: "Add one hostel bill. Amount splits between all active hostel tenants." },
+    { value: "room_meter_rate", title: "Meter rate", subtitle: "Enter readings. Units above the included limit are charged at your set rate and split between active room tenants." },
+    { value: "room_meter_actual_bill", title: "Actual bill split", subtitle: "Enter readings and the actual bill amount. Only the proportion above the included limit is split between active room tenants." },
+    { value: "common_hostel_bill", title: "One common hostel bill", subtitle: "Use one bill for the entire hostel when rooms do not have separate meters." },
   ],
   room: [
     { value: "owner_only", title: "Owner pays the bill", subtitle: "Only record the room light bill. It will not be added to tenant rent." },
@@ -33,8 +34,10 @@ const MODE_OPTIONS = {
 const LEGACY_MODE_ALIASES = {
   record_only: "owner_only",
   tenant_direct: "owner_only",
-  included_extra_split: "room_meter_split",
+  included_extra_split: "room_meter_rate",
+  room_meter_split: "room_meter_rate",
 };
+const COMMON_HOSTEL_MODES = new Set(["common_owner_bill", "common_meter_split"]);
 
 const EMPTY_PROPERTY = {
   enabled: false,
@@ -44,7 +47,6 @@ const EMPTY_PROPERTY = {
   includedAmount: "",
   includedUnits: "",
   ratePerUnit: "",
-  fixedCharge: "",
   splitMethod: "equal_active_tenants",
   notes: "",
 };
@@ -71,7 +73,6 @@ function normalizeProperty(settings = {}) {
     includedAmount: amountText(settings.includedAmount),
     includedUnits: amountText(settings.includedUnits),
     ratePerUnit: amountText(settings.ratePerUnit),
-    fixedCharge: amountText(settings.fixedCharge),
     splitMethod: settings.splitMethod || "equal_active_tenants",
     notes: settings.notes || "",
   };
@@ -100,20 +101,38 @@ function moneyInput(value, onChange, placeholder = "0") {
   );
 }
 
+function unitInput(value, onChange, placeholder = "100") {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={(text) => onChange(text.replace(/[^\d]/g, ""))}
+      keyboardType="numeric"
+      placeholder={placeholder}
+      style={styles.input}
+    />
+  );
+}
+
 function needsFixedAmount(mode) {
   return ["fixed_monthly", "fixed_per_tenant"].includes(mode);
 }
 
 function needsRate(mode) {
-  return ["tenant_unit_meter", "room_meter_split"].includes(mode);
+  return ["tenant_unit_meter", "room_meter_rate"].includes(mode);
 }
 
 function needsIncludedUnits(type, mode) {
-  return type === "bed" && mode === "room_meter_split";
+  return type === "bed" && ["room_meter_rate", "room_meter_actual_bill"].includes(mode);
 }
 
 function canRecover(mode) {
-  return !["none", "owner_only", "record_only", "tenant_direct"].includes(mode);
+  return !["none", "owner_only", "record_only", "tenant_direct", "common_owner_bill"].includes(mode);
+}
+
+function settingModeTitle(type, mode) {
+  if (mode === "common_owner_bill") return "One common hostel bill - owner pays";
+  if (mode === "common_meter_split") return "One common hostel bill - split among tenants";
+  return (MODE_OPTIONS[type] || []).find((option) => option.value === mode)?.title || "Not configured";
 }
 
 export default function LightBillSettingsScreen() {
@@ -145,12 +164,31 @@ export default function LightBillSettingsScreen() {
     setForm((current) => ({ ...current, [type]: { ...current[type], ...patch } }));
   }
 
-function selectMode(type, mode) {
+function applyMode(type, mode) {
+    const savedMode = mode === "common_hostel_bill" ? "common_owner_bill" : mode;
     setProperty(type, {
       enabled: true,
-      mode,
-      addToRentCollection: canRecover(mode),
+      mode: savedMode,
+      addToRentCollection: canRecover(savedMode),
     });
+  }
+
+  function selectMode(type, mode) {
+    const savedMode = mode === "common_hostel_bill" ? "common_owner_bill" : mode;
+    const current = form[type] || EMPTY_PROPERTY;
+    if (!current.enabled || current.mode === savedMode) {
+      applyMode(type, mode);
+      return;
+    }
+
+    Alert.alert(
+      "Change light bill rule?",
+      `${PROPERTY_HINT[type]} will change from ${settingModeTitle(type, current.mode)} to ${settingModeTitle(type, savedMode)}. Existing bills and recorded rent payments will not change. New bills and rent calculations will use the new rule after you save.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Change rule", style: "destructive", onPress: () => applyMode(type, mode) },
+      ]
+    );
   }
 
   async function save() {
@@ -178,7 +216,7 @@ function selectMode(type, mode) {
           includedAmount: Number(form.bed.includedAmount || 0),
           includedUnits: Number(form.bed.includedUnits || 0),
           ratePerUnit: Number(form.bed.ratePerUnit || 0),
-          fixedCharge: Number(form.bed.fixedCharge || 0),
+          fixedCharge: 0,
         },
         room: {
           ...form.room,
@@ -187,7 +225,7 @@ function selectMode(type, mode) {
           includedAmount: Number(form.room.includedAmount || 0),
           includedUnits: Number(form.room.includedUnits || 0),
           ratePerUnit: Number(form.room.ratePerUnit || 0),
-          fixedCharge: Number(form.room.fixedCharge || 0),
+          fixedCharge: 0,
         },
         shop: {
           ...form.shop,
@@ -196,7 +234,7 @@ function selectMode(type, mode) {
           includedAmount: Number(form.shop.includedAmount || 0),
           includedUnits: Number(form.shop.includedUnits || 0),
           ratePerUnit: Number(form.shop.ratePerUnit || 0),
-          fixedCharge: Number(form.shop.fixedCharge || 0),
+          fixedCharge: 0,
         },
       };
       await updateLightBillSettings(payload);
@@ -240,7 +278,9 @@ function selectMode(type, mode) {
               <Text style={[styles.statusBadge, property.enabled && styles.statusBadgeActive]}>{property.enabled ? "Enabled" : "Not used"}</Text>
             </View>
             {(MODE_OPTIONS[type.value] || []).map((option) => {
-              const selected = activeMode === option.value;
+              const selected = option.value === "common_hostel_bill"
+                ? COMMON_HOSTEL_MODES.has(activeMode)
+                : activeMode === option.value;
               return (
                 <Pressable key={option.value} onPress={() => selectMode(type.value, option.value)} style={[styles.option, selected && styles.optionActive]}>
                   <View style={styles.optionText}>
@@ -261,22 +301,30 @@ function selectMode(type, mode) {
                   </View>
                 ) : null}
                 {needsRate(activeMode) ? (
-                  <View style={styles.twoColumn}>
-                    <View style={styles.column}>
-                      <Text style={styles.label}>Rate per unit</Text>
-                      {moneyInput(property.ratePerUnit, (value) => setProperty(type.value, { ratePerUnit: value }))}
-                    </View>
-                    <View style={styles.column}>
-                      <Text style={styles.label}>Fixed charge</Text>
-                      {moneyInput(property.fixedCharge, (value) => setProperty(type.value, { fixedCharge: value }))}
-                    </View>
+                  <View>
+                    <Text style={styles.label}>Rate per unit</Text>
+                    {moneyInput(property.ratePerUnit, (value) => setProperty(type.value, { ratePerUnit: value }))}
                   </View>
                 ) : null}
                 {needsIncludedUnits(type.value, activeMode) ? (
                   <View>
                     <Text style={styles.label}>Included units per room</Text>
-                    {moneyInput(property.includedUnits, (value) => setProperty(type.value, { includedUnits: value }), "100")}
+                    {unitInput(property.includedUnits, (value) => setProperty(type.value, { includedUnits: value }))}
                     <Text style={styles.infoText}>Example: if 100 units are included, tenants only share the bill for units consumed after 100.</Text>
+                  </View>
+                ) : null}
+                {type.value === "bed" && COMMON_HOSTEL_MODES.has(activeMode) ? (
+                  <View>
+                    <Text style={styles.label}>Who pays this common bill?</Text>
+                    <View style={styles.commonChoiceRow}>
+                      <Pressable onPress={() => selectMode("bed", "common_hostel_bill")} style={[styles.commonChoice, activeMode === "common_owner_bill" && styles.commonChoiceActive]}>
+                        <Text style={[styles.commonChoiceText, activeMode === "common_owner_bill" && styles.commonChoiceTextActive]}>Owner pays</Text>
+                      </Pressable>
+                      <Pressable onPress={() => selectMode("bed", "common_meter_split")} style={[styles.commonChoice, activeMode === "common_meter_split" && styles.commonChoiceActive]}>
+                        <Text style={[styles.commonChoiceText, activeMode === "common_meter_split" && styles.commonChoiceTextActive]}>Split among tenants</Text>
+                      </Pressable>
+                    </View>
+                    <Text style={styles.infoText}>{activeMode === "common_owner_bill" ? "The bill is recorded for the whole hostel and not added to tenant rent." : "The bill is divided equally among all active hostel tenants for the billing month."}</Text>
                   </View>
                 ) : null}
                 {activeMode === "owner_only" ? (
@@ -339,6 +387,11 @@ const styles = StyleSheet.create({
   twoColumn: { flexDirection: "row", gap: 10 },
   column: { flex: 1, minWidth: 0 },
   infoText: { marginTop: 10, color: colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 17 },
+  commonChoiceRow: { flexDirection: "row", gap: 8 },
+  commonChoice: { flex: 1, minHeight: 42, paddingHorizontal: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.card },
+  commonChoiceActive: { borderColor: colors.deep, backgroundColor: colors.soft },
+  commonChoiceText: { color: colors.muted, fontSize: 12, fontWeight: "800", textAlign: "center" },
+  commonChoiceTextActive: { color: colors.deep },
   error: { marginBottom: 12, color: colors.danger, fontWeight: "800" },
   saveButton: { height: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 15, backgroundColor: colors.deep, ...systemShadow },
   saveText: { color: colors.surface, fontSize: 15, fontWeight: "900" },

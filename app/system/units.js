@@ -759,16 +759,16 @@ const styles = StyleSheet.create({
 propertyLine: {
   flex: 1,
   height: 1,
-  backgroundColor: "#164f2e",
+  backgroundColor: S.deep,
 },
 
 propertyName: {
   color: S.deep,
   fontSize: 14,
   fontWeight: "900",
-  backgroundColor: "#eaf4e6",
+  backgroundColor: S.soft,
   borderWidth: 1,
-  borderColor: "#164f2e",
+  borderColor: S.deep,
   borderRadius: 999,
   paddingVertical: 5,
   paddingHorizontal: 12,

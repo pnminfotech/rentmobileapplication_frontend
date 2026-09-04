@@ -20,7 +20,9 @@ function isCurrentAssignment(vacancyUnit, vacancyBed, currentTenant) {
   if (!currentTenant || !vacancyUnit) return false;
   const sameUnit = currentTenant.roomId
     ? String(currentTenant.roomId) === String(vacancyUnit._id)
-    : String(currentTenant.category || "") === String(vacancyUnit.category || "") && String(currentTenant.roomNo || "") === String(vacancyUnit.roomNo || "");
+    : String(currentTenant.category || "") === String(vacancyUnit.category || "") &&
+      String(currentTenant.wingName || "") === String(vacancyUnit.wingName || "") &&
+      String(currentTenant.roomNo || "") === String(vacancyUnit.roomNo || "");
   if (!sameUnit) return false;
   if (vacancyUnit.propertyType !== "bed") return true;
   return String(currentTenant.bedNo || "") === String(vacancyBed?.bedNo || "");
@@ -32,7 +34,9 @@ function vacanciesFor(units, tenants, currentTenant) {
   const occupied = (unit, bed) => active.some((tenant) => {
     const sameUnit = tenant.roomId
       ? String(tenant.roomId) === String(unit._id)
-      : String(tenant.category || "") === String(unit.category || "") && String(tenant.roomNo || "") === String(unit.roomNo || "");
+      : String(tenant.category || "") === String(unit.category || "") &&
+        String(tenant.wingName || "") === String(unit.wingName || "") &&
+        String(tenant.roomNo || "") === String(unit.roomNo || "");
     return sameUnit && (unit.propertyType !== "bed" || String(tenant.bedNo || "") === String(bed.bedNo || ""));
   });
   return units.flatMap((unit) => {

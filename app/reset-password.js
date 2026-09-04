@@ -18,6 +18,7 @@ export default function ResetPasswordScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const initialToken = Array.isArray(params.token) ? params.token[0] : params.token;
+  const hasLinkToken = Boolean(String(initialToken || "").trim());
   const [token, setToken] = useState(String(initialToken || ""));
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -47,15 +48,19 @@ export default function ResetPasswordScreen() {
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.form}>
         <Text style={styles.title}>Reset password</Text>
-        <Text style={styles.subtitle}>Enter the reset token and choose a new password.</Text>
+        <Text style={styles.subtitle}>
+          {hasLinkToken ? "Choose a new password for your account." : "Paste your reset token and choose a new password."}
+        </Text>
 
-        <TextInput
-          value={token}
-          onChangeText={setToken}
-          placeholder="Reset token"
-          autoCapitalize="none"
-          style={styles.input}
-        />
+        {!hasLinkToken ? (
+          <TextInput
+            value={token}
+            onChangeText={setToken}
+            placeholder="Reset token"
+            autoCapitalize="none"
+            style={styles.input}
+          />
+        ) : null}
         <TextInput
           value={password}
           onChangeText={setPassword}
