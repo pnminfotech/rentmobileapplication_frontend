@@ -589,7 +589,7 @@ const shadow = systemShadow;
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: GREEN.screen },
   content: { paddingTop: 8, paddingBottom: 104 },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: GREEN.screen },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: GREEN.screen  },
   header: { minHeight: 64, marginBottom: 14, flexDirection: "row", alignItems: "center" },
   menuButton: { width: 42, height: 48, alignItems: "flex-start", justifyContent: "center" },
   headerTitleWrap: { flex: 1 },
