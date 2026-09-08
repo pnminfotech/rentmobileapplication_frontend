@@ -4,17 +4,17 @@ export const systemColors = {
   text: "#172033",
   muted: "#667085",
   subtle: "#8A94AD",
-  deep: "#0D5C32",
-  deeper: "#074525",
-  mid: "#178D55",
-  soft: "#E8F5E9",
-  pale: "#F4FAF1",
+  deep: "#244F70",
+  deeper: "#193B56",
+  mid: "#4F7FA6",
+  soft: "#E7F1F8",
+  pale: "#F4F8FB",
   border: "#E9DED0",
   peach: "#FFF0DE",
   orange: "#D77724",
   red: "#C43E32",
   redSoft: "#FDEDE6",
-  shadow: "#233C2B",
+  shadow: "#263B4D",
 };
 
 systemColors.background = systemColors.screen;

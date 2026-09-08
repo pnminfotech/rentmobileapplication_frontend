@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -20,6 +20,7 @@ import {
   updateBed,
 } from "../../src/api/roomApi";
 import { stackedPropertyLabel } from "../../src/utils/unitLabels";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
 const PROPERTY_TYPES = [
@@ -30,8 +31,13 @@ const PROPERTY_TYPES = [
 
 export default function RoomFormScreen() {
   const router = useRouter();
+  const { unitTypes, firstUnitType } = useSystemAccess();
+  const visiblePropertyTypes = useMemo(
+    () => PROPERTY_TYPES.filter((item) => unitTypes.some((allowed) => allowed.value === item.value)),
+    [unitTypes]
+  );
 
-  const [propertyType, setPropertyType] = useState("bed");
+  const [propertyType, setPropertyType] = useState(firstUnitType);
   const [category, setCategory] = useState("");
   const [floorNo, setFloorNo] = useState("");
   const [roomNo, setRoomNo] = useState("");
@@ -131,7 +137,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
       <Text style={styles.label}>Property type</Text>
 
       <View style={styles.segmented}>
-        {PROPERTY_TYPES.map((item) => {
+        {visiblePropertyTypes.map((item) => {
           const active = propertyType === item.value;
 
           return (

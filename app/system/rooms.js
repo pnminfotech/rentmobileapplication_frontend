@@ -8,10 +8,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 
 
 import { getRooms } from "../../src/api/roomApi";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { useRouter } from "expo-router";
 import { BedDouble, Building2, Plus, Search } from "lucide-react-native";
 import { systemColors as colors } from "../../src/theme/systemTheme";
@@ -25,6 +26,7 @@ function RoomIcon({ type }) {
 }
 
 export default function RoomsScreen() {
+  const { isUnitTypeAllowed } = useSystemAccess();
   const [rooms, setRooms] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -35,14 +37,14 @@ const router = useRouter();
     try {
       setError("");
       const data = await getRooms();
-      setRooms(Array.isArray(data) ? data : []);
+      setRooms((Array.isArray(data) ? data : []).filter((room) => isUnitTypeAllowed(room.propertyType || "bed")));
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load rooms.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isUnitTypeAllowed]);
 
   useFocusEffect(
     useCallback(() => {

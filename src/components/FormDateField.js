@@ -63,10 +63,11 @@ export default function FormDateField({ label, value, onChange, minimumDate, max
               minimumDate={minimumDate}
               maximumDate={maximumDate}
               display={Platform.OS === "ios" ? "inline" : "calendar"}
-              onChange={(event, selected) => {
+              onValueChange={(_event, selected) => {
                 if (Platform.OS === "android") setOpen(false);
-                if (event.type === "set" && selected) onChange(toDateValue(selected));
+                if (selected) onChange(toDateValue(selected));
               }}
+              onDismiss={() => setOpen(false)}
             />
           ) : null}
           {open && Platform.OS === "ios" ? <Pressable onPress={() => setOpen(false)} style={styles.done}><Text style={styles.doneText}>Done</Text></Pressable> : null}

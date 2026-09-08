@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Image, Modal, PanResponder, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import * as ImageManipulator from "expo-image-manipulator";
 
 const MAX_OUTPUT_WIDTH = 1200;
@@ -9,49 +9,58 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-export default function WebImageCropper({ sourceUri, outputName = "document.jpg", onCancel, onConfirm }) {
-  const [workingUri, setWorkingUri] = useState(null);
-  const [naturalSize, setNaturalSize] = useState(null);
+function DragHandle({ type, style, children, onDragStart, onDrag, ...props }) {
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponderCapture: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onShouldBlockNativeResponder: () => true,
+    onPanResponderGrant: onDragStart,
+    onPanResponderMove: (_event, gesture) => onDrag(type, gesture.dx, gesture.dy),
+  }), [onDrag, onDragStart, type]);
+
+  return <View style={style} {...props} {...responder.panHandlers}>{children}</View>;
+}
+
+export default function WebImageCropper({ sourceUri, sourceWidth, sourceHeight, aspect, outputName = "document.jpg", onCancel, onConfirm }) {
+  const suppliedSize = useMemo(() => Number(sourceWidth) > 0 && Number(sourceHeight) > 0
+    ? { width: Number(sourceWidth), height: Number(sourceHeight) }
+    : null, [sourceHeight, sourceWidth]);
+  const [naturalSize, setNaturalSize] = useState(suppliedSize);
   const [stageSize, setStageSize] = useState(null);
   const [crop, setCrop] = useState(null);
   const [saving, setSaving] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
   const startCrop = useRef(null);
   const cropRef = useRef(null);
   const imageRectRef = useRef(null);
   const stageSizeRef = useRef(null);
-  const respondersRef = useRef(null);
+  const updateCropRef = useRef(null);
+  const onCancelRef = useRef(onCancel);
+
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
 
   useEffect(() => {
     let active = true;
-    setWorkingUri(null);
-    setNaturalSize(null);
-    setStageSize(null);
-    setCrop(null);
     if (!sourceUri) return;
-    ImageManipulator.manipulateAsync(sourceUri, [], {
-      compress: 0.95,
-      format: ImageManipulator.SaveFormat.JPEG,
-    })
-      .then((result) => {
-        if (!active) return;
-        setWorkingUri(result.uri);
-        setNaturalSize({ width: result.width, height: result.height });
-      })
-      .catch(() => {
-        if (!active) return;
-        Image.getSize(
-          sourceUri,
-          (width, height) => {
-            setWorkingUri(sourceUri);
-            setNaturalSize({ width, height });
-          },
-          () => onCancel?.(new Error("Unable to read selected image."))
-        );
-      });
+    if (suppliedSize) return;
+    Image.getSize(
+      sourceUri,
+      (width, height) => {
+        if (active) setNaturalSize({ width, height });
+      },
+      () => {
+        if (active) onCancelRef.current?.(new Error("Unable to read selected image."));
+      }
+    );
     return () => {
       active = false;
     };
-  }, [onCancel, sourceUri]);
+  }, [sourceUri, suppliedSize]);
 
   const imageRect = useMemo(() => {
     if (!naturalSize || !stageSize) return null;
@@ -67,10 +76,6 @@ export default function WebImageCropper({ sourceUri, outputName = "document.jpg"
   }, [naturalSize, stageSize]);
 
   useEffect(() => {
-    cropRef.current = crop;
-  }, [crop]);
-
-  useEffect(() => {
     imageRectRef.current = imageRect;
   }, [imageRect]);
 
@@ -78,16 +83,27 @@ export default function WebImageCropper({ sourceUri, outputName = "document.jpg"
     stageSizeRef.current = stageSize;
   }, [stageSize]);
 
-  useEffect(() => {
-    if (!imageRect || crop) return;
+  const defaultCrop = useMemo(() => {
+    if (!imageRect) return null;
     const inset = 8;
-    setCrop({
-      left: imageRect.left + inset,
-      top: imageRect.top + inset,
-      width: Math.max(MIN_CROP_SIZE, imageRect.width - inset * 2),
-      height: Math.max(MIN_CROP_SIZE, imageRect.height - inset * 2),
-    });
-  }, [crop, imageRect]);
+    let width = Math.max(MIN_CROP_SIZE, imageRect.width - inset * 2);
+    let height = Math.max(MIN_CROP_SIZE, imageRect.height - inset * 2);
+    if (Number(aspect) > 0) {
+      if (width / height > Number(aspect)) width = height * Number(aspect);
+      else height = width / Number(aspect);
+    }
+    return {
+      left: imageRect.left + (imageRect.width - width) / 2,
+      top: imageRect.top + (imageRect.height - height) / 2,
+      width,
+      height,
+    };
+  }, [aspect, imageRect]);
+  const activeCrop = crop || defaultCrop;
+
+  useEffect(() => {
+    cropRef.current = activeCrop;
+  }, [activeCrop]);
 
   function updateCrop(type, dx, dy) {
     const currentImageRect = imageRectRef.current;
@@ -125,84 +141,64 @@ export default function WebImageCropper({ sourceUri, outputName = "document.jpg"
     setCrop(next);
   }
 
-  function createResponder(type) {
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponderCapture: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onShouldBlockNativeResponder: () => true,
-      onPanResponderGrant: () => {
-        startCrop.current = cropRef.current;
-      },
-      onPanResponderMove: (_event, gesture) => {
-        updateCrop(type, gesture.dx, gesture.dy);
-      },
-    }).panHandlers;
-  }
+  useEffect(() => {
+    updateCropRef.current = updateCrop;
+  });
 
-  if (!respondersRef.current) {
-    respondersRef.current = {
-      move: createResponder("move"),
-      t: createResponder("t"),
-      b: createResponder("b"),
-      l: createResponder("l"),
-      r: createResponder("r"),
-      tl: createResponder("tl"),
-      tr: createResponder("tr"),
-      bl: createResponder("bl"),
-      br: createResponder("br"),
-    };
-  }
-  const responders = respondersRef.current;
+  const beginDrag = useCallback(() => {
+    startCrop.current = cropRef.current;
+  }, []);
+
+  const dragCrop = useCallback((type, dx, dy) => {
+    updateCropRef.current?.(type, dx, dy);
+  }, []);
 
   function cropStyle() {
-    return crop ? { left: crop.left, top: crop.top, width: crop.width, height: crop.height } : null;
+    return activeCrop ? { left: activeCrop.left, top: activeCrop.top, width: activeCrop.width, height: activeCrop.height } : null;
   }
 
   function handleStyle(type) {
-    if (!crop) return null;
+    if (!activeCrop) return null;
     const half = 20;
-    const right = crop.left + crop.width - half;
-    const bottom = crop.top + crop.height - half;
+    const right = activeCrop.left + activeCrop.width - half;
+    const bottom = activeCrop.top + activeCrop.height - half;
     const map = {
-      tl: { left: crop.left - half, top: crop.top - half },
-      tr: { left: right, top: crop.top - half },
-      bl: { left: crop.left - half, top: bottom },
+      tl: { left: activeCrop.left - half, top: activeCrop.top - half },
+      tr: { left: right, top: activeCrop.top - half },
+      bl: { left: activeCrop.left - half, top: bottom },
       br: { left: right, top: bottom },
     };
     return map[type];
   }
 
   function edgeStyle(type) {
-    if (!crop) return null;
+    if (!activeCrop) return null;
     const thickness = 34;
     const cornerGap = 18;
     const map = {
       t: {
-        left: crop.left + cornerGap,
-        top: crop.top - thickness / 2,
-        width: Math.max(1, crop.width - cornerGap * 2),
+        left: activeCrop.left + cornerGap,
+        top: activeCrop.top - thickness / 2,
+        width: Math.max(1, activeCrop.width - cornerGap * 2),
         height: thickness,
       },
       b: {
-        left: crop.left + cornerGap,
-        top: crop.top + crop.height - thickness / 2,
-        width: Math.max(1, crop.width - cornerGap * 2),
+        left: activeCrop.left + cornerGap,
+        top: activeCrop.top + activeCrop.height - thickness / 2,
+        width: Math.max(1, activeCrop.width - cornerGap * 2),
         height: thickness,
       },
       l: {
-        left: crop.left - thickness / 2,
-        top: crop.top + cornerGap,
+        left: activeCrop.left - thickness / 2,
+        top: activeCrop.top + cornerGap,
         width: thickness,
-        height: Math.max(1, crop.height - cornerGap * 2),
+        height: Math.max(1, activeCrop.height - cornerGap * 2),
       },
       r: {
-        left: crop.left + crop.width - thickness / 2,
-        top: crop.top + cornerGap,
+        left: activeCrop.left + activeCrop.width - thickness / 2,
+        top: activeCrop.top + cornerGap,
         width: thickness,
-        height: Math.max(1, crop.height - cornerGap * 2),
+        height: Math.max(1, activeCrop.height - cornerGap * 2),
       },
     };
     return map[type];
@@ -210,7 +206,7 @@ export default function WebImageCropper({ sourceUri, outputName = "document.jpg"
 
   async function confirm() {
     const currentCrop = cropRef.current;
-    if (!naturalSize || !imageRect || !currentCrop || !workingUri || saving) return;
+    if (!naturalSize || !imageRect || !currentCrop || !sourceUri || saving) return;
     try {
       setSaving(true);
       const ratioX = naturalSize.width / imageRect.width;
@@ -226,9 +222,11 @@ export default function WebImageCropper({ sourceUri, outputName = "document.jpg"
       cropAction.width = clamp(cropAction.width, 1, naturalSize.width - cropAction.originX);
       cropAction.height = clamp(cropAction.height, 1, naturalSize.height - cropAction.originY);
 
-      const actions = [{ crop: cropAction }];
-      if (cropAction.width > MAX_OUTPUT_WIDTH) actions.push({ resize: { width: MAX_OUTPUT_WIDTH } });
-      const result = await ImageManipulator.manipulateAsync(workingUri, actions, {
+      const context = ImageManipulator.ImageManipulator.manipulate(sourceUri);
+      context.crop(cropAction);
+      if (cropAction.width > MAX_OUTPUT_WIDTH) context.resize({ width: MAX_OUTPUT_WIDTH });
+      const renderedImage = await context.renderAsync();
+      const result = await renderedImage.saveAsync({
         compress: 0.75,
         format: ImageManipulator.SaveFormat.JPEG,
       });
@@ -250,31 +248,33 @@ export default function WebImageCropper({ sourceUri, outputName = "document.jpg"
             style={styles.cropArea}
             onLayout={(event) => {
               const width = event.nativeEvent.layout.width;
-              setStageSize({ width, height: Math.max(430, Math.round(width * 1.6)) });
+              const availableHeight = Math.max(260, windowHeight - 230);
+              const height = Math.min(Math.max(320, Math.round(width * 1.25)), availableHeight);
+              setStageSize((current) => current?.width === width && current?.height === height ? current : { width, height });
             }}
           >
-            {stageSize && imageRect && workingUri ? (
+            {stageSize && imageRect && sourceUri ? (
               <View style={[styles.stage, { height: stageSize.height }]}>
-                <Image pointerEvents="none" source={{ uri: workingUri }} style={[styles.image, imageRect]} resizeMode="stretch" />
-                {crop ? (
+                <Image pointerEvents="none" source={{ uri: sourceUri }} style={[styles.image, imageRect]} resizeMode="stretch" />
+                {activeCrop ? (
                   <>
-                    <View pointerEvents="none" style={[styles.shade, { left: imageRect.left, top: imageRect.top, width: imageRect.width, height: crop.top - imageRect.top }]} />
-                    <View pointerEvents="none" style={[styles.shade, { left: imageRect.left, top: crop.top + crop.height, width: imageRect.width, height: imageRect.top + imageRect.height - crop.top - crop.height }]} />
-                    <View pointerEvents="none" style={[styles.shade, { left: imageRect.left, top: crop.top, width: crop.left - imageRect.left, height: crop.height }]} />
-                    <View pointerEvents="none" style={[styles.shade, { left: crop.left + crop.width, top: crop.top, width: imageRect.left + imageRect.width - crop.left - crop.width, height: crop.height }]} />
-                    <View style={[styles.cropSelection, cropStyle()]} {...responders.move}>
+                    <View pointerEvents="none" style={[styles.shade, { left: imageRect.left, top: imageRect.top, width: imageRect.width, height: activeCrop.top - imageRect.top }]} />
+                    <View pointerEvents="none" style={[styles.shade, { left: imageRect.left, top: activeCrop.top + activeCrop.height, width: imageRect.width, height: imageRect.top + imageRect.height - activeCrop.top - activeCrop.height }]} />
+                    <View pointerEvents="none" style={[styles.shade, { left: imageRect.left, top: activeCrop.top, width: activeCrop.left - imageRect.left, height: activeCrop.height }]} />
+                    <View pointerEvents="none" style={[styles.shade, { left: activeCrop.left + activeCrop.width, top: activeCrop.top, width: imageRect.left + imageRect.width - activeCrop.left - activeCrop.width, height: activeCrop.height }]} />
+                    <DragHandle type="move" style={[styles.cropSelection, cropStyle()]} onDragStart={beginDrag} onDrag={dragCrop}>
                       <View pointerEvents="none" style={styles.gridV} />
                       <View pointerEvents="none" style={[styles.gridV, { left: "66.66%" }]} />
                       <View pointerEvents="none" style={styles.gridH} />
                       <View pointerEvents="none" style={[styles.gridH, { top: "66.66%" }]} />
-                    </View>
+                    </DragHandle>
                     {["t", "b", "l", "r"].map((type) => (
-                      <View key={type} style={[styles.edgeHandle, edgeStyle(type)]} {...responders[type]} />
+                      <DragHandle key={type} type={type} style={[styles.edgeHandle, edgeStyle(type)]} onDragStart={beginDrag} onDrag={dragCrop} />
                     ))}
                     {["tl", "tr", "bl", "br"].map((type) => (
-                      <View key={type} hitSlop={20} style={[styles.handleTouch, handleStyle(type)]} {...responders[type]}>
+                      <DragHandle key={type} type={type} hitSlop={20} style={[styles.handleTouch, handleStyle(type)]} onDragStart={beginDrag} onDrag={dragCrop}>
                         <View style={styles.handle} />
-                      </View>
+                      </DragHandle>
                     ))}
                   </>
                 ) : null}
@@ -283,7 +283,7 @@ export default function WebImageCropper({ sourceUri, outputName = "document.jpg"
           </View>
           <View style={styles.actions}>
             <Pressable onPress={() => onCancel?.()} style={styles.cancelButton} disabled={saving}><Text style={styles.cancelText}>Cancel</Text></Pressable>
-            <Pressable onPress={confirm} style={[styles.confirmButton, (saving || !crop) && styles.disabled]} disabled={saving || !crop}><Text style={styles.confirmText}>{saving ? "Preparing..." : "Confirm image"}</Text></Pressable>
+            <Pressable onPress={confirm} style={[styles.confirmButton, (saving || !activeCrop) && styles.disabled]} disabled={saving || !activeCrop}><Text style={styles.confirmText}>{saving ? "Preparing..." : "Confirm image"}</Text></Pressable>
           </View>
         </View>
       </View>

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Check, IndianRupee, Save, Utensils } from "lucide-react-native";
 
@@ -291,11 +291,11 @@ const styles = StyleSheet.create({
   heroIcon: { width: 56, height: 56, alignItems: "center", justifyContent: "center", borderRadius: 17, backgroundColor: colors.card },
   heroText: { flex: 1, minWidth: 0, marginLeft: 12 },
   heroTitle: { color: colors.card, fontSize: 21, fontWeight: "900" },
-  heroMeta: { marginTop: 4, color: "#D9EAD5", fontSize: 12, fontWeight: "700" },
+  heroMeta: { marginTop: 4, color: "#DCEAF4", fontSize: 12, fontWeight: "700" },
   modeGrid: { marginTop: 13, gap: 10 },
   groupTitle: { marginTop: 15, marginBottom: 8, color: colors.text, fontSize: 15, fontWeight: "900" },
   modeCard: { minHeight: 82, padding: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 16, backgroundColor: colors.card, ...systemShadow },
-  modeActive: { borderColor: colors.deep, backgroundColor: "#F1F8EE" },
+  modeActive: { borderColor: colors.deep, backgroundColor: colors.soft },
   checkBox: { width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   checkBoxActive: { borderColor: colors.deep, backgroundColor: colors.deep },
   radio: { width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.card },

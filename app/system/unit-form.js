@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,10 +10,11 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { ArrowLeft, Check, Plus } from "lucide-react-native";
 
 import { createRoom, getRooms } from "../../src/api/roomApi";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { stackedPropertyLabel } from "../../src/utils/unitLabels";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
@@ -55,9 +56,13 @@ function formatLocation(unit) {
 export default function UnitFormScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const initialType = ["bed", "room", "shop"].includes(params.type)
-    ? params.type
-    : "bed";
+  const { unitTypes, firstUnitType, isUnitTypeAllowed } = useSystemAccess();
+  const visibleUnitTypes = useMemo(
+    () => UNIT_TYPES.filter((item) => unitTypes.some((allowed) => allowed.value === item.value)),
+    [unitTypes]
+  );
+  const requestedType = Array.isArray(params.type) ? params.type[0] : params.type;
+  const initialType = isUnitTypeAllowed(requestedType) ? requestedType : firstUnitType;
 
   const [propertyType, setPropertyType] = useState(initialType);
   const [category, setCategory] = useState("");
@@ -90,6 +95,10 @@ export default function UnitFormScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { loadUnits(); }, [loadUnits]));
+
+  useEffect(() => {
+    if (!isUnitTypeAllowed(propertyType)) setPropertyType(firstUnitType);
+  }, [firstUnitType, isUnitTypeAllowed, propertyType]);
 
   const labels = useMemo(() => {
     if (propertyType === "bed") {
@@ -333,7 +342,7 @@ export default function UnitFormScreen() {
 
       <Text style={styles.label}>Unit type</Text>
       <View style={styles.segmented}>
-        {UNIT_TYPES.map((item) => {
+        {visibleUnitTypes.map((item) => {
           const active = propertyType === item.value;
           return (
             <Pressable key={item.value} onPress={() => selectType(item.value)} style={[styles.segment, active && styles.segmentActive]}>

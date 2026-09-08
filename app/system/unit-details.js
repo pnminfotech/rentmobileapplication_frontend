@@ -9,11 +9,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react-native";
 
 import { deleteBed, deleteUnit, getUnit, updateBed, updateUnit } from "../../src/api/roomApi";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
 function normalizeNumericText(value) {
@@ -29,6 +30,7 @@ function unitTypeLabel(unit) {
 
 export default function UnitDetailsScreen() {
   const router = useRouter();
+  const { isUnitTypeAllowed } = useSystemAccess();
   const { id } = useLocalSearchParams();
   const [unit, setUnit] = useState(null);
   const [quota, setQuota] = useState(null);
@@ -49,6 +51,11 @@ export default function UnitDetailsScreen() {
       setError("");
       const data = await getUnit(id);
       const loadedUnit = data?.unit || null;
+      if (loadedUnit && !isUnitTypeAllowed(loadedUnit.propertyType || "bed")) {
+        setError("This property type is not included in the current subscription.");
+        setUnit(null);
+        return;
+      }
       setUnit(loadedUnit);
       setQuota(data?.quota || null);
 
@@ -83,7 +90,7 @@ export default function UnitDetailsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, isUnitTypeAllowed]);
 
   useFocusEffect(useCallback(() => { loadUnit(); }, [loadUnit]));
 

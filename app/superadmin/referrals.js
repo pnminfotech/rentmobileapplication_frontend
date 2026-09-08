@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Bell, LogOut, Tags } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

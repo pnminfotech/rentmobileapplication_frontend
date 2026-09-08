@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as ImageManipulator from "expo-image-manipulator";
 import { Check, Camera, ChevronDown, ShieldCheck } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
 
@@ -241,16 +240,12 @@ export default function TenantIntakeScreen() {
       ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
       : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
+    const selectedImage = result.assets[0];
     if (Platform.OS === "web") {
-      setCropRequest({ key, uri: result.assets[0].uri, aspect: isSelfie ? 1 : 4 / 3 });
+      setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
       return;
     }
-    const image = await ImageManipulator.manipulateAsync(
-      result.assets[0].uri,
-      [{ resize: { width: 1600 } }],
-      { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-    );
-    setCropRequest({ key, uri: image.uri, aspect: isSelfie ? 1 : 4 / 3 });
+    setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
   }
 
   function validate() {
@@ -410,6 +405,8 @@ export default function TenantIntakeScreen() {
       {cropRequest ? (
         <WebImageCropper
           sourceUri={cropRequest.uri}
+          sourceWidth={cropRequest.width}
+          sourceHeight={cropRequest.height}
           aspect={cropRequest.aspect}
           outputName={`${cropRequest.key}.jpg`}
           onCancel={(cropError) => {

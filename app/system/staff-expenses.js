@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, ChevronLeft, ChevronRight, History, Pencil, Plus, Search, SlidersHorizontal, Trash2, Users } from "lucide-react-native";
 

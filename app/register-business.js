@@ -17,7 +17,7 @@ import { useRouter } from "expo-router";
 import { ArrowLeft, CheckCircle2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getSaasPaymentStatus, getSubscriptionPlans, quoteReferralCode, registerBusiness } from "../src/api/saasApi";
+import { completeMockSaasPayment, getSaasPaymentStatus, getSubscriptionPlans, quoteReferralCode, registerBusiness } from "../src/api/saasApi";
 import { clearAuthSession } from "../src/storage/authStorage";
 import { stackedPropertyLabel } from "../src/utils/unitLabels";
 import { colors } from "../src/theme/colors";
@@ -246,7 +246,7 @@ export default function RegisterBusinessScreen() {
         setResult(data);
       });
       const firstPaymentUrl = data?.payment?.directPaymentUrl || data?.payment?.paymentUrl || data?.payment?.checkoutPageUrl;
-      if (firstPaymentUrl) {
+      if (firstPaymentUrl && String(data?.payment?.provider || "").toLowerCase() !== "mock") {
         await openCheckoutUrl(firstPaymentUrl, data?.transaction?._id);
       }
       if (data?.paymentError) {
@@ -287,6 +287,24 @@ export default function RegisterBusinessScreen() {
 
   async function openRegistrationPayment() {
     await openCheckoutUrl(getCheckoutUrl(), result?.transaction?._id);
+  }
+
+  async function completeTestPayment() {
+    const transactionId = result?.transaction?._id;
+    const provider = String(result?.payment?.provider || "").toLowerCase();
+    if (!transactionId || provider !== "mock" || !result?.payment?.mockSuccessUrl) return;
+    try {
+      setOpeningPayment(true);
+      setPaymentOpenError("");
+      const status = await completeMockSaasPayment(transactionId);
+      await showPaymentSuccess(status);
+    } catch (err) {
+      const message = err.response?.data?.message || err.message || "Unable to complete the test payment.";
+      setPaymentOpenError(message);
+      Alert.alert("Test payment failed", message);
+    } finally {
+      setOpeningPayment(false);
+    }
   }
 
   async function pollRegistrationPayment(transactionIdArg = result?.transaction?._id) {
@@ -375,6 +393,7 @@ export default function RegisterBusinessScreen() {
   if (result) {
     const isSuccess = paymentStatus === "success";
     const isFailed = ["failed", "cancelled", "canceled"].includes(paymentStatus);
+    const isMockPayment = String(result?.payment?.provider || "").toLowerCase() === "mock";
     return (
       <ScrollView style={styles.screen} contentContainerStyle={[styles.content, contentInsetStyle]}>
         <View style={styles.successCard}>
@@ -410,7 +429,12 @@ export default function RegisterBusinessScreen() {
           </View>
         ) : null}
 
-        {!autoCheckingPayment && !isSuccess && getCheckoutUrl() ? (
+        {!autoCheckingPayment && !isSuccess && isMockPayment && result?.payment?.mockSuccessUrl ? (
+          <Pressable onPress={completeTestPayment} disabled={openingPayment} style={[styles.primaryButton, openingPayment && styles.disabled]}>
+            {openingPayment ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.primaryText}>Complete mock payment</Text>}
+          </Pressable>
+        ) : null}
+        {!autoCheckingPayment && !isSuccess && getCheckoutUrl() && !isMockPayment ? (
           <Pressable onPress={openRegistrationPayment} disabled={openingPayment} style={[styles.primaryButton, openingPayment && styles.disabled]}>
             {openingPayment ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.primaryText}>{isFailed ? "Retry payment" : "Make payment"}</Text>}
           </Pressable>

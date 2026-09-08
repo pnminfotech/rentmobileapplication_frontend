@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { Tabs, useRouter } from "expo-router";
 import {
   Building2,
@@ -11,16 +11,20 @@ import {
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAppBootstrap } from "../../src/api/saasApi";
+import { SystemAccessProvider } from "../../src/context/SystemAccessContext";
 import { clearAuthSession } from "../../src/storage/authStorage";
 import { systemColors } from "../../src/theme/systemTheme";
 
-const SYSTEM_GREEN = systemColors.deep;
+const SYSTEM_PRIMARY = systemColors.deep;
 const SYSTEM_MUTED = systemColors.muted;
+const SYSTEM_TAB_BLUE = "#2C6386";
+const SYSTEM_TAB_BLUE_SOFT = "#E4EFF7";
 
 export default function SystemTabsLayout() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [checkingAccess, setCheckingAccess] = useState(true);
+  const [unitAccess, setUnitAccess] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -40,6 +44,8 @@ export default function SystemTabsLayout() {
             router.replace("/subscription-expired");
             return;
           }
+
+          setUnitAccess(data);
         } catch (_err) {
           await clearAuthSession();
           if (active) router.replace("/login");
@@ -59,28 +65,43 @@ export default function SystemTabsLayout() {
   if (checkingAccess) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: systemColors.screen }}>
-        <ActivityIndicator size="large" color={SYSTEM_GREEN} />
+        <ActivityIndicator size="large" color={SYSTEM_PRIMARY} />
       </View>
     );
   }
     
   return (
+    <SystemAccessProvider source={unitAccess}>
     <Tabs
       screenOptions={{
         headerShown: false,
         sceneStyle: {
           paddingTop: Math.max(insets.top, 12),
-          paddingBottom: Math.max(insets.bottom, 12),
           backgroundColor: systemColors.screen,
         },
-        tabBarActiveTintColor: SYSTEM_GREEN,
+        tabBarActiveTintColor: SYSTEM_TAB_BLUE,
         tabBarInactiveTintColor: SYSTEM_MUTED,
+        tabBarActiveBackgroundColor: SYSTEM_TAB_BLUE_SOFT,
         tabBarStyle: {
-          height: 66 + Math.max(insets.bottom, 8),
-          paddingTop: 7,
-          paddingBottom: Math.max(insets.bottom, 8),
+          marginHorizontal: 14,
+          marginBottom: 8,
+          height: 62 + Math.max(insets.bottom, 4),
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, 6),
+          paddingHorizontal: 6,
+          borderTopWidth: 1,
           borderTopColor: systemColors.border,
+          borderRadius: 26,
           backgroundColor: systemColors.card,
+          elevation: 8,
+          shadowColor: systemColors.shadow,
+          shadowOpacity: 0.12,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 4 },
+        },
+        tabBarItemStyle: {
+          marginHorizontal: 2,
+          borderRadius: 20,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -122,6 +143,8 @@ export default function SystemTabsLayout() {
         name="light-bills"
         options={{
           title: "Light bills",
+          tabBarActiveTintColor: "#FFFFFF",
+          tabBarActiveBackgroundColor: SYSTEM_TAB_BLUE,
           tabBarIcon: ({ color, size }) => (
             <Zap color={color} size={size} />
           ),
@@ -284,5 +307,6 @@ export default function SystemTabsLayout() {
         options={{ href: null, tabBarStyle: { display: "none" } }}
       />
     </Tabs>
+    </SystemAccessProvider>
   );
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import { CreditCard, LogOut, RefreshCw, WalletCards } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -155,7 +155,8 @@ export default function SubscriptionExpiredScreen() {
       if (!transactionId) throw new Error(isPendingPayment ? "Activation transaction was not found." : "Renewal transaction was not created.");
 
       const payment = await createSaasPayment({ transactionId });
-      if (payment?.payment?.mockSuccessUrl) {
+      const provider = String(payment?.payment?.provider || "").toLowerCase();
+      if (provider === "mock" && payment?.payment?.mockSuccessUrl) {
         await completeMockSaasPayment(transactionId);
         Alert.alert(isPendingPayment ? "Activated" : "Renewed", isPendingPayment ? "Subscription activated successfully." : "Subscription renewed successfully.", [
           { text: "Continue", onPress: () => router.replace("/system") },

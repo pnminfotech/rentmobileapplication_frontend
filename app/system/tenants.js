@@ -1,26 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { Image } from "expo-image";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Archive, Download, Funnel, Phone, Plus, Search, Share2, Upload, UserRound } from "lucide-react-native";
+import { CalendarDays, Download, Plus, Search, Share2, ShieldCheck, SlidersHorizontal, Upload, UserRound, X } from "lucide-react-native";
 import * as XLSX from "xlsx";
 
 import { getSystemDashboard } from "../../src/api/saasApi";
 import { getRooms } from "../../src/api/roomApi";
 import { createTenantInviteForForm, getRentDues, getRentSummary, getTenants, importTenantsFromSheet } from "../../src/api/tenantApi";
-import { filterVacanciesByType, formatTenantUnit, formatVacancyMeta, groupVacanciesByProperty, propertyTypeFromTenant, stackedPropertyLabel, unitTypeLabel } from "../../src/utils/unitLabels";
+import { filterVacanciesByType, formatTenantUnit, formatVacancyMeta, groupVacanciesByProperty, propertyTypeFromTenant, unitTypeLabel } from "../../src/utils/unitLabels";
 import { allowedUnitTypes, firstAllowedType } from "../../src/utils/subscriptionAccess";
 import { documentStatusForTenant } from "../../src/utils/tenantDocuments";
 import { useResponsive } from "../../src/utils/responsive";
-import { hasCanteenFeature } from "../../src/utils/featureAccess";
 import { colors } from "../../src/theme/colors";
 import { systemColors, systemShadow } from "../../src/theme/systemTheme";
 
 const S = systemColors;
+const UI = {
+  blue: "#4F7FA6",
+  blueDark: "#244F70",
+  blueSoft: "#E7F1F8",
+  navy: "#111B2A",
+  muted: "#63738A",
+  border: "#D9E1E7",
+  screen: "#F6F8F7",
+};
 
 const FILTERS = ["All", "Needs payment", "Paid"];
 const INITIAL_TENANT_RENDER_COUNT = 40;
@@ -28,6 +36,25 @@ const INITIAL_VACANCY_RENDER_COUNT = 60;
 
 function monthKey(date) {
   return `${date.toLocaleString("en-US", { month: "short" })}-${String(date.getFullYear()).slice(-2)}`;
+}
+
+function monthKeyDate(value) {
+  const match = /^([A-Za-z]{3})-(\d{2})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const month = new Date(`${match[1]} 1, 2000`).getMonth();
+  if (Number.isNaN(month)) return null;
+  return new Date(2000 + Number(match[2]), month, 1);
+}
+
+function displayMonthKey(value) {
+  const date = monthKeyDate(value);
+  return date ? date.toLocaleDateString("en-US", { month: "long", year: "numeric" }) : String(value || "Month");
+}
+
+function formatCycleDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function shiftMonth(date, amount) {
@@ -59,6 +86,18 @@ function formatDayMonth(date) {
 
 function formatMonthYear(date) {
   return `${date.toLocaleString("en-US", { month: "short" })} ${date.getFullYear()}`;
+}
+
+function formatJoinedDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not available";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function isLeavingTenant(tenant) {
+  if (!tenant?.leaveDate) return false;
+  const leaveDate = new Date(tenant.leaveDate);
+  return !Number.isNaN(leaveDate.getTime()) && leaveDate > new Date();
 }
 
 function money(value) {
@@ -93,10 +132,6 @@ function tenantPhotoUrl(tenant) {
     return document?.url && (label.includes("photo") || label.includes("selfie") || label.includes("photograph"));
   });
   return photo?.url || "";
-}
-
-function paymentCycleLabel(tenant) {
-  return tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid" : "Normal cycle";
 }
 
 function tenantUnitBadgeLabel(tenant) {
@@ -348,17 +383,20 @@ export default function TenantsScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const params = useLocalSearchParams();
   const initialType = Array.isArray(params.type) ? params.type[0] : params.type;
+  const initialView = Array.isArray(params.view) ? params.view[0] : params.view;
   const [tenants, setTenants] = useState([]);
   const [vacancies, setVacancies] = useState([]);
   const [dues, setDues] = useState({ totalDue: 0, tenants: [] });
   const [unitAccess, setUnitAccess] = useState(null);
-  const [canteenEnabled, setCanteenEnabled] = useState(false);
   const [activeType, setActiveType] = useState(["bed", "room", "shop"].includes(initialType) ? initialType : "bed");
-  const [activeTab, setActiveTab] = useState("tenants");
+  const [activeTab, setActiveTab] = useState(initialView === "vacant" ? "vacant" : "tenants");
+  const [tenantStatus, setTenantStatus] = useState("active");
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedDueRow, setSelectedDueRow] = useState(null);
   const [sharingTenantId, setSharingTenantId] = useState("");
   const [templateType, setTemplateType] = useState("");
   const [importingType, setImportingType] = useState("");
@@ -425,7 +463,7 @@ export default function TenantsScreen() {
       setRentSummaryByMonth(summaryByMonth);
       setRentSummary(summaryByMonth.get(key) || new Map());
       setUnitAccess(dashboardData?.units || dashboardData);
-      setCanteenEnabled(hasCanteenFeature(dashboardData));
+      setActiveTab(initialView === "vacant" ? "vacant" : "tenants");
       setActiveType((current) => {
         const requested = ["bed", "room", "shop"].includes(initialType) ? initialType : current;
         return allowedUnitTypes(dashboardData?.units || dashboardData).some((type) => type.value === requested) ? requested : firstAllowedType(dashboardData?.units || dashboardData);
@@ -435,7 +473,7 @@ export default function TenantsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [initialType, key, rentMonths]);
+  }, [initialType, initialView, key, rentMonths]);
 
   useFocusEffect(useCallback(() => { loadTenants(); }, [loadTenants]));
 
@@ -454,9 +492,10 @@ export default function TenantsScreen() {
       // Only include current month's balance if its rent cycle has started
       const cycleStartDate = cycleStartForMonth(tenant, new Date());
       const cycleHasStarted = cycleStartDate <= new Date();
-      const totalDue = (cycleHasStarted ? balance : 0) + overdue;
-      
       const dueMonths = Array.isArray(dueInfo?.dueMonths) ? dueInfo.dueMonths : [];
+      const currentDue = cycleHasStarted ? balance : 0;
+      const currentAlreadyIncluded = dueMonths.some((month) => month.month === key);
+      const totalDue = overdue + (currentAlreadyIncluded ? 0 : currentDue);
       const docStatus = documentStatusForTenant(tenant);
       return {
         tenant,
@@ -464,6 +503,7 @@ export default function TenantsScreen() {
         paid,
         balance,
         overdue,
+        currentDue,
         totalDue,
         dueMonths,
         awaitingForm,
@@ -473,26 +513,12 @@ export default function TenantsScreen() {
     });
   }, [dues.tenants, key, rentSummary, tenants]);
 
-  const tenantTypes = useMemo(() => allowedUnitTypes(unitAccess).map((type) => ({
-    ...type,
-  })), [unitAccess]);
-  const typeRows = useMemo(() => tenantRows.filter(({ tenant }) => propertyTypeFromTenant(tenant) === activeType), [activeType, tenantRows]);
+  const tenantTypes = useMemo(() => allowedUnitTypes(unitAccess).map((type) => ({ ...type })), [unitAccess]);
+  const typeRows = useMemo(() => {
+    const rows = tenantRows.filter(({ tenant }) => propertyTypeFromTenant(tenant) === activeType);
+    return rows.filter(({ tenant }) => tenantStatus === "leaving" ? isLeavingTenant(tenant) : !isLeavingTenant(tenant));
+  }, [activeType, tenantRows, tenantStatus]);
   const vacantRows = useMemo(() => filterVacanciesByType(vacancies, activeType), [activeType, vacancies]);
-
-  const typeCounts = useMemo(() => {
-    return tenantTypes.reduce((counts, item) => {
-      counts[item.value] = tenantRows.filter(({ tenant }) => propertyTypeFromTenant(tenant) === item.value).length;
-      return counts;
-    }, {});
-  }, [tenantRows, tenantTypes]);
-
-  useEffect(() => {
-    setVisibleTenantCount(INITIAL_TENANT_RENDER_COUNT);
-  }, [activeType, filter, query]);
-
-  useEffect(() => {
-    setVisibleVacancyCount(INITIAL_VACANCY_RENDER_COUNT);
-  }, [activeType]);
 
   const visibleTenants = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -566,6 +592,30 @@ export default function TenantsScreen() {
   const thisMonthPending = typeRows.reduce((sum, row) => sum + row.totalDue, 0);
   const typeOverdue = typeRows.reduce((sum, row) => sum + row.overdue, 0);
   const activeTypeLabel = tenantTypes.find((item) => item.value === activeType)?.label || "Tenants";
+  const selectedDueItems = useMemo(() => {
+    if (!selectedDueRow) return [];
+    const items = (selectedDueRow.dueMonths || []).map((month) => ({
+      month: month.month,
+      expected: Number(month.expected || 0),
+      paid: Number(month.paid || 0),
+      outstanding: Number(month.outstanding || 0),
+      cycleStart: month.cycleStart,
+      cycleEnd: month.cycleEnd,
+    }));
+    if (selectedDueRow.currentDue > 0 && !items.some((month) => month.month === key)) {
+      const cycleStart = cycleStartForMonth(selectedDueRow.tenant, new Date(selectedYear, currentMonthIndex, 1));
+      items.push({
+        month: key,
+        expected: Number(selectedDueRow.expected || 0),
+        paid: Number(selectedDueRow.paid || 0),
+        outstanding: Number(selectedDueRow.currentDue || 0),
+        cycleStart,
+        cycleEnd: cycleStartForMonth(selectedDueRow.tenant, shiftMonth(new Date(selectedYear, currentMonthIndex, 1), 1)),
+      });
+    }
+    return items.sort((left, right) => (monthKeyDate(left.month)?.getTime() || 0) - (monthKeyDate(right.month)?.getTime() || 0));
+  }, [currentMonthIndex, key, selectedDueRow, selectedYear]);
+  const selectedDueTotal = selectedDueItems.reduce((sum, item) => sum + item.outstanding, 0);
 
   function openAdmissionForVacancy(vacancy) {
     router.push({
@@ -753,46 +803,52 @@ export default function TenantsScreen() {
     }
   }
 
+  const actionType = activeType;
+
   return (
     <View style={styles.screen} >
       <View style={[styles.content, { padding: responsive.pagePadding }]}>
         <View style={[styles.header, responsive.isTiny && styles.headerTiny]}>
           <View style={styles.headerText}>
             <Text style={styles.title}>Tenants</Text>
-            <Text style={styles.subtitle}>{typeRows.length} active {activeTypeLabel.toLowerCase()} tenants</Text>
+            <Text style={styles.subtitle}>{typeRows.length} {tenantStatus === "leaving" ? "leaving" : "active"} tenants</Text>
           </View>
-          <Pressable onPress={() => router.push("/system/former-tenants")} style={styles.historyButton} accessibilityLabel="Former tenants">
-            <Archive size={20} color={S.deep} />
-          </Pressable>
-          <Pressable onPress={() => router.push("/system/tenant-invite")} style={styles.historyButton} accessibilityLabel="Share tenant form">
-            <Share2 size={20} color={S.deep} />
-          </Pressable>
-          <Pressable onPress={() => downloadImportTemplate(activeType)} disabled={templateType === activeType} style={styles.historyButton} accessibilityLabel="Download import template">
-            {templateType === activeType ? <ActivityIndicator size="small" color={S.deep} /> : <Download size={18} color={S.deep} />}
-          </Pressable>
-          <Pressable onPress={() => importTenantSheet(activeType)} disabled={importingType === activeType} style={styles.historyButton} accessibilityLabel="Import tenants from sheet">
-            {importingType === activeType ? <ActivityIndicator size="small" color={S.deep} /> : <Upload size={18} color={S.deep} />}
-          </Pressable>
-          <Pressable onPress={() => setActiveTab((current) => current === "vacant" ? "tenants" : "vacant")} style={[styles.vacantHeaderButton, activeTab === "vacant" && styles.vacantHeaderButtonActive]} accessibilityLabel="Show vacant units">
-            <Text style={[styles.vacantHeaderButtonText, activeTab === "vacant" && styles.vacantHeaderButtonTextActive]}>{activeTab === "vacant" ? "Back to tenants" : "Vacant"}</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push({ pathname: "/system/tenant-admission", params: { type: activeType } })} style={[styles.addButton, responsive.isTiny && styles.addButtonTiny]}>
-            <Plus size={20} color={colors.surface} />
-            <Text style={styles.addButtonText} numberOfLines={1}>Add tenant</Text>
+          {/* <Pressable onPress={() => searchInputRef.current?.focus()} style={styles.headerIconButton} accessibilityLabel="Search tenants">
+            <Search size={23} color={UI.blueDark} />
+          </Pressable> */}
+          <Pressable onPress={() => router.push({ pathname: "/system/tenant-admission", params: { type: actionType } })} style={styles.addButton}>
+            <Plus size={18} color="#FFFFFF" /><Text style={styles.addButtonText}>Add tenant</Text>
           </Pressable>
         </View>
 
-        <View style={styles.typeTabs}>
-            {tenantTypes.map((item) => {
-              const active = item.value === activeType;
-              const count = typeCounts[item.value] || 0;
-              return (
-              <Pressable key={item.value} onPress={() => { setActiveType(item.value); setFilter("All"); }} style={[styles.typeTab, active && styles.typeTabActive]}>
-                <Text style={[styles.typeTabText, active && styles.typeTabTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(item.label)}</Text>
-                <Text style={[styles.typeTabCount, active && styles.typeTabTextActive]} numberOfLines={1}>{count}</Text>
-              </Pressable>
-            );
-          })}
+        <View style={styles.statusTabs}>
+          <Pressable onPress={() => { setTenantStatus("active"); setActiveTab("tenants"); }} style={[styles.statusTab, tenantStatus === "active" && activeTab === "tenants" && styles.statusTabActive]}>
+            <Text style={[styles.statusTabText, tenantStatus === "active" && activeTab === "tenants" && styles.statusTabTextActive]}>Active</Text>
+          </Pressable>
+          <Pressable onPress={() => { setTenantStatus("leaving"); setActiveTab("tenants"); }} style={[styles.statusTab, tenantStatus === "leaving" && activeTab === "tenants" && styles.statusTabActive]}>
+            <Text style={[styles.statusTabText, tenantStatus === "leaving" && activeTab === "tenants" && styles.statusTabTextActive]}>Leaving</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push("/system/former-tenants")} style={styles.statusTab}>
+            <Text style={styles.statusTabText}>Former</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.actionBar}>
+          <Pressable onPress={() => importTenantSheet(actionType)} disabled={importingType === actionType} style={styles.actionButton}>
+            {importingType === actionType ? <ActivityIndicator size="small" color={UI.blueDark} /> : <Upload size={15} color={UI.blueDark} />}
+            <Text style={styles.actionButtonText}>Import</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push("/system/tenant-invite")} style={styles.actionButton}>
+            <Share2 size={15} color={UI.blueDark} /><Text style={styles.actionButtonText}>Share</Text>
+          </Pressable>
+          <Pressable onPress={() => downloadImportTemplate(actionType)} disabled={templateType === actionType} style={styles.actionButton}>
+            {templateType === actionType ? <ActivityIndicator size="small" color={UI.blueDark} /> : <Download size={15} color={UI.blueDark} />}
+            <Text style={styles.actionButtonText}>Download</Text>
+          </Pressable>
+          <Pressable onPress={() => setActiveTab((current) => current === "vacant" ? "tenants" : "vacant")} style={[styles.actionButton, activeTab === "vacant" && styles.actionButtonActive]}>
+            <UserRound size={15} color={activeTab === "vacant" ? "#FFFFFF" : UI.blueDark} />
+            <Text style={[styles.actionButtonText, activeTab === "vacant" && styles.actionButtonTextActive]}>{activeTab === "vacant" ? "Tenants" : "Vacant"}</Text>
+          </Pressable>
         </View>
 
         <ScrollView
@@ -802,28 +858,45 @@ export default function TenantsScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {activeTab === "tenants" ? (
-            <View style={styles.searchRow}>
-              <View style={styles.searchBox}>
-                <Search size={19} color={S.muted} />
-                <TextInput value={query} onChangeText={setQuery} placeholder={`Search ${activeTypeLabel.toLowerCase()} tenants`} style={styles.searchInput} />
+            <View style={styles.searchRow} >
+              <View style={styles.searchBox} >
+                <Search size={21} color={UI.muted} />
+                <TextInput ref={searchInputRef} value={query} onChangeText={(value) => { setQuery(value); setVisibleTenantCount(INITIAL_TENANT_RENDER_COUNT); }} placeholder="Search tenant, room or phone" placeholderTextColor={UI.muted} style={styles.searchInput} />
               </View>
               <Pressable onPress={openYearFilter} style={styles.searchFilterButton} accessibilityLabel="Filter by year">
-                <Funnel size={18} color={S.deep} />
+                <SlidersHorizontal size={19} color={UI.blueDark} />
                 <Text style={styles.searchFilterText}>{String(selectedYear).slice(-2)}</Text>
               </Pressable>
             </View>
           ) : null}
 
+          <View style={styles.typeTabs}>
+            {tenantTypes.map((item) => {
+              const active = item.value === activeType;
+              return (
+                <Pressable key={item.value} onPress={() => { setActiveType(item.value); setFilter("All"); setVisibleTenantCount(INITIAL_TENANT_RENDER_COUNT); setVisibleVacancyCount(INITIAL_VACANCY_RENDER_COUNT); }} style={[styles.typeTab, active && styles.typeTabActive]}>
+                  <Text style={[styles.typeTabText, active && styles.typeTabTextActive]} numberOfLines={1}>{item.value === "bed" ? "Hostel" : item.value === "room" ? "Residential" : "Commercial"}</Text>
+                  {active ? <View style={styles.typeTabActiveLine} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+
           <View style={styles.summary}>
-            <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Rent pending</Text><Text style={styles.summaryValue}>{money(thisMonthPending)}</Text></View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}><Text style={styles.summaryLabel}>{activeTab === "vacant" ? "Vacant units" : "Previous overdue"}</Text><Text style={[styles.summaryValue, activeTab === "tenants" && typeOverdue > 0 && styles.overdueValue]}>{activeTab === "vacant" ? String(vacantRows.length) : money(typeOverdue)}</Text></View>
+            <View style={styles.summaryItem}>
+              <View style={[styles.summaryIcon, styles.summaryIconPending]}><CalendarDays size={20} color="#E77A12" /></View>
+              <View style={styles.summaryCopy}><Text style={styles.summaryLabel}>Rent pending</Text><Text style={styles.summaryValue}>{money(thisMonthPending)}</Text></View>
+            </View>
+            <View style={styles.summaryItem}>
+              <View style={[styles.summaryIcon, styles.summaryIconOverdue]}><ShieldCheck size={20} color="#E24A4A" /></View>
+              <View style={styles.summaryCopy}><Text style={styles.summaryLabel}>{activeTab === "vacant" ? "Vacant units" : "Previous overdue"}</Text><Text style={[styles.summaryValue, activeTab === "tenants" && typeOverdue > 0 && styles.overdueValue]}>{activeTab === "vacant" ? String(vacantRows.length) : money(typeOverdue)}</Text></View>
+            </View>
           </View>
 
           {activeTab === "tenants" ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
             {FILTERS.map((value) => {
               const count = value === "All" ? typeRows.length : value === "Needs payment" ? typeRows.filter((row) => row.needsPayment).length : typeRows.filter((row) => !row.needsPayment).length;
-              return <Pressable key={value} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.filterActive]}><Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{value} ({count})</Text></Pressable>;
+              return <Pressable key={value} onPress={() => { setFilter(value); setVisibleTenantCount(INITIAL_TENANT_RENDER_COUNT); }} style={[styles.filter, filter === value && styles.filterActive]}><Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{value} ({count})</Text></Pressable>;
             })}
           </ScrollView> : null}
 
@@ -903,12 +976,6 @@ export default function TenantsScreen() {
                     return (
                 <View key={tenant._id} style={[styles.tenantRow, responsive.isTiny && styles.tenantRowTiny, totalDue > 0 && styles.tenantAlert]}>
                   <View style={styles.tenantTopRow}>
-                    {!awaitingForm ? (
-                      <View style={styles.cardDueTopRight}>
-                        <Text style={styles.cardDueLabel}>Due</Text>
-                        <Text style={styles.cardDueAmount}>{money(totalDue)}</Text>
-                      </View>
-                    ) : null}
                     <Pressable onPress={() => router.push({ pathname: "/system/tenant-details", params: { id: tenant._id, returnTo: "/system/tenants" } })} style={styles.tenantMain}>
                       <View style={styles.photoFrame}>
                         {photoUrl ? (
@@ -919,27 +986,17 @@ export default function TenantsScreen() {
                       </View>
                       <View style={styles.tenantInfo}>
                         <Text style={styles.tenantName}>{toDisplayName(tenant.name)}</Text>
-                        <View style={styles.badgeRow}>
-                          <Text style={styles.cycleBadge} numberOfLines={1}>{paymentCycleLabel(tenant)}</Text>
-                          {propertyTypeFromTenant(tenant) === "bed" && canteenEnabled && tenant.hasCanteen ? (
-                            <View style={[styles.canteenBadge, styles.canteenTaken]}>
-                              <Text style={[styles.canteenText, styles.canteenTakenText]}>
-                                Canteen
-                              </Text>
-                            </View>
-                          ) : null}
-                        </View>
-                        <Text style={styles.unitPill} numberOfLines={1}>{tenantUnitBadgeLabel(tenant)}</Text>
-                        <View style={styles.depositPhoneRow}>
-                          <Text style={styles.depositPhoneText} numberOfLines={1}>Deposit: {money(tenant.depositAmount)}</Text>
-                          {tenant.phoneNo ? (
-                            <>
-                              <Text style={styles.depositPhoneDivider}>|</Text>
-                              <Phone size={12} color={S.muted} />
-                              <Text style={styles.depositPhoneText} numberOfLines={1}>{tenant.phoneNo}</Text>
-                            </>
-                          ) : null}
-                        </View>
+                        {!awaitingForm ? (
+                          <Text style={[
+                            styles.cycleBadge,
+                            tenant.firstRentStatus === "ADVANCE_PAID" && styles.cycleBadgeAdvance,
+                          ]}>
+                            {tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid" : "Normal cycle"}
+                          </Text>
+                        ) : null}
+                        {tenant.phoneNo ? <Text style={styles.tenantPhone}>+91 {tenant.phoneNo}</Text> : null}
+                        <Text style={styles.tenantLocation} numberOfLines={1}>{tenant.category || "Property"} · {tenantUnitBadgeLabel(tenant)}</Text>
+                       
                         {awaitingForm ? (
                           <View style={styles.statusRow}>
                             <Text style={styles.paymentStatus}>Waiting for tenant form</Text>
@@ -953,15 +1010,30 @@ export default function TenantsScreen() {
                     </Pressable>
                   </View>
                   {!awaitingForm ? (
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.monthStrip}
-                      style={styles.monthScroll}
-                      snapToInterval={monthCardWidth}
-                      decelerationRate="fast"
-                      contentOffset={{ x: monthScrollOffset, y: 0 }}
-                    >
+                    <>
+                      <View style={styles.tenantMetaRow}>
+                        <View style={styles.tenantMetaItem}><CalendarDays size={15} color={UI.muted} /><Text style={styles.tenantMetaText}>Joined {formatJoinedDate(tenant.joiningDate || tenant.createdAt)}</Text></View>
+                        <View style={styles.tenantMetaDivider} />
+                        <View style={styles.tenantMetaItem}><ShieldCheck size={15} color={UI.muted} /><Text style={styles.tenantMetaText}>Deposit {money(tenant.depositAmount)}</Text></View>
+                      </View>
+                      <View style={styles.rentStatusHeader}>
+                        <Text style={styles.rentStatusTitle}>Rent status · {selectedYear}</Text>
+                      
+                        {totalDue > 0 ? (
+                          <Pressable onPress={() => setSelectedDueRow(row)} style={styles.dueDetailsButton} accessibilityLabel={`View all dues for ${tenant.name}`}>
+                            <Text style={styles.dueDetailsButtonText}>Due {money(totalDue)}</Text>
+                          </Pressable>
+                        ) : <Text style={styles.tenantPaidAmount}>No payment due</Text>}
+                             </View>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.monthStrip}
+                        style={styles.monthScroll}
+                        snapToInterval={monthCardWidth}
+                        decelerationRate="fast"
+                        contentOffset={{ x: monthScrollOffset, y: 0 }}
+                      >
                       {rentMonths.map((month) => {
                         const monthSummary = rentSummaryByMonth.get(month.key)?.get(String(tenant._id));
                         const item = rentMonthStatus(monthSummary, tenant, month);
@@ -1000,7 +1072,8 @@ export default function TenantsScreen() {
                           </Pressable>
                         );
                       })}
-                    </ScrollView>
+                      </ScrollView>
+                    </>
                   ) : null}
                 </View>
               );})}
@@ -1017,61 +1090,123 @@ export default function TenantsScreen() {
           )}
         </ScrollView>
       </View>
+      <Modal visible={Boolean(selectedDueRow)} transparent animationType="fade" onRequestClose={() => setSelectedDueRow(null)}>
+        <View style={styles.dueModalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelectedDueRow(null)} accessibilityLabel="Close dues" />
+          <View style={styles.dueModal}>
+            <View style={styles.dueModalHeader}>
+              <View style={styles.dueModalHeaderCopy}>
+                <Text style={styles.dueModalTitle}>Payment dues</Text>
+                <Text style={styles.dueModalTenant} numberOfLines={1}>{toDisplayName(selectedDueRow?.tenant?.name)}</Text>
+                <Text style={styles.dueModalUnit} numberOfLines={1}>{selectedDueRow ? formatTenantUnit(selectedDueRow.tenant) : ""}</Text>
+              </View>
+              <Pressable onPress={() => setSelectedDueRow(null)} style={styles.dueModalClose} accessibilityLabel="Close dues">
+                <X size={20} color={UI.blueDark} />
+              </Pressable>
+            </View>
+
+            <View style={styles.dueModalSummary}>
+              <View><Text style={styles.dueModalSummaryLabel}>Total outstanding</Text><Text style={styles.dueModalSummaryAmount}>{money(selectedDueTotal)}</Text></View>
+              <View style={styles.dueModalCount}><Text style={styles.dueModalCountValue}>{selectedDueItems.length}</Text><Text style={styles.dueModalCountLabel}>due months</Text></View>
+            </View>
+
+            <ScrollView style={styles.dueModalList} contentContainerStyle={styles.dueModalListContent} showsVerticalScrollIndicator={false}>
+              {selectedDueItems.map((item) => (
+                <View key={item.month} style={styles.dueMonthCard}>
+                  <View style={styles.dueMonthTop}>
+                    <View style={styles.dueMonthIcon}><CalendarDays size={18} color={UI.blueDark} /></View>
+                    <View style={styles.dueMonthCopy}>
+                      <Text style={styles.dueMonthTitle}>{displayMonthKey(item.month)}</Text>
+                      <Text style={styles.dueMonthCycle}>{formatCycleDate(item.cycleStart)} - {formatCycleDate(item.cycleEnd)}</Text>
+                    </View>
+                    <Text style={styles.dueMonthAmount}>{money(item.outstanding)}</Text>
+                  </View>
+                  <View style={styles.dueMonthBreakdown}>
+                    <View style={styles.dueBreakdownItem}><Text style={styles.dueBreakdownLabel}>Rent</Text><Text style={styles.dueBreakdownValue}>{money(item.expected)}</Text></View>
+                    <View style={styles.dueBreakdownItem}><Text style={styles.dueBreakdownLabel}>Paid</Text><Text style={styles.dueBreakdownValue}>{money(item.paid)}</Text></View>
+                    <View style={styles.dueBreakdownItem}><Text style={styles.dueBreakdownLabel}>Balance</Text><Text style={styles.dueBreakdownDue}>{money(item.outstanding)}</Text></View>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      const tenantId = selectedDueRow?.tenant?._id;
+                      setSelectedDueRow(null);
+                      router.push({ pathname: "/system/rent-form", params: { id: tenantId, month: item.month, returnTo: "/system/tenants" } });
+                    }}
+                    style={styles.dueMonthPayButton}
+                  >
+                    <Plus size={16} color="#FFFFFF" />
+                    <Text style={styles.dueMonthPayButtonText}>Add rent for {displayMonthKey(item.month)}</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: S.screen },
+  screen: { flex: 1, backgroundColor: UI.screen },
   content: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 18 },
-  header: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginBottom: 18, backgroundColor: S.screen, gap: 7 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10 },
   headerTiny: { alignItems: "flex-start" },
   scroller: { flex: 1, minHeight: 0 },
-  scrollContent: { flexGrow: 1, paddingBottom: 34 },
+  scrollContent: { flexGrow: 1, paddingBottom: 92 },
   headerText: { flex: 1, minWidth: 160 },
-  title: { fontSize: 28, fontWeight: "900", color: S.text },
-  subtitle: { marginTop: 3, color: S.muted, fontSize: 13, fontWeight: "700" },
-  addButton: { height: 44, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 14, backgroundColor: S.deep, ...systemShadow },
+  title: { fontSize: 30, fontWeight: "900", color: UI.navy },
+  subtitle: { marginTop: 2, color: UI.muted, fontSize: 14, fontWeight: "600" },
+  headerIconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: UI.border, borderRadius: 22, backgroundColor: S.card, ...systemShadow },
+  statusTabs: { height: 48, marginBottom: 10, flexDirection: "row", borderBottomWidth: 1, borderBottomColor: UI.border },
+  statusTab: { flex: 1, alignItems: "center", justifyContent: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  statusTabActive: { borderBottomColor: UI.blueDark },
+  statusTabText: { color: UI.muted, fontSize: 14, fontWeight: "700" },
+  statusTabTextActive: { color: UI.blueDark, fontWeight: "900" },
+  actionBar: { height: 42, marginBottom: 5, flexDirection: "row", gap: 6 },
+  actionButton: { flex: 1, minWidth: 0, height: 36, paddingHorizontal: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card, ...systemShadow },
+  actionButtonActive: { borderColor: UI.blueDark, backgroundColor: UI.blueDark },
+  actionButtonText: { flexShrink: 1, color: UI.blueDark, fontSize: 10, fontWeight: "800" },
+  actionButtonTextActive: { color: "#FFFFFF" },
+  addButton: { height: 42, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, backgroundColor: UI.blueDark, ...systemShadow },
   addButtonTiny: { flexGrow: 1, justifyContent: "center" },
-  historyButton: { width: 42, height: 42, marginRight: 7, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: S.border, borderRadius: 13, backgroundColor: S.card, ...systemShadow },
-  addButtonText: { color: colors.surface, fontSize: 13, fontWeight: "700" },
-  vacantHeaderButton: { height: 44, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: S.border, borderRadius: 13, backgroundColor: S.card, ...systemShadow },
-  vacantHeaderButtonActive: { borderColor: S.deep, backgroundColor: S.soft },
-  vacantHeaderButtonText: { color: S.deep, fontSize: 13, fontWeight: "800" },
-  vacantHeaderButtonTextActive: { color: S.deep },
-  typeTabs: { marginBottom: 12, flexDirection: "row", gap: 6, padding: 5, borderRadius: 14, backgroundColor: "#F2E8DA" },
-  typeTab: { flex: 1, minWidth: 0, minHeight: 58, paddingHorizontal: 3, paddingVertical: 5, alignItems: "center", justifyContent: "center", borderRadius: 11 },
-  typeTabActive: { backgroundColor: S.card, ...systemShadow },
-  typeTabText: { width: "100%", color: S.muted, fontSize: 11, lineHeight: 14, fontWeight: "800", textAlign: "center" },
-  typeTabTextActive: { color: S.deep },
-  typeTabCount: { width: "100%", marginTop: 2, color: S.subtle, fontSize: 11, fontWeight: "800", textAlign: "center" },
-  searchRow: { marginTop: 0, flexDirection: "row", alignItems: "center", gap: 8 },
-  searchBox: { flex: 1, height: 50, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: S.border, borderRadius: 14, backgroundColor: S.card, ...systemShadow },
-  searchInput: { flex: 1, height: "100%", marginLeft: 9, fontSize: 15 },
-  searchFilterButton: { width: 52, height: 50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: S.border, borderRadius: 14, backgroundColor: S.card, ...systemShadow },
-  searchFilterText: { marginTop: 2, color: S.deep, fontSize: 9, fontWeight: "900" },
-  summary: { minHeight: 78, marginTop: 12, padding: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: S.border, borderRadius: 18, backgroundColor: S.card, ...systemShadow },
-  summaryItem: { flex: 1 },
-  summaryDivider: { width: 1, height: 38, marginHorizontal: 12, backgroundColor: S.border },
-  summaryLabel: { color: S.muted, fontSize: 11, fontWeight: "800" },
-  summaryValue: { marginTop: 6, color: S.orange, fontSize: 16, fontWeight: "900" },
+  addButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  typeTabs: { height: 34, marginTop: 10, marginBottom: 10, padding: 2, flexDirection: "row", borderRadius: 8, borderWidth: 1, borderColor: UI.border, backgroundColor: S.card },
+  typeTab: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 7 },
+  typeTabActive: { borderWidth: 1, borderColor: UI.blueDark, backgroundColor: S.card },
+  typeTabText: { color: UI.muted, fontSize: 12, fontWeight: "700", textAlign: "center" },
+  typeTabTextActive: { color: UI.navy, fontWeight: "900" },
+  typeTabActiveLine: { position: "absolute", bottom: -3, width: 42, height: 2, borderRadius: 1, backgroundColor: UI.blue },
+  searchRow: { marginTop: 0, flexDirection: "row", alignItems: "center", gap: 8 , },
+  searchBox: { flex: 1, height: 40, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card, ...systemShadow },
+  searchInput: { flex: 1, height: "100%", marginLeft: 9, color: UI.navy, fontSize: 14 },
+  searchFilterButton: { width: 52, height: 40, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card, ...systemShadow },
+  searchFilterText: { marginTop: 1, color: UI.blueDark, fontSize: 9, fontWeight: "900" },
+  summary: { marginTop: 2, flexDirection: "row", alignItems: "stretch", gap: 8 },
+  summaryItem: { flex: 1, minHeight: 62, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card, ...systemShadow },
+  summaryIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 8 },
+  summaryIconPending: { backgroundColor: "#FFF1DF" },
+  summaryIconOverdue: { backgroundColor: "#FFE8E8" },
+  summaryCopy: { flex: 1, minWidth: 0 },
+  summaryLabel: { color: UI.muted, fontSize: 11, fontWeight: "700" },
+  summaryValue: { marginTop: 4, color: "#E77A12", fontSize: 16, fontWeight: "900" },
   overdueValue: { color: S.red },
   filters: { marginTop: 10, flexDirection: "row", gap: 7 },
-  filter: { minWidth: 108, height: 40, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: S.border, borderRadius: 14, backgroundColor: S.card },
-  filterActive: { borderColor: S.deep, backgroundColor: S.soft },
-  filterText: { color: S.muted, fontSize: 11, fontWeight: "800" },
-  filterTextActive: { color: S.deep },
+  filter: { minWidth: 108, height: 38, paddingHorizontal: 13, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card },
+  filterActive: { borderColor: UI.blueDark, backgroundColor: UI.blueSoft },
+  filterText: { color: UI.muted, fontSize: 11, fontWeight: "800" },
+  filterTextActive: { color: UI.blueDark },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: { paddingTop: 14, paddingBottom: 34, gap: 12 },
-  propertyGroup: { gap: 10 },
-  propertyHeading: { minHeight: 34, paddingHorizontal: 4, flexDirection: "row", alignItems: "center", gap: 10 },
-  propertyHeadingLine: { flex: 1, height: 1, backgroundColor: S.deep },
-  propertyHeadingPill: { maxWidth: "72%", minHeight: 32, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: S.deep, borderRadius: 999, backgroundColor: "#EEF4E8" },
-  propertyHeadingText: { color: S.deep, fontSize: 13, fontWeight: "900", textAlign: "center" },
+  list: { paddingTop: 14, paddingBottom: 34, gap: 14 },
+  propertyGroup: { gap: 9 },
+  propertyHeading: { minHeight: 30, paddingHorizontal: 2, flexDirection: "row", alignItems: "center", gap: 10 },
+  propertyHeadingLine: { flex: 1, height: 1, backgroundColor: UI.border },
+  propertyHeadingPill: { maxWidth: "72%", minHeight: 28, paddingHorizontal: 12, alignItems: "center", justifyContent: "center" },
+  propertyHeadingText: { color: UI.navy, fontSize: 14, fontWeight: "900", textAlign: "center" },
   wingTenantGroup: { gap: 8 },
   wingHeading: { paddingHorizontal: 8, marginTop: 2 },
-  wingHeadingText: { color: S.muted, fontSize: 12, fontWeight: "800" },
-  vacancyCard: { minHeight: 78, padding: 14, flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: S.border, borderRadius: 18, backgroundColor: S.card, ...systemShadow },
+  wingHeadingText: { color: UI.muted, fontSize: 12, fontWeight: "800" },
+  vacancyCard: { minHeight: 72, padding: 12, flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card, ...systemShadow },
   vacancyCopy: { flex: 1, minWidth: 0 },
   vacancyTitle: { color: S.text, fontSize: 14, fontWeight: "900" },
   vacancyMeta: { marginTop: 4, color: S.muted, fontSize: 12, fontWeight: "700" },
@@ -1079,21 +1214,26 @@ const styles = StyleSheet.create({
   vacancyButtonText: { color: colors.surface, fontSize: 12, fontWeight: "900" },
   loadMoreButton: { minHeight: 44, marginTop: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: S.border, borderRadius: 14, backgroundColor: S.card, ...systemShadow },
   loadMoreButtonText: { color: S.deep, fontSize: 13, fontWeight: "900" },
-  tenantRow: { minHeight: 82, overflow: "hidden", borderWidth: 1, borderLeftWidth: 4, borderColor: S.border, borderLeftColor: "#7C98F9", borderRadius: 22, backgroundColor: S.card, ...systemShadow, position: "relative" },
+  tenantRow: { minHeight: 82, overflow: "hidden", borderWidth: 1, borderLeftWidth: 4, borderColor: UI.border, borderLeftColor: "#7C98F9", borderRadius: 8, backgroundColor: S.card, ...systemShadow, position: "relative" },
   tenantRowTiny: { alignItems: "stretch" },
   tenantAlert: { borderColor: "#F1D3CB", borderLeftColor: S.red },
   tenantTopRow: { width: "100%", flexDirection: "row", alignItems: "center" },
-  tenantMain: { flex: 1, minWidth: 0, minHeight: 96, padding: 10, flexDirection: "row", alignItems: "center" },
-  photoFrame: { width: 74, height: 74, borderRadius: 37, overflow: "hidden", backgroundColor: "#EEF7E9" },
+  tenantMain: { flex: 1, minWidth: 0, minHeight: 86, padding: 5, flexDirection: "row", alignItems: "center" },
+  photoFrame: { width: 58, height: 58, borderRadius: 29, overflow: "hidden", backgroundColor: UI.blueSoft },
   tenantPhoto: { width: "100%", height: "100%" },
-  photoFallback: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#EEF7E9" },
-  photoFallbackText: { color: S.deep, fontSize: 34, fontWeight: "900" },
+  photoFallback: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: UI.blueSoft },
+  photoFallbackText: { color: UI.blueDark, fontSize: 24, fontWeight: "900" },
   avatar: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: S.soft },
   avatarText: { color: S.deep, fontSize: 17, fontWeight: "900" },
-  tenantInfo: { flex: 1, minWidth: 0, marginLeft: 14, paddingRight: 10 },
-  tenantName: { color: S.text, fontSize: 18, fontWeight: "900", lineHeight: 24, flexShrink: 1 },
+  tenantInfo: { flex: 1, minWidth: 0, marginLeft: 12, paddingRight: 4 },
+  tenantName: { color: UI.navy, fontSize: 16, fontWeight: "900", lineHeight: 21, flexShrink: 1 },
+  tenantPhone: { marginTop: 2, color: UI.muted, fontSize: 12, fontWeight: "600" },
+  tenantLocation: { marginTop: 3, color: UI.muted, fontSize: 11, fontWeight: "600" },
+  tenantDueAmount: { marginTop: 4, color: S.red, fontSize: 11, fontWeight: "900" },
+  tenantPaidAmount: { color: UI.blue },
   badgeRow: { marginTop: 8, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
-  cycleBadge: { maxWidth: 128, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden", backgroundColor: "#DDF3F8", color: S.mid, fontSize: 10, fontWeight: "900" },
+  cycleBadge: { alignSelf: "flex-start", maxWidth: 128, marginTop: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: "hidden", backgroundColor: UI.blueSoft, color: UI.blueDark, fontSize: 9, fontWeight: "900" },
+  cycleBadgeAdvance: { backgroundColor: UI.blueSoft, color: UI.blueDark },
   unitPill: { alignSelf: "flex-start", maxWidth: "100%", marginTop: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, overflow: "hidden", backgroundColor: "#F3A6B7", color: colors.surface, fontSize: 11, fontWeight: "900" },
   depositPhoneRow: { marginTop: 5, flexDirection: "row", alignItems: "center", gap: 5 },
   depositPhoneText: { maxWidth: 120, color: S.muted, fontSize: 10, fontWeight: "800" },
@@ -1102,19 +1242,24 @@ const styles = StyleSheet.create({
   tenantMeta: { color: S.muted, fontSize: 10, fontWeight: "700", flexShrink: 1 },
   currentPending: { marginTop: 4, color: S.orange, fontSize: 11, fontWeight: "800" },
   statusRow: { marginTop: 5, flexDirection: "row", alignItems: "center" },
-  cardDueTopRight: { position: "absolute", top: 5, right: 19, alignItems: "flex-end", zIndex: 2 },
-  cardDueLabel: { color: S.muted, fontSize: 10, fontWeight: "800" },
-  cardDueAmount: { marginTop: 2, color: S.red, fontSize: 12, fontWeight: "900" },
-  monthScroll: { width: "100%", borderTopWidth: 1, borderTopColor: S.border },
+  tenantMetaRow: { minHeight: 42, marginHorizontal: 12, flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: UI.border, borderBottomWidth: 1, borderBottomColor: UI.border },
+  tenantMetaItem: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 7 },
+  tenantMetaDivider: { width: 1, height: 20, marginHorizontal: 10, backgroundColor: UI.border },
+  tenantMetaText: { flexShrink: 1, color: UI.muted, fontSize: 10, fontWeight: "600" },
+  rentStatusHeader: { height: 38, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  rentStatusTitle: { color: UI.navy, fontSize: 12, fontWeight: "900" },
+  dueDetailsButton: { minHeight: 28, paddingHorizontal: 9, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#F2B7B2", borderRadius: 7, backgroundColor: "#FFF1F0" },
+  dueDetailsButtonText: { color: S.red, fontSize: 10, fontWeight: "900" },
+  monthScroll: { width: "100%" },
   monthStrip: { paddingHorizontal: 0, paddingBottom: 0, flexDirection: "row", alignItems: "stretch", gap: 0 },
-  monthBox: { minWidth: 0, height: 136, paddingHorizontal: 6, paddingTop: 12, paddingBottom: 10, alignItems: "center", justifyContent: "flex-start", borderWidth: 1, borderColor: "#DADDF7", backgroundColor: "#F7F8FF" },
-  monthBoxPaid: { borderColor: "#BEECCF", backgroundColor: "#F0FFF5" },
+  monthBox: { minWidth: 0, height: 126, paddingHorizontal: 6, paddingTop: 9, paddingBottom: 8, alignItems: "center", justifyContent: "flex-start", borderWidth: 1, borderColor: "#DADDF7", backgroundColor: "#F7F8FF" },
+  monthBoxPaid: { borderColor: "#B9D0E1", backgroundColor: "#F0F6FA" },
   monthBoxDue: { borderColor: "#F2CACA", backgroundColor: "#FFF5F4" },
   monthBoxUpcoming: { borderColor: "#D5DDF8", backgroundColor: "#F4F6FF" },
   monthBoxInactive: { borderColor: S.border, backgroundColor: S.pale, opacity: 0.75 },
   monthName: { width: "100%", height: 17, color: S.text, fontSize: 10, lineHeight: 14, fontWeight: "900", textAlign: "center" },
   monthStatusPill: { width: "100%", height: 27, marginTop: 8, paddingHorizontal: 4, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 999 },
-  monthPaidPill: { borderColor: "#8FE7B1", backgroundColor: "#E7FFF0" },
+  monthPaidPill: { borderColor: "#9FC0D8", backgroundColor: UI.blueSoft },
   monthDuePill: { borderColor: "#F0A0A0", backgroundColor: "#FFF0ED" },
   monthUpcomingPill: { borderColor: "#CAD3F5", backgroundColor: "#E9EEFF" },
   monthInactivePill: { borderColor: S.border, backgroundColor: S.card },
@@ -1127,7 +1272,7 @@ const styles = StyleSheet.create({
   monthTotal: { width: "100%", height: 14, marginTop: 5, color: "#1478D4", fontSize: 9, lineHeight: 12, fontWeight: "900", textAlign: "center" },
   monthPlaceholderText: { color: S.subtle },
   canteenBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden" },
-  canteenTaken: { backgroundColor: "#DDF3E5" },
+  canteenTaken: { backgroundColor: UI.blueSoft },
   canteenNotTaken: { backgroundColor: S.pale },
   canteenText: { fontSize: 10, fontWeight: "900" },
   canteenTakenText: { color: S.mid },
@@ -1135,13 +1280,43 @@ const styles = StyleSheet.create({
   paymentStatus: { marginTop: 5, color: S.orange, fontSize: 11, fontWeight: "800" },
   paymentPaid: { color: S.mid },
   paymentOverdue: { color: S.red },
-  rentButton: { width: 64, height: 58, alignItems: "center", justifyContent: "center", borderLeftWidth: 1, borderLeftColor: S.border },
+  rentButton: { width: 58, height: 54, alignItems: "center", justifyContent: "center" },
   rentButtonTiny: { width: 50 },
-  rentButtonText: { marginTop: 3, color: S.deep, fontSize: 11, fontWeight: "800" },
+  rentButtonText: { marginTop: 3, color: UI.blueDark, fontSize: 10, fontWeight: "800" },
   disabledButton: { opacity: 0.35 },
   empty: { flex: 1, minHeight: 250, alignItems: "center", justifyContent: "center", padding: 24 },
   emptyTitle: { marginTop: 10, color: S.text, fontSize: 17, fontWeight: "900" },
   emptyText: { marginTop: 5, color: S.muted, textAlign: "center" },
   error: { color: S.red, textAlign: "center" },
   retry: { marginTop: 12, color: S.deep, fontWeight: "800" },
+  dueModalOverlay: { flex: 1, padding: 16, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(17, 27, 42, 0.56)" },
+  dueModal: { width: "100%", maxWidth: 560, maxHeight: "84%", padding: 16, borderRadius: 8, backgroundColor: UI.screen, ...systemShadow },
+  dueModalHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  dueModalHeaderCopy: { flex: 1, minWidth: 0 },
+  dueModalTitle: { color: UI.navy, fontSize: 20, fontWeight: "900" },
+  dueModalTenant: { marginTop: 5, color: UI.navy, fontSize: 15, fontWeight: "800" },
+  dueModalUnit: { marginTop: 2, color: UI.muted, fontSize: 11, fontWeight: "600" },
+  dueModalClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card },
+  dueModalSummary: { minHeight: 72, marginTop: 14, padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: "#F2B7B2", borderRadius: 8, backgroundColor: "#FFF1F0" },
+  dueModalSummaryLabel: { color: UI.muted, fontSize: 11, fontWeight: "700" },
+  dueModalSummaryAmount: { marginTop: 4, color: S.red, fontSize: 20, fontWeight: "900" },
+  dueModalCount: { alignItems: "flex-end" },
+  dueModalCountValue: { color: UI.navy, fontSize: 18, fontWeight: "900" },
+  dueModalCountLabel: { color: UI.muted, fontSize: 10, fontWeight: "700" },
+  dueModalList: { marginTop: 12 },
+  dueModalListContent: { gap: 10, paddingBottom: 2 },
+  dueMonthCard: { padding: 12, borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: S.card },
+  dueMonthTop: { flexDirection: "row", alignItems: "center", gap: 9 },
+  dueMonthIcon: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: UI.blueSoft },
+  dueMonthCopy: { flex: 1, minWidth: 0 },
+  dueMonthTitle: { color: UI.navy, fontSize: 14, fontWeight: "900" },
+  dueMonthCycle: { marginTop: 2, color: UI.muted, fontSize: 9, fontWeight: "600" },
+  dueMonthAmount: { color: S.red, fontSize: 14, fontWeight: "900" },
+  dueMonthBreakdown: { marginTop: 10, paddingTop: 9, flexDirection: "row", borderTopWidth: 1, borderTopColor: UI.border },
+  dueBreakdownItem: { flex: 1 },
+  dueBreakdownLabel: { color: UI.muted, fontSize: 9, fontWeight: "700" },
+  dueBreakdownValue: { marginTop: 3, color: UI.navy, fontSize: 11, fontWeight: "800" },
+  dueBreakdownDue: { marginTop: 3, color: S.red, fontSize: 11, fontWeight: "900" },
+  dueMonthPayButton: { minHeight: 38, marginTop: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 7, backgroundColor: UI.blueDark },
+  dueMonthPayButtonText: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
 });

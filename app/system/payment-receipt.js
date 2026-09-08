@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { ActivityIndicator, Alert, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -26,13 +26,25 @@ function escapeHtml(value) {
 export default function PaymentReceiptScreen() {
   const baseRouter = useRouter();
   const { id, rentId, paymentIndex, returnTo = "/system/tenants" } = useLocalSearchParams();
-  const router = { back: () => baseRouter.replace({ pathname: "/system/tenant-details", params: { id, returnTo } }) };
+  const resolvedReturnTo = Array.isArray(returnTo) ? returnTo[0] : returnTo;
   const [tenant, setTenant] = useState(null);
   const [rent, setRent] = useState(null);
   const [payment, setPayment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+
+  const goBack = useCallback(() => {
+    baseRouter.replace(String(resolvedReturnTo || "/system/tenants"));
+  }, [baseRouter, resolvedReturnTo]);
+
+  useFocusEffect(useCallback(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      goBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [goBack]));
 
   const load = useCallback(async () => {
     try {
@@ -49,7 +61,7 @@ export default function PaymentReceiptScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const receiptNumber = `R-${String(tenant?.srNo || "0").padStart(4, "0")}-${String(rent?._id || "").slice(-6).toUpperCase()}-${Number(paymentIndex) + 1}`;
-  const html = useMemo(() => !tenant || !rent || !payment ? "" : `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#17202a;padding:32px}.head{border-bottom:2px solid #2563eb;padding-bottom:16px}.brand{font-size:25px;font-weight:700}.type{color:#2563eb;margin-top:5px}.meta{margin-top:20px;background:#f5f7fa;padding:14px}.row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #e5e7eb}.label{color:#6b7280}.amount{font-size:28px;font-weight:700;color:#15803d;margin:22px 0}.foot{margin-top:28px;color:#6b7280;font-size:12px}</style></head><body><div class="head"><div class="brand">${escapeHtml(tenant.category || "Rent Management")}</div><div class="type">Rent payment receipt</div></div><div class="meta"><div>Receipt: ${escapeHtml(receiptNumber)}</div><div>Date: ${escapeHtml(formatDate(payment.date))}</div></div><div class="amount">${escapeHtml(money(payment.amount))}</div><div class="row"><span class="label">Received from</span><b>${escapeHtml(tenant.name)}</b></div><div class="row"><span class="label">Rent month</span><b>${escapeHtml(rent.month)}</b></div><div class="row"><span class="label">Unit</span><b>${escapeHtml(formatTenantUnit(tenant))}</b></div><div class="row"><span class="label">Payment mode</span><b>${escapeHtml(payment.paymentMode || "Cash")}</b></div>${payment.utr ? `<div class="row"><span class="label">Reference</span><b>${escapeHtml(payment.utr)}</b></div>` : ""}${payment.note ? `<div class="row"><span class="label">Note</span><b>${escapeHtml(payment.note)}</b></div>` : ""}<div class="foot">Computer-generated receipt. No signature is required.</div></body></html>`, [payment, receiptNumber, rent, tenant]);
+  const html = useMemo(() => !tenant || !rent || !payment ? "" : `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#17202a;padding:32px}.head{border-bottom:2px solid #4f7fa6;padding-bottom:16px}.brand{font-size:25px;font-weight:700}.type{color:#4f7fa6;margin-top:5px}.meta{margin-top:20px;background:#f5f7fa;padding:14px}.row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #e5e7eb}.label{color:#6b7280}.amount{font-size:28px;font-weight:700;color:#244f70;margin:22px 0}.foot{margin-top:28px;color:#6b7280;font-size:12px}</style></head><body><div class="head"><div class="brand">${escapeHtml(tenant.category || "Rent Management")}</div><div class="type">Rent payment receipt</div></div><div class="meta"><div>Receipt: ${escapeHtml(receiptNumber)}</div><div>Date: ${escapeHtml(formatDate(payment.date))}</div></div><div class="amount">${escapeHtml(money(payment.amount))}</div><div class="row"><span class="label">Received from</span><b>${escapeHtml(tenant.name)}</b></div><div class="row"><span class="label">Rent month</span><b>${escapeHtml(rent.month)}</b></div><div class="row"><span class="label">Unit</span><b>${escapeHtml(formatTenantUnit(tenant))}</b></div><div class="row"><span class="label">Payment mode</span><b>${escapeHtml(payment.paymentMode || "Cash")}</b></div>${payment.utr ? `<div class="row"><span class="label">Reference</span><b>${escapeHtml(payment.utr)}</b></div>` : ""}${payment.note ? `<div class="row"><span class="label">Note</span><b>${escapeHtml(payment.note)}</b></div>` : ""}<div class="foot">Computer-generated receipt. No signature is required.</div></body></html>`, [payment, receiptNumber, rent, tenant]);
 
   async function printReceipt() {
     try { setGenerating(true); await Print.printAsync({ html }); }
@@ -71,7 +83,7 @@ export default function PaymentReceiptScreen() {
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!payment) return <View style={styles.loading}><Text style={styles.error}>{error}</Text></View>;
 
-  return <View style={styles.screen}><View style={styles.header}><Pressable onPress={() => router.back()} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View style={styles.headerText}><Text style={styles.title}>Payment receipt</Text><Text style={styles.subtitle}>{receiptNumber}</Text></View></View><ScrollView contentContainerStyle={styles.content}><View style={styles.receipt}><View style={styles.receiptHead}><Text style={styles.brand}>{tenant.category || "Rent Management"}</Text><Text style={styles.receiptType}>Rent payment receipt</Text></View><View style={styles.receiptMeta}><Text style={styles.metaText}>Receipt: {receiptNumber}</Text><Text style={styles.metaText}>Date: {formatDate(payment.date)}</Text></View><Text style={styles.amount}>{money(payment.amount)}</Text><View style={styles.row}><Text style={styles.label}>Received from</Text><Text style={styles.value}>{tenant.name}</Text></View><View style={styles.row}><Text style={styles.label}>Rent month</Text><Text style={styles.value}>{rent.month}</Text></View><View style={styles.row}><Text style={styles.label}>Unit</Text><Text style={styles.value}>{formatTenantUnit(tenant)}</Text></View><View style={styles.row}><Text style={styles.label}>Payment mode</Text><Text style={styles.value}>{payment.paymentMode || "Cash"}</Text></View>{payment.utr ? <View style={styles.row}><Text style={styles.label}>Reference</Text><Text style={styles.value}>{payment.utr}</Text></View> : null}{payment.note ? <View style={styles.row}><Text style={styles.label}>Note</Text><Text style={styles.value}>{payment.note}</Text></View> : null}<Text style={styles.footer}>Computer-generated receipt. No signature is required.</Text></View><View style={styles.actions}><Pressable onPress={printReceipt} disabled={generating} style={styles.secondaryButton}><Printer size={19} color={colors.primary} /><Text style={styles.secondaryText}>Print</Text></Pressable><Pressable onPress={shareReceipt} disabled={generating} style={styles.primaryButton}>{generating ? <ActivityIndicator color={colors.surface} /> : <><Share2 size={19} color={colors.surface} /><Text style={styles.primaryText}>{Platform.OS === "web" ? "Print PDF" : "Share PDF"}</Text></>}</Pressable></View></ScrollView></View>;
+  return <View style={styles.screen}><View style={styles.header}><Pressable onPress={goBack} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View style={styles.headerText}><Text style={styles.title}>Payment receipt</Text><Text style={styles.subtitle}>{receiptNumber}</Text></View></View><ScrollView contentContainerStyle={styles.content}><View style={styles.receipt}><View style={styles.receiptHead}><Text style={styles.brand}>{tenant.category || "Rent Management"}</Text><Text style={styles.receiptType}>Rent payment receipt</Text></View><View style={styles.receiptMeta}><Text style={styles.metaText}>Receipt: {receiptNumber}</Text><Text style={styles.metaText}>Date: {formatDate(payment.date)}</Text></View><Text style={styles.amount}>{money(payment.amount)}</Text><View style={styles.row}><Text style={styles.label}>Received from</Text><Text style={styles.value}>{tenant.name}</Text></View><View style={styles.row}><Text style={styles.label}>Rent month</Text><Text style={styles.value}>{rent.month}</Text></View><View style={styles.row}><Text style={styles.label}>Unit</Text><Text style={styles.value}>{formatTenantUnit(tenant)}</Text></View><View style={styles.row}><Text style={styles.label}>Payment mode</Text><Text style={styles.value}>{payment.paymentMode || "Cash"}</Text></View>{payment.utr ? <View style={styles.row}><Text style={styles.label}>Reference</Text><Text style={styles.value}>{payment.utr}</Text></View> : null}{payment.note ? <View style={styles.row}><Text style={styles.label}>Note</Text><Text style={styles.value}>{payment.note}</Text></View> : null}<Text style={styles.footer}>Computer-generated receipt. No signature is required.</Text></View><View style={styles.actions}><Pressable onPress={printReceipt} disabled={generating} style={styles.secondaryButton}><Printer size={19} color={colors.primary} /><Text style={styles.secondaryText}>Print</Text></Pressable><Pressable onPress={shareReceipt} disabled={generating} style={styles.primaryButton}>{generating ? <ActivityIndicator color={colors.surface} /> : <><Share2 size={19} color={colors.surface} /><Text style={styles.primaryText}>{Platform.OS === "web" ? "Print PDF" : "Share PDF"}</Text></>}</Pressable></View></ScrollView></View>;
 }
 
 const styles = StyleSheet.create({

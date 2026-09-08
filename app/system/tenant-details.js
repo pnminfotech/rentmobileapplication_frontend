@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { Archive, ArrowLeft, ArrowRightLeft, CheckCircle2, ExternalLink, FileDown, FileText, LogOut, Pencil, Plus, Trash2, UserRound, XCircle } from "lucide-react-native";
@@ -594,7 +594,7 @@ const styles = StyleSheet.create({
   headerAction: { height: 42, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 14, backgroundColor: colors.primary },
   headerActionText: { color: colors.surface, fontSize: 13, fontWeight: "700" },
   content: { width: "100%", maxWidth: 720, alignSelf: "center", padding: 18, paddingBottom: 40, gap: 12 },
-  heroCard: { padding: 16, borderRadius: 22, backgroundColor: colors.deep, ...colors.shadow ? {} : {} },
+  heroCard: { padding: 16, borderRadius: 22, backgroundColor: colors.deep, ...(colors.shadow ? {} : {}) },
   heroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
   heroIdentity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
   heroAvatar: { width: 84, height: 84, borderRadius: 26, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.18)" },
@@ -604,9 +604,9 @@ const styles = StyleSheet.create({
   heroName: { color: colors.surface, fontSize: 18, fontWeight: "900" },
   heroBadgeRow: { marginTop: 6, flexDirection: "row", gap: 6 },
   heroCycleBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden", backgroundColor: colors.soft, color: colors.mid, fontSize: 11, fontWeight: "900" },
-  heroCanteenBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden", backgroundColor: "#DDF3E5", color: colors.mid, fontSize: 11, fontWeight: "900" },
-  heroUnit: { marginTop: 8, color: "#F4F8EF", fontSize: 15, fontWeight: "700" },
-  heroPhone: { marginTop: 8, color: "#E4EFE6", fontSize: 14, fontWeight: "700" },
+  heroCanteenBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden", backgroundColor: colors.soft, color: colors.mid, fontSize: 11, fontWeight: "900" },
+  heroUnit: { marginTop: 8, color: "#F1F6FA", fontSize: 15, fontWeight: "700" },
+  heroPhone: { marginTop: 8, color: "#DCEAF4", fontSize: 14, fontWeight: "700" },
   metricCard: { padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 7 }, elevation: 3 },
   metricGrid: { gap: 12 },
   metricCell: { width: "48%" },

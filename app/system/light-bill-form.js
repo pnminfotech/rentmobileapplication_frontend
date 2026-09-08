@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { createLightBill, getLightBillSettings, getLightBills, updateLightBill } from "../../src/api/lightBillApi";
 import { getRooms } from "../../src/api/roomApi";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { stackedPropertyLabel } from "../../src/utils/unitLabels";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
@@ -121,6 +122,11 @@ function unitMeta(unit) {
 
 export default function LightBillFormScreen() {
   const router = useRouter();
+  const { unitTypes, firstUnitType, isUnitTypeAllowed } = useSystemAccess();
+  const visiblePropertyTypes = useMemo(
+    () => PROPERTY_TYPES.filter((item) => unitTypes.some((allowed) => allowed.value === item.value)),
+    [unitTypes]
+  );
   const {
     id,
     billingMonth: initialBillingMonth,
@@ -132,7 +138,7 @@ export default function LightBillFormScreen() {
   } = useLocalSearchParams();
   const editing = Boolean(id);
   const type = "meter";
-  const [propertyType, setPropertyType] = useState("bed");
+  const [propertyType, setPropertyType] = useState(firstUnitType);
   const [roomNo, setRoomNo] = useState("");
   const [meterNo, setMeterNo] = useState("");
   const [entryPreviousReading, setEntryPreviousReading] = useState(null);
@@ -165,7 +171,8 @@ export default function LightBillFormScreen() {
         getLightBillSettings(),
         editing ? getLightBills() : Promise.resolve([]),
       ]);
-      const unitList = Array.isArray(roomData) ? roomData : [];
+      const unitList = (Array.isArray(roomData) ? roomData : [])
+        .filter((unit) => isUnitTypeAllowed(normalizePropertyType(unit.propertyType)));
       setUnits(unitList);
       setLightSettings(settings);
       if (!editing) {
@@ -180,7 +187,8 @@ export default function LightBillFormScreen() {
           setEntryPreviousReading(requestedUnit.lastMeterReading ?? null);
         } else {
           const typeValue = Array.isArray(requestedPropertyType) ? requestedPropertyType[0] : requestedPropertyType;
-          if (typeValue) setPropertyType(normalizePropertyType(typeValue));
+          const normalizedType = normalizePropertyType(typeValue);
+          setPropertyType(isUnitTypeAllowed(normalizedType) ? normalizedType : firstUnitType);
         }
         return;
       }
@@ -188,6 +196,10 @@ export default function LightBillFormScreen() {
       const bill = (Array.isArray(bills) ? bills : []).find((item) => String(item._id) === String(id));
       if (!bill) {
         setError("Light bill not found.");
+        return;
+      }
+      if (!isUnitTypeAllowed(normalizePropertyType(bill.propertyType))) {
+        setError("This property type is not included in the current subscription.");
         return;
       }
       setPropertyType(bill.propertyType || "bed");
@@ -214,7 +226,7 @@ export default function LightBillFormScreen() {
     } finally {
       setLoading(false);
     }
-  }, [editing, id, requestedPropertyType, requestedUnitId]);
+  }, [editing, firstUnitType, id, isUnitTypeAllowed, requestedPropertyType, requestedUnitId]);
 
   useFocusEffect(useCallback(() => { loadBill(); }, [loadBill]));
 
@@ -359,6 +371,9 @@ export default function LightBillFormScreen() {
       isUnitLinked: requiresUnit,
       roomId: requiresUnit ? selectedUnitId || undefined : undefined,
       propertyType,
+      category: requiresUnit ? selectedUnit?.category || "" : "",
+      wingName: requiresUnit ? selectedUnit?.wingName || "" : "",
+      floorNo: requiresUnit ? selectedUnit?.floorNo || "" : "",
       roomNo: requiresUnit ? normalizeIdentifier(roomNo) : "",
       meterNo: normalizeIdentifier(meterNo),
       previousReading: meterMode ? previousReading : undefined,
@@ -411,7 +426,7 @@ export default function LightBillFormScreen() {
 
       <Text style={styles.label}>Property type</Text>
       <View style={styles.segmented}>
-        {PROPERTY_TYPES.map((item) => <Pressable key={item.value} onPress={() => selectPropertyType(item.value)} style={[styles.segment, propertyType === item.value && styles.segmentActive]}><Text style={[styles.segmentText, propertyType === item.value && styles.segmentTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(item.label)}</Text></Pressable>)}
+        {visiblePropertyTypes.map((item) => <Pressable key={item.value} onPress={() => selectPropertyType(item.value)} style={[styles.segment, propertyType === item.value && styles.segmentActive]}><Text style={[styles.segmentText, propertyType === item.value && styles.segmentTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(item.label)}</Text></Pressable>)}
       </View>
 
       <View style={[styles.scenarioBox, activeMode === "none" && styles.scenarioBoxWarning]}>

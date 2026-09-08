@@ -1,930 +1,394 @@
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text,
+  TextInput, View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router/react-navigation";
+import { useRouter } from "expo-router";
 import {
-  BedDouble,
-  Building2,
-  Plus,
-  Search,
-  Store,
+  BedDouble, Building2, ChevronDown, ChevronRight,
+  DoorOpen, MapPin, Plus, Search, SlidersHorizontal, Store,
 } from "lucide-react-native";
 
 import { getRooms, getUnitUsage } from "../../src/api/roomApi";
-import {
-  allowedUnitTypes,
-  firstAllowedType,
-} from "../../src/utils/subscriptionAccess";
-import { stackedPropertyLabel } from "../../src/utils/unitLabels";
-import { colors } from "../../src/theme/colors";
-import { systemColors, systemShadow } from "../../src/theme/systemTheme";
+import { getTenants } from "../../src/api/tenantApi";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
+import { systemColors } from "../../src/theme/systemTheme";
+import { useResponsive } from "../../src/utils/responsive";
 
-const S = systemColors;
+const UI = {
+  screen: "#F6F8F7", card: "#FFFFFF", text: "#111B2A", muted: "#63738A",
+  border: "#D9E1E7", primary: "#4F7FA6", primaryDark: "#244F70",
+  primarySoft: "#E7F1F8", amber: "#A66B00", amberSoft: "#FFF2CF", track: "#E5EBEE",
+};
 
-function UnitIcon({ type }) {
-  if (type === "shop") return <Store size={21} color={S.deep} />;
-  if (type === "room") return <Building2 size={21} color={S.deep} />;
-  return <BedDouble size={21} color={S.deep} />;
+const TYPES = [
+  { value: "bed", label: "Hostel" },
+  { value: "room", label: "Residential" },
+  { value: "shop", label: "Commercial" },
+];
+
+function activeTenant(tenant) {
+  if (!tenant?.leaveDate) return true;
+  const leave = new Date(tenant.leaveDate);
+  return Number.isNaN(leave.getTime()) || leave > new Date();
 }
 
-export default function UnitsScreen() {
-  const router = useRouter();
-  const params = useLocalSearchParams();
-
-  const initialType = Array.isArray(params.type)
-    ? params.type[0]
-    : params.type;
-
-  const [units, setUnits] = useState([]);
-  const [quota, setQuota] = useState(null);
-  const [activeType, setActiveType] = useState(
-    ["bed", "room", "shop"].includes(initialType) ? initialType : "bed"
+function sameUnit(tenant, unit) {
+  if (tenant?.roomId) return String(tenant.roomId) === String(unit?._id);
+  return (
+    String(tenant?.category || "") === String(unit?.category || "") &&
+    String(tenant?.roomNo || "") === String(unit?.roomNo || "")
   );
-  const [search, setSearch] = useState("");
+}
+
+function unitOccupancy(unit, tenants) {
+  const type = unit?.propertyType || "bed";
+  const beds = Array.isArray(unit?.beds) ? unit.beds : [];
+  const slots = type === "bed" ? beds : [beds[0] || { bedNo: "unit" }];
+  const occupied = slots.filter((bed) =>
+    tenants.some((tenant) =>
+      sameUnit(tenant, unit) &&
+      (type !== "bed" || String(tenant?.bedNo || "") === String(bed?.bedNo || ""))
+    )
+  ).length;
+  return { total: slots.length, occupied, vacant: Math.max(slots.length - occupied, 0) };
+}
+
+function groupUnits(units, tenants) {
+  const grouped = new Map();
+  units.forEach((unit) => {
+    const building = String(unit.category || "Unassigned Property").trim();
+    const wing = String(unit.wingName || "Main").trim();
+    if (!grouped.has(building)) grouped.set(building, new Map());
+    if (!grouped.get(building).has(wing)) grouped.get(building).set(wing, []);
+    grouped.get(building).get(wing).push({ ...unit, occupancy: unitOccupancy(unit, tenants) });
+  });
+  return Array.from(grouped, ([name, wings]) => ({
+    name,
+    location: Array.from(wings.values()).flat()[0]?.address ||
+      Array.from(wings.values()).flat()[0]?.location || "Property",
+    wings: Array.from(wings, ([name, rooms]) => ({
+      name,
+      rooms: rooms.sort((a, b) =>
+        String(a.roomNo || "").localeCompare(String(b.roomNo || ""), undefined, { numeric: true })
+      ),
+    })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
+  })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+function TypeTabs({ value, onChange, types }) {
+  return (
+    <View style={styles.typeTabs}>
+      {types.map((type) => (
+        <Pressable key={type.value} onPress={() => onChange(type.value)}
+          style={[styles.typeTab, value === type.value && styles.typeTabActive]}>
+          <Text style={[styles.typeTabText, value === type.value && styles.typeTabTextActive]}>
+            {type.label}
+          </Text>
+          {value === type.value ? <View style={styles.activeLine} /> : null}
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function SummaryCard({ stats, type, quota }) {
+  const noun = type === "bed" ? "beds" : type === "room" ? "rooms" : "shops";
+  const rate = stats.total ? Math.round((stats.occupied / stats.total) * 100) : 0;
+  const quotaKey = type === "bed" ? "beds" : type === "room" ? "rooms" : "shops";
+  const limit = quota?.limits?.[quotaKey];
+  const used = quota?.usage?.[quotaKey] ?? stats.total;
+  const remaining = quota?.remaining?.[quotaKey];
+  return (
+    <View style={styles.summary}>
+      <View style={styles.summaryTop}>
+        <Text style={styles.summaryTitle}>
+          {limit == null ? `${used} ${noun} added` : `${used} of ${limit} ${noun} added`}
+        </Text>
+        <Text style={styles.summaryRate}>{rate}% <Text style={styles.summaryRateLabel}>occupancy</Text></Text>
+      </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${rate}%` }]} />
+      </View>
+      <View style={styles.summaryBottom}>
+        <View style={styles.summaryMetric}>
+          <View style={styles.neutralIcon}><BedDouble size={16} color="#40566D" /></View>
+          <View><Text style={styles.summaryValue}>{stats.occupied}</Text><Text style={styles.summaryLabel}>occupied</Text></View>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryMetric}>
+          <View style={styles.neutralIcon}><Building2 size={16} color="#40566D" /></View>
+          <View><Text style={styles.summaryValue}>{stats.vacant}</Text><Text style={styles.summaryLabel}>vacant</Text></View>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryMetric}>
+          <View style={styles.neutralIcon}><Plus size={16} color="#40566D" /></View>
+          <View><Text style={styles.summaryValue}>{remaining ?? "-"}</Text><Text style={styles.summaryLabel}>can add</Text></View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function RoomRow({ room, type, onPress, last }) {
+  const { occupied, total, vacant } = room.occupancy;
+  const rate = total ? Math.round((occupied / total) * 100) : 0;
+  const label = type === "bed" ? "beds" : type === "room" ? "room" : "shop";
+  const Icon = type === "shop" ? Store : DoorOpen;
+  return (
+    <Pressable onPress={onPress}
+      style={({ pressed }) => [styles.roomRow, !last && styles.rowBorder, pressed && styles.pressed]}>
+      <View style={styles.roomIcon}><Icon size={18} color="#40566D" /></View>
+      <View style={styles.roomNameWrap}>
+        <Text style={styles.roomName}>{type === "shop" ? "Shop" : "Room"} {room.roomNo}</Text>
+        <Text style={styles.roomMeta}>{total} {label}{total === 1 ? "" : "s"}</Text>
+      </View>
+      <View style={styles.occupancyWrap}>
+        <Text style={styles.occupancyText}>{occupied}/{total} occupied</Text>
+        <View style={styles.roomTrack}><View style={[styles.roomFill, { width: `${rate}%` }]} /></View>
+      </View>
+      <View style={[styles.statusPill, vacant ? styles.vacantPill : styles.fullPill]}>
+        <Text style={[styles.statusText, vacant ? styles.vacantText : styles.fullText]}>
+          {vacant ? `${vacant} Vacant` : "Full"}
+        </Text>
+      </View>
+      <ChevronRight size={17} color="#667085" />
+    </Pressable>
+  );
+}
+
+function BuildingCard({ building, type, activeWing, onWingChange, onRoomPress }) {
+  const selectedWing = building.wings.find((wing) => wing.name === activeWing) || building.wings[0];
+  return (
+    <View style={styles.buildingCard}>
+      <View style={styles.buildingHeader}>
+        <View style={styles.buildingIcon}><Building2 size={19} color="#40566D" /></View>
+        <View style={styles.buildingCopy}>
+          <Text style={styles.buildingName}>{building.name}</Text>
+          <View style={styles.locationRow}><MapPin size={11} color={UI.muted} /><Text style={styles.location} numberOfLines={1}>{building.location}</Text></View>
+        </View>
+        <View style={styles.activeStatus}><View style={styles.activeDot} /><Text style={styles.activeText}>Active</Text></View>
+      </View>
+
+      {building.wings.length > 1 || building.wings[0]?.name !== "Main" ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.wingTabs}>
+          {building.wings.map((wing) => (
+            <Pressable key={wing.name} onPress={() => onWingChange(wing.name)}
+              style={[styles.wingTab, selectedWing?.name === wing.name && styles.wingTabActive]}>
+              <Text style={[styles.wingText, selectedWing?.name === wing.name && styles.wingTextActive]}>
+                {wing.name === "Main" ? "Main" : `Wing ${wing.name}`}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+      <View style={styles.rooms}>
+        {(selectedWing?.rooms || []).map((room, index, list) => (
+          <RoomRow key={room._id} room={room} type={type}
+            last={index === list.length - 1} onPress={() => onRoomPress(room)} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export default function UnitsModernScreen() {
+  const router = useRouter();
+  const responsive = useResponsive();
+  const { unitTypes, firstUnitType } = useSystemAccess();
+  const visibleTypes = useMemo(
+    () => TYPES.filter((type) => unitTypes.some((allowed) => allowed.value === type.value)),
+    [unitTypes]
+  );
+  const [units, setUnits] = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [quota, setQuota] = useState(null);
+  const [type, setType] = useState(firstUnitType);
+  const [query, setQuery] = useState("");
+  const [wingByBuilding, setWingByBuilding] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  const loadUnits = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
+      setRefreshing(true);
       setError("");
-
-      const [unitData, quotaData] = await Promise.all([
+      const [unitData, tenantData, quotaData] = await Promise.all([
         getRooms(),
-        getUnitUsage(),
+        getTenants(),
+        getUnitUsage().catch(() => null),
       ]);
-
       setUnits(Array.isArray(unitData) ? unitData : []);
+      setTenants((Array.isArray(tenantData) ? tenantData : []).filter(activeTenant));
       setQuota(quotaData);
-
-      setActiveType((current) => {
-        const requested = ["bed", "room", "shop"].includes(initialType)
-          ? initialType
-          : current;
-
-        return allowedUnitTypes(quotaData).some(
-          (type) => type.value === requested
-        )
-          ? requested
-          : firstAllowedType(quotaData);
-      });
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load units.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [initialType]);
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadUnits();
-    }, [loadUnits])
-  );
-
-  const availableTypes = useMemo(
-    () => allowedUnitTypes(quota),
-    [quota]
-  );
-
-  const currentType =
-    availableTypes.find((item) => item.value === activeType) ||
-    availableTypes[0];
-
-  const quotaKey = currentType.quotaKey;
-  const remaining = quota?.remaining?.[quotaKey] ?? 0;
-  const limit = quota?.limits?.[quotaKey] ?? 0;
-  const used = quota?.usage?.[quotaKey] ?? 0;
-
-  /* -------------------------------------------------------
-     FILTER UNITS
-  ------------------------------------------------------- */
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const filteredUnits = useMemo(() => {
-    const query = search.trim().toLowerCase();
-
+    const term = query.trim().toLowerCase();
     return units.filter((unit) => {
-      if ((unit.propertyType || "bed") !== activeType) return false;
-
-      if (!query) return true;
-
-      return [
-        unit.roomNo,
-        unit.category,
-        unit.floorNo,
-        unit.wingName,
-        unit.flatType,
-      ].some((value) =>
-        String(value || "")
-          .toLowerCase()
-          .includes(query)
-      );
+      const unitType = unit.propertyType || "bed";
+      if (unitType !== type) return false;
+      if (!term) return true;
+      return [unit.category, unit.wingName, unit.roomNo, unit.floorNo]
+        .some((value) => String(value || "").toLowerCase().includes(term)) ||
+        (unit.beds || []).some((bed) => String(bed.bedNo || "").toLowerCase().includes(term));
     });
-  }, [activeType, search, units]);
+  }, [units, type, query]);
 
-  /* -------------------------------------------------------
-     GROUP BY BUILDING / PROPERTY
-
-     Residential Rooms:
-     Building
-        -> Wing
-            -> Rooms
-
-     Beds / Shops:
-     Building
-        -> Units
-  ------------------------------------------------------- */
-
-  const groupedUnits = useMemo(() => {
-    const buildingGroups = new Map();
-
-    filteredUnits.forEach((unit) => {
-      const propertyName =
-        String(unit.category || "Unassigned property").trim() ||
-        "Unassigned property";
-
-      if (!buildingGroups.has(propertyName)) {
-        buildingGroups.set(propertyName, []);
-      }
-
-      buildingGroups.get(propertyName).push(unit);
-    });
-
-    return Array.from(buildingGroups.entries())
-      .sort(([left], [right]) =>
-        left.localeCompare(right, undefined, {
-          numeric: true,
-        })
-      )
-      .map(([propertyName, propertyUnits]) => {
-        /*
-         * Only Residential Rooms are grouped by Wing.
-         */
-    if (activeType === "room" || activeType === "shop") {
-          const wingGroups = new Map();
-
-          propertyUnits.forEach((unit) => {
-            const wingName =
-              String(unit.wingName || "").trim() || "No Wing";
-
-            if (!wingGroups.has(wingName)) {
-              wingGroups.set(wingName, []);
-            }
-
-            wingGroups.get(wingName).push(unit);
-          });
-
-          const wings = Array.from(wingGroups.entries())
-            .sort(([left], [right]) =>
-              left.localeCompare(right, undefined, {
-                numeric: true,
-              })
-            )
-            .map(([wingName, wingUnits]) => ({
-              wingName,
-
-              units: wingUnits.sort((a, b) =>
-                String(a.roomNo || "").localeCompare(
-                  String(b.roomNo || ""),
-                  undefined,
-                  {
-                    numeric: true,
-                  }
-                )
-              ),
-            }));
-
-          return {
-            propertyName,
-            units: propertyUnits,
-            wings,
-          };
-        }
-
-        /*
-         * Existing behaviour for Beds / Shops
-         */
-        return {
-          propertyName,
-
-          units: propertyUnits.sort((a, b) =>
-            String(a.roomNo || "").localeCompare(
-              String(b.roomNo || ""),
-              undefined,
-              {
-                numeric: true,
-              }
-            )
-          ),
-
-          wings: [],
-        };
-      });
-  }, [filteredUnits, activeType]);
-
-  function openCreate() {
-    if (activeType === "bed") {
-      router.push("/system/beds-manage");
-      return;
-    }
-
-    router.push({
-      pathname: "/system/unit-form",
-      params: { type: activeType },
-    });
-  }
-
-  /* -------------------------------------------------------
-     UNIT / ROOM CARD
-  ------------------------------------------------------- */
-
-  function renderUnitCard(item) {
-    const beds = Array.isArray(item.beds) ? item.beds : [];
-    const primaryPrice = beds[0]?.price;
-
-    return (
-      <Pressable
-        onPress={() =>
-          router.push({
-            pathname: "/system/unit-details",
-            params: { id: item._id },
-          })
-        }
-        style={({ pressed }) => [
-          styles.card,
-          pressed && styles.cardPressed,
-        ]}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.iconBox}>
-            <UnitIcon type={activeType} />
-          </View>
-
-          <View style={styles.cardTitleArea}>
-            <Text style={styles.unitTitle}>
-              {activeType === "shop" ? "Shop" : "Room"} {item.roomNo}
-            </Text>
-
-            <Text style={styles.unitMeta}>
-              Floor {item.floorNo || "-"}
-            </Text>
-          </View>
-
-          <Text style={styles.price}>
-            {activeType === "bed"
-              ? `${beds.length} beds`
-              : `Rs. ${primaryPrice ?? 0}`}
-          </Text>
-        </View>
-
-        {/* ---------------------------------------------
-            DETAILS
-
-            For residential rooms:
-            Wing is already displayed above the cards,
-            therefore don't repeat it here.
-
-            Flat type remains inside room card.
-        --------------------------------------------- */}
-
-      <View style={styles.details}>
-  {activeType === "bed" && item.wingName ? (
-    <Text style={styles.detail}>
-      Wing {item.wingName}
-    </Text>
-  ) : null}
-
-  {item.flatType ? (
-    <Text style={styles.detail}>
-      {item.flatType}
-    </Text>
-  ) : null}
-
-  {!item.flatType && activeType !== "bed" ? (
-    <Text style={styles.detail}>
-      No extra details
-    </Text>
-  ) : null}
-
-  {activeType === "bed" &&
-  !item.wingName &&
-  !item.flatType ? (
-    <Text style={styles.detail}>
-      No extra details
-    </Text>
-  ) : null}
-</View>
-        {/* BED CHIPS */}
-
-        {activeType === "bed" ? (
-          <View style={styles.beds}>
-            {beds.map((bed) => (
-              <View
-                key={bed.bedNo}
-                style={styles.bedChip}
-              >
-                <Text style={styles.bedName}>
-                  {bed.bedNo}
-                </Text>
-
-                <Text style={styles.bedPrice}>
-                  Rs. {bed.price ?? 0}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-      </Pressable>
-    );
-  }
-
-  /* -------------------------------------------------------
-     PROPERTY / BUILDING GROUP
-  ------------------------------------------------------- */
-
-  function renderPropertyGroup({ item }) {
-    return (
-      <View style={styles.propertySection}>
-        {/* BUILDING NAME */}
-
-    <View style={styles.propertyHeader}>
-  <View style={styles.propertyLine} />
-
-  <Text style={styles.propertyName}>
-    {item.propertyName}
-  </Text>
-
-  <View style={styles.propertyLine} />
-</View>
-
-        {/* -------------------------------------------
-            RESIDENTIAL ROOMS
-
-            BUILDING
-                WING
-                    ROOM
-                    ROOM
-
-                WING
-                    ROOM
-                    ROOM
-        ------------------------------------------- */}
-
-     {(activeType === "room" || activeType === "shop") ? (
-          <View style={styles.wingsContainer}>
-            {item.wings.map((wing) => (
-              <View
-                key={`${item.propertyName}-${wing.wingName}`}
-                style={styles.wingSection}
-              >
-                {/* WING HEADER */}
-
-                <View style={styles.wingHeader}>
-                  <View style={styles.wingTitleRow}>
-                    <Building2
-                      size={17}
-                      color={S.deep}
-                    />
-
-                    <Text style={styles.wingName}>
-                      {wing.wingName === "No Wing"
-                        ? "No Wing"
-                        : `Wing ${wing.wingName}`}
-                    </Text>
-                  </View>
-
-                 <Text style={styles.wingCount}>
-  {wing.units.length}{" "}
-  {activeType === "shop"
-    ? wing.units.length === 1
-      ? "shop"
-      : "shops"
-    : wing.units.length === 1
-      ? "room"
-      : "rooms"}
-</Text>
-                </View>
-
-                {/* ROOMS INSIDE THIS WING */}
-
-                <View style={styles.propertyUnits}>
-                  {wing.units.map((unit) => (
-                    <View key={String(unit._id)}>
-                      {renderUnitCard(unit)}
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : (
-          /* Existing Beds / Shops */
-          <View style={styles.propertyUnits}>
-            {item.units.map((unit) => (
-              <View key={String(unit._id)}>
-                {renderUnitCard(unit)}
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-    );
-  }
+  const buildings = useMemo(() => groupUnits(filteredUnits, tenants), [filteredUnits, tenants]);
+  const stats = useMemo(() => filteredUnits.reduce((sum, unit) => {
+    const value = unitOccupancy(unit, tenants);
+    return { total: sum.total + value.total, occupied: sum.occupied + value.occupied, vacant: sum.vacant + value.vacant };
+  }, { total: 0, occupied: 0, vacant: 0 }), [filteredUnits, tenants]);
+  const quotaKey = type === "bed" ? "beds" : type === "room" ? "rooms" : "shops";
+  const limitReached = quota?.remaining?.[quotaKey] === 0;
 
   if (loading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator
-          size="large"
-          color={S.deep}
-        />
-      </View>
-    );
+    return <View style={styles.loading}><ActivityIndicator size="large" color={UI.primary} /></View>;
   }
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.content}>
-        {/* HEADER */}
-
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>
-              Units
-            </Text>
-
-            <Text style={styles.subtitle}>
-              {used} of {limit}{" "}
-              {currentType.label.toLowerCase()} used
-            </Text>
-          </View>
-
-          <Pressable
-            onPress={openCreate}
-            disabled={remaining < 1}
-            style={[
-              styles.addButton,
-              remaining < 1 &&
-                styles.addDisabled,
-            ]}
-          >
-            <Plus
-              size={22}
-              color={colors.surface}
-            />
-          </Pressable>
+    <ScrollView style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding }]}
+      showsVerticalScrollIndicator={false} refreshing={refreshing} onRefresh={load}>
+      <View style={styles.header}>
+        <View style={styles.headerCopy}>
+          <Text style={styles.title}>Units</Text>
+          <Text style={styles.subtitle}>Manage buildings, rooms & beds</Text>
         </View>
-
-        {/* TYPE SELECTOR */}
-
-        <View style={styles.segmented}>
-          {availableTypes.map((item) => {
-            const active =
-              item.value === activeType;
-
-            const itemUsed =
-              quota?.usage?.[item.quotaKey] ?? 0;
-
-            const itemLimit =
-              quota?.limits?.[item.quotaKey] ?? 0;
-
-            return (
-              <Pressable
-                key={item.value}
-                onPress={() =>
-                  setActiveType(item.value)
-                }
-                style={[
-                  styles.segment,
-                  active &&
-                    styles.segmentActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    active &&
-                      styles.segmentTextActive,
-                  ]}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.72}
-                >
-                  {stackedPropertyLabel(
-                    item.label
-                  )}
-                </Text>
-
-                <Text
-                  style={[
-                    styles.segmentCount,
-                    active &&
-                      styles.segmentTextActive,
-                  ]}
-                >
-                  {itemUsed}/{itemLimit}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* LIST */}
-
-        <FlatList
-          data={groupedUnits}
-          keyExtractor={(item) =>
-            item.propertyName
-          }
-          renderItem={renderPropertyGroup}
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={
-            <>
-              {/* SEARCH */}
-
-              <View style={styles.searchBox}>
-                <Search
-                  size={18}
-                  color={S.muted}
-                />
-
-                <TextInput
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder={`Search ${currentType.label.toLowerCase()}`}
-                  style={styles.searchInput}
-                />
-              </View>
-
-              {remaining < 1 ? (
-                <Text style={styles.limitText}>
-                  Your purchased{" "}
-                  {currentType.label.toLowerCase()}{" "}
-                  limit is fully used.
-                </Text>
-              ) : null}
-
-              {error ? (
-                <Text style={styles.error}>
-                  {error}
-                </Text>
-              ) : null}
-            </>
-          }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                loadUnits();
-              }}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>
-                No{" "}
-                {currentType.label.toLowerCase()}{" "}
-                found
-              </Text>
-            </View>
-          }
-        />
+        <Pressable style={styles.circleButton} onPress={() => setQuery("")}><Search size={19} color={UI.text} /></Pressable>
+        <Pressable disabled={limitReached} style={[styles.addCircle, limitReached && styles.disabledAction]} onPress={() => router.push({ pathname: "/system/unit-form", params: { type } })}><Plus size={20} color={UI.primary} /></Pressable>
       </View>
-    </View>
+
+      <TypeTabs value={type} onChange={setType} types={visibleTypes} />
+      <SummaryCard stats={stats} type={type} quota={quota} />
+
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Search size={19} color={UI.muted} />
+          <TextInput value={query} onChangeText={setQuery}
+            placeholder="Search building, room or bed" placeholderTextColor="#98A2B3"
+            style={styles.searchInput} />
+        </View>
+        <Pressable style={styles.filterButton}><SlidersHorizontal size={19} color={UI.text} /></Pressable>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Properties</Text>
+        <Pressable style={styles.sortButton}><Text style={styles.sortText}>A – Z</Text><ChevronDown size={18} color={UI.text} /></Pressable>
+      </View>
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {!error && !buildings.length ? (
+        <View style={styles.empty}><Building2 size={30} color={UI.muted} /><Text style={styles.emptyTitle}>No units found</Text><Text style={styles.emptyText}>Add a unit or change the selected property type.</Text></View>
+      ) : null}
+
+      <View style={styles.list}>
+        {buildings.map((building) => (
+          <BuildingCard key={building.name} building={building} type={type}
+            activeWing={wingByBuilding[building.name] || building.wings[0]?.name}
+            onWingChange={(wing) => setWingByBuilding((current) => ({ ...current, [building.name]: wing }))}
+            onRoomPress={(room) => router.push({ pathname: "/system/unit-details", params: { id: room._id } })}
+          />
+        ))}
+      </View>
+
+      <Pressable disabled={limitReached} style={[styles.floatingButton, limitReached && styles.disabledAction]}
+        onPress={() => type === "bed"
+          ? router.push("/system/beds-manage")
+          : router.push({ pathname: "/system/unit-form", params: { type } })}>
+        <Plus size={19} color="#FFF" /><Text style={styles.floatingText}>{limitReached ? "Limit reached" : "Add Unit"}</Text>
+      </Pressable>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: S.screen,
-  },
-
-  content: {
-    flex: 1,
-    width: "100%",
-    maxWidth: 760,
-    alignSelf: "center",
-    paddingHorizontal: 16,
-    paddingTop: 20,
-  },
-
-  loading: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: S.screen,
-  },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: S.screen,
-  },
-
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: S.text,
-  },
-
-  subtitle: {
-    marginTop: 4,
-    color: S.muted,
-    fontWeight: "700",
-  },
-
-  addButton: {
-    width: 46,
-    height: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 14,
-    backgroundColor: S.deep,
-    ...systemShadow,
-  },
-
-  addDisabled: {
-    opacity: 0.4,
-  },
-
-  segmented: {
-    minHeight: 68,
-    marginTop: 18,
-    flexDirection: "row",
-    gap: 6,
-    padding: 5,
-    borderRadius: 14,
-    backgroundColor: "#F2E8DA",
-  },
-
-  segment: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 58,
-    paddingHorizontal: 3,
-    paddingVertical: 5,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 11,
-  },
-
-  segmentActive: {
-    backgroundColor: S.card,
-    ...systemShadow,
-  },
-
-  segmentText: {
-    width: "100%",
-    color: S.muted,
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-
-  segmentTextActive: {
-    color: S.deep,
-  },
-
-  segmentCount: {
-    width: "100%",
-    marginTop: 2,
-    color: S.subtle,
-    fontSize: 11,
-    textAlign: "center",
-    fontWeight: "800",
-  },
-
-  searchBox: {
-    height: 50,
-    marginTop: 14,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    borderWidth: 1,
-    borderColor: S.border,
-    borderRadius: 14,
-    backgroundColor: S.card,
-    ...systemShadow,
-  },
-
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-  },
-
-  limitText: {
-    marginTop: 12,
-    color: S.orange,
-    fontWeight: "800",
-  },
-
-  error: {
-    marginTop: 12,
-    color: S.red,
-  },
-
-  list: {
-    paddingTop: 14,
-    paddingBottom: 24,
-    gap: 18,
-  },
-
-  /* BUILDING */
-
-  propertySection: {
-    gap: 10,
-  },
-
- propertyHeader: {
-  flexDirection: "row",
-  alignItems: "center",
-  width: "100%",
-  gap: 10,
-},
-
-propertyLine: {
-  flex: 1,
-  height: 1,
-  backgroundColor: S.deep,
-},
-
-propertyName: {
-  color: S.deep,
-  fontSize: 14,
-  fontWeight: "900",
-  backgroundColor: S.soft,
-  borderWidth: 1,
-  borderColor: S.deep,
-  borderRadius: 999,
-  paddingVertical: 5,
-  paddingHorizontal: 12,
-},
-  propertyMeta: {
-    marginTop: 3,
-    color: S.muted,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-
-  propertyUnits: {
-    gap: 8,
-  },
-
-  /* WINGS */
-
-  wingsContainer: {
-    gap: 16,
-  },
-
-  wingSection: {
-    gap: 8,
-  },
-
-  wingHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-    paddingVertical: 7,
-    borderBottomWidth: 1,
-    borderBottomColor: S.border,
-  },
-
-  wingTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  wingName: {
-    color: S.deep,
-    fontSize: 15,
-    fontWeight: "900",
-  },
-
-  wingCount: {
-    color: S.muted,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-
-  /* UNIT CARD */
-
-  card: {
-    padding: 15,
-    borderWidth: 1,
-    borderColor: S.border,
-    borderRadius: 15,
-    backgroundColor: S.card,
-    ...systemShadow,
-  },
-
-  cardPressed: {
-    opacity: 0.75,
-  },
-
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  iconBox: {
-    width: 42,
-    height: 42,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 13,
-    backgroundColor: S.soft,
-  },
-
-  cardTitleArea: {
-    flex: 1,
-    marginLeft: 11,
-  },
-
-  unitTitle: {
-    color: S.text,
-    fontSize: 16,
-    fontWeight: "900",
-  },
-
-  unitMeta: {
-    marginTop: 2,
-    color: S.muted,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  price: {
-    color: S.deep,
-    fontWeight: "900",
-  },
-
-  details: {
-    marginTop: 12,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-
-  detail: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: S.pale,
-    color: S.muted,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  beds: {
-    marginTop: 12,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-  },
-
-  bedChip: {
-    minWidth: 70,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 10,
-    backgroundColor: S.pale,
-  },
-
-  bedName: {
-    color: S.deep,
-    fontWeight: "900",
-  },
-
-  bedPrice: {
-    marginTop: 2,
-    color: S.muted,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-
-  empty: {
-    paddingVertical: 55,
-    alignItems: "center",
-  },
-
-  emptyText: {
-    color: S.muted,
-    fontWeight: "800",
-  },
+  screen: { flex: 1, backgroundColor: UI.screen },
+  content: { paddingTop: 4, paddingBottom: 92 },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: UI.screen },
+  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  headerCopy: { flex: 1 },
+  title: { color: UI.text, fontSize: 26, fontWeight: "900" },
+  subtitle: { marginTop: 2, color: UI.muted, fontSize: 12, fontWeight: "600" },
+  circleButton: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  addCircle: { width: 36, height: 36, marginLeft: 7, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: UI.primary, backgroundColor: UI.card },
+  typeTabs: { height: 34, padding: 2, flexDirection: "row", borderRadius: 8, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  typeTab: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 7 },
+  typeTabActive: { borderWidth: 1, borderColor: UI.primaryDark, backgroundColor: UI.card },
+  typeTabText: { color: UI.muted, fontSize: 12, fontWeight: "700" },
+  typeTabTextActive: { color: UI.text, fontWeight: "900" },
+  activeLine: { position: "absolute", bottom: -3, width: 42, height: 2, borderRadius: 1, backgroundColor: UI.primary },
+  summary: { marginTop: 9, padding: 11, borderRadius: 9, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  summaryTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  summaryTitle: { flex: 1, color: UI.text, fontSize: 16, fontWeight: "900" },
+  summaryRate: { color: UI.primary, fontSize: 16, fontWeight: "900" },
+  summaryRateLabel: { color: UI.muted, fontSize: 11, fontWeight: "600" },
+  progressTrack: { height: 6, marginTop: 8, overflow: "hidden", borderRadius: 3, backgroundColor: UI.track },
+  progressFill: { height: "100%", borderRadius: 5, backgroundColor: UI.primary },
+  summaryBottom: { marginTop: 9, paddingTop: 9, flexDirection: "row", borderTopWidth: 1, borderTopColor: UI.border },
+  summaryMetric: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 },
+  neutralIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
+  summaryValue: { color: UI.text, fontSize: 16, fontWeight: "900" },
+  summaryLabel: { color: UI.muted, fontSize: 10, fontWeight: "600" },
+  summaryDivider: { width: 1, height: 32, backgroundColor: UI.border },
+  searchRow: { marginTop: 9, flexDirection: "row", gap: 7 },
+  searchBox: { flex: 1, height: 42, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", borderRadius: 8, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  searchInput: { flex: 1, height: "100%", marginLeft: 8, color: UI.text, fontSize: 13 },
+  filterButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 8, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  sectionHeader: { marginTop: 13, marginBottom: 7, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionTitle: { color: UI.text, fontSize: 18, fontWeight: "900" },
+  sortButton: { height: 32, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 8, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  sortText: { color: UI.text, fontSize: 11, fontWeight: "700" },
+  list: { gap: 8 },
+  buildingCard: { overflow: "hidden", borderRadius: 9, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  buildingHeader: { height: 58, paddingHorizontal: 10, flexDirection: "row", alignItems: "center" },
+  buildingIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
+  buildingCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
+  buildingName: { color: UI.text, fontSize: 16, fontWeight: "900" },
+  locationRow: { marginTop: 2, flexDirection: "row", alignItems: "center", gap: 3 },
+  location: { flex: 1, color: UI.muted, fontSize: 10, fontWeight: "600" },
+  activeStatus: { marginRight: 4, flexDirection: "row", alignItems: "center", gap: 4 },
+  activeDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: UI.primary },
+  activeText: { color: UI.primary, fontSize: 10, fontWeight: "700" },
+  wingTabs: { paddingHorizontal: 10, paddingBottom: 7, gap: 6 },
+  wingTab: { minWidth: 82, height: 30, paddingHorizontal: 11, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: "#F0F3F5" },
+  wingTabActive: { borderWidth: 1, borderColor: UI.primary, backgroundColor: UI.primarySoft },
+  wingText: { color: UI.muted, fontSize: 11, fontWeight: "700" },
+  wingTextActive: { color: UI.primaryDark, fontWeight: "900" },
+  rooms: { marginHorizontal: 10, borderTopWidth: 1, borderTopColor: UI.border },
+  roomRow: { minHeight: 60, flexDirection: "row", alignItems: "center" },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: UI.border },
+  roomIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
+  roomNameWrap: { width: 72, marginLeft: 7 },
+  roomName: { color: UI.text, fontSize: 13, fontWeight: "900" },
+  roomMeta: { marginTop: 2, color: UI.muted, fontSize: 10, fontWeight: "600" },
+  occupancyWrap: { flex: 1, minWidth: 68, marginRight: 6 },
+  occupancyText: { color: UI.muted, fontSize: 10, fontWeight: "700" },
+  roomTrack: { height: 5, marginTop: 4, overflow: "hidden", borderRadius: 3, backgroundColor: UI.track },
+  roomFill: { height: "100%", borderRadius: 3, backgroundColor: UI.primary },
+  statusPill: { minWidth: 55, paddingHorizontal: 6, paddingVertical: 5, alignItems: "center", borderRadius: 8, marginRight: 3 },
+  fullPill: { backgroundColor: UI.primarySoft },
+  vacantPill: { backgroundColor: UI.amberSoft },
+  statusText: { fontSize: 9, fontWeight: "900" },
+  fullText: { color: UI.primaryDark },
+  vacantText: { color: UI.amber },
+  floatingButton: { alignSelf: "flex-end", marginTop: 12, minHeight: 44, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 7, borderRadius: 9, backgroundColor: UI.primary },
+  floatingText: { color: "#FFF", fontSize: 13, fontWeight: "900" },
+  disabledAction: { opacity: 0.45 },
+  empty: { minHeight: 120, alignItems: "center", justifyContent: "center", borderRadius: 9, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
+  emptyTitle: { marginTop: 10, color: UI.text, fontSize: 15, fontWeight: "900" },
+  emptyText: { marginTop: 4, color: UI.muted, fontSize: 11 },
+  error: { marginBottom: 10, padding: 12, borderRadius: 12, color: systemColors.danger, backgroundColor: systemColors.dangerSoft },
+  pressed: { opacity: 0.82 },
 });

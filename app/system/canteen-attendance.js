@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Print from "expo-print";
@@ -353,7 +353,7 @@ export default function CanteenAttendanceScreen() {
       const mealHeaders = enabledMeals.map((item) => `<th>${escapeHtml(item.label)}</th>`).join("");
       const bodyRows = monthlyRows.map((row) => `<tr><td>${escapeHtml(row.tenantName)}</td><td>${escapeHtml(row.unit)}</td><td>${escapeHtml(row.dateKey)}</td>${enabledMealValues.map((key) => `<td>${escapeHtml(row[key])}</td>`).join("")}</tr>`).join("");
       const colspan = 3 + enabledMeals.length;
-      const html = `<!doctype html><html><head><style>body{font-family:Arial;padding:24px;color:#17202a}h1{font-size:22px}p{color:#5f6b5f}table{width:100%;border-collapse:collapse;font-size:11px}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#eef3ea}</style></head><body><h1>Monthly Canteen Attendance</h1><p>${escapeHtml(range.start)} to ${escapeHtml(range.end)}</p><table><tr><th>Tenant</th><th>Unit</th><th>Date</th>${mealHeaders}</tr>${bodyRows || `<tr><td colspan="${colspan}">No attendance records</td></tr>`}</table></body></html>`;
+      const html = `<!doctype html><html><head><style>body{font-family:Arial;padding:24px;color:#17202a}h1{font-size:22px}p{color:#667085}table{width:100%;border-collapse:collapse;font-size:11px}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#e7f1f8}</style></head><body><h1>Monthly Canteen Attendance</h1><p>${escapeHtml(range.start)} to ${escapeHtml(range.end)}</p><table><tr><th>Tenant</th><th>Unit</th><th>Date</th>${mealHeaders}</tr>${bodyRows || `<tr><td colspan="${colspan}">No attendance records</td></tr>`}</table></body></html>`;
       const { uri } = await Print.printToFileAsync({ html });
       const label = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       chooseShareOrDownload({

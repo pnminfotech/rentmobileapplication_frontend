@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Check, ChevronDown } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { createExpense, getExpenses, updateExpense } from "../../src/api/expenseApi";
 import { getRooms } from "../../src/api/roomApi";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { stackedPropertyLabel } from "../../src/utils/unitLabels";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
@@ -66,6 +67,11 @@ function roomShopTitle(unit) {
 
 export default function ExpenseFormScreen() {
   const router = useRouter();
+  const { unitTypes, firstUnitType, isUnitTypeAllowed } = useSystemAccess();
+  const visiblePropertyTypes = useMemo(
+    () => PROPERTY_TYPES.filter((item) => unitTypes.some((allowed) => allowed.value === item.value)),
+    [unitTypes]
+  );
   const { id } = useLocalSearchParams();
   const editing = Boolean(id);
   const [category, setCategory] = useState("");
@@ -73,7 +79,7 @@ export default function ExpenseFormScreen() {
   const [notes, setNotes] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const [amount, setAmount] = useState("");
-  const [propertyType, setPropertyType] = useState("bed");
+  const [propertyType, setPropertyType] = useState(firstUnitType);
   const [scopeName, setScopeName] = useState("");
   const [roomNo, setRoomNo] = useState("");
   const [units, setUnits] = useState([]);
@@ -94,7 +100,8 @@ export default function ExpenseFormScreen() {
         getRooms(),
         getExpenses(),
       ]);
-      const unitList = Array.isArray(unitData) ? unitData : [];
+      const unitList = (Array.isArray(unitData) ? unitData : [])
+        .filter((unit) => isUnitTypeAllowed(normalizePropertyType(unit.propertyType)));
       const expenseList = Array.isArray(list) ? list : [];
       setUnits(unitList);
       setExistingExpenses(expenseList);
@@ -103,6 +110,10 @@ export default function ExpenseFormScreen() {
       const item = expenseList.find((entry) => String(entry._id) === String(id));
       if (!item) {
         setError("Expense not found.");
+        return;
+      }
+      if (!isUnitTypeAllowed(normalizePropertyType(item.propertyType))) {
+        setError("This property type is not included in the current subscription.");
         return;
       }
       const parts = Array.isArray(item.expenses) ? item.expenses : [];
@@ -126,7 +137,7 @@ export default function ExpenseFormScreen() {
     } finally {
       setLoading(false);
     }
-  }, [editing, id]);
+  }, [editing, id, isUnitTypeAllowed]);
 
   useFocusEffect(useCallback(() => { loadItem(); }, [loadItem]));
 
@@ -280,7 +291,7 @@ export default function ExpenseFormScreen() {
       <Text style={styles.label}>Amount</Text>
       <TextInput value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Example: 1500" style={styles.input} />
       <Text style={styles.label}>Property type</Text>
-      <View style={styles.segmented}>{PROPERTY_TYPES.map((item) => <Pressable key={item.value} onPress={() => selectPropertyType(item.value)} style={[styles.segment, propertyType === item.value && styles.segmentActive]}><Text style={[styles.segmentText, propertyType === item.value && styles.segmentTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(item.label)}</Text></Pressable>)}</View>
+      <View style={styles.segmented}>{visiblePropertyTypes.map((item) => <Pressable key={item.value} onPress={() => selectPropertyType(item.value)} style={[styles.segment, propertyType === item.value && styles.segmentActive]}><Text style={[styles.segmentText, propertyType === item.value && styles.segmentTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(item.label)}</Text></Pressable>)}</View>
       <Text style={styles.label}>Unit (optional)</Text>
       <Pressable onPress={() => setShowUnits((value) => !value)} style={styles.select}>
         <View style={styles.selectText}>

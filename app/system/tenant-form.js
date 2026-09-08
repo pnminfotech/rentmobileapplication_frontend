@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Check, ChevronDown } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { getRooms } from "../../src/api/roomApi";
 import { createTenant, getTenants } from "../../src/api/tenantApi";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { ASSIGNMENT_TYPES, filterVacanciesByType, formatVacancyMeta, formatVacancyTitle, groupVacanciesByProperty, stackedPropertyLabel, unitTypeLabel } from "../../src/utils/unitLabels";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
@@ -44,8 +45,13 @@ function buildVacancies(units, tenants) {
 
 export default function TenantFormScreen() {
   const router = useRouter();
+  const { unitTypes, firstUnitType, isUnitTypeAllowed } = useSystemAccess();
+  const visibleAssignmentTypes = useMemo(
+    () => ASSIGNMENT_TYPES.filter((item) => unitTypes.some((allowed) => allowed.value === item.value)),
+    [unitTypes]
+  );
   const [vacancies, setVacancies] = useState([]);
-  const [assignmentType, setAssignmentType] = useState("bed");
+  const [assignmentType, setAssignmentType] = useState(firstUnitType);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showUnits, setShowUnits] = useState(false);
   const [name, setName] = useState("");
@@ -62,15 +68,20 @@ export default function TenantFormScreen() {
     try {
       setError("");
       const [units, tenants] = await Promise.all([getRooms(), getTenants()]);
-      setVacancies(buildVacancies(Array.isArray(units) ? units : [], Array.isArray(tenants) ? tenants : []));
+      const allowedUnits = (Array.isArray(units) ? units : [])
+        .filter((unit) => isUnitTypeAllowed(unit.propertyType || "bed"));
+      setVacancies(buildVacancies(allowedUnits, Array.isArray(tenants) ? tenants : []));
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load vacant units.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isUnitTypeAllowed]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+  useEffect(() => {
+    if (!isUnitTypeAllowed(assignmentType)) setAssignmentType(firstUnitType);
+  }, [assignmentType, firstUnitType, isUnitTypeAllowed]);
   const filteredVacancies = useMemo(() => filterVacanciesByType(vacancies, assignmentType), [assignmentType, vacancies]);
   const groupedVacancies = useMemo(() => groupVacanciesByProperty(filteredVacancies), [filteredVacancies]);
   const selected = filteredVacancies[selectedIndex];
@@ -125,7 +136,7 @@ export default function TenantFormScreen() {
       </View>
 
       <Text style={styles.label}>Where are we adding this tenant?</Text>
-      <View style={styles.typeSegment}>{ASSIGNMENT_TYPES.map((type) => {
+      <View style={styles.typeSegment}>{visibleAssignmentTypes.map((type) => {
         const active = assignmentType === type.value;
         const count = filterVacanciesByType(vacancies, type.value).length;
         return <Pressable key={type.value} onPress={() => { setAssignmentType(type.value); setSelectedIndex(0); setShowUnits(false); }} style={[styles.typeButton, active && styles.segmentActive]}><Text style={[styles.typeText, active && styles.segmentTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(type.label)}</Text><Text style={[styles.typeCount, active && styles.segmentTextActive]} numberOfLines={1}>{count} vacant</Text></Pressable>;

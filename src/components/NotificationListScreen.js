@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Bell, CheckCheck } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,8 +32,8 @@ const COLORS = {
   burgundy: "#7A365D",
   burgundyDark: "#4A2138",
   burgundySoft: "#F5E6EE",
-  green: "#496E3F",
-  greenSoft: "#EEF3E8",
+  green: "#4F7FA6",
+  greenSoft: "#E7F1F8",
   orange: "#D9742F",
   orangeSoft: "#FFF0E4",
   red: colors.danger,

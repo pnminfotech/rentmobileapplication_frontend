@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, ChevronLeft, ChevronRight, History, Pencil, Plus, ReceiptText, Search, SlidersHorizontal, Trash2 } from "lucide-react-native";
 
 import { deleteExpense, getExpenses } from "../../src/api/expenseApi";
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
+import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
 const STATUS_FILTERS = [
@@ -67,6 +68,12 @@ function expenseScopeLabel(item) {
   return `${scopeName || "Room"}${item.roomNo ? ` | Room ${item.roomNo}` : ""}`;
 }
 
+function expensePropertyType(item) {
+  const type = item?.propertyType || item?.scopeType;
+  if (type === "room" || type === "shop") return type;
+  return "bed";
+}
+
 function auditMeta(item) {
   const changedAt = item.updatedAt || item.createdAt;
   if (!changedAt) return "";
@@ -76,6 +83,7 @@ function auditMeta(item) {
 
 export default function ExpensesScreen() {
   const router = useRouter();
+  const { isUnitTypeAllowed } = useSystemAccess();
   const params = useLocalSearchParams();
   const initialStatus = Array.isArray(params.status) ? params.status[0] : params.status;
   const initialRange = Array.isArray(params.range) ? params.range[0] : params.range;
@@ -122,12 +130,13 @@ export default function ExpensesScreen() {
   }, [rangeEnd, rangeMode, rangeStart, selectedMonth]);
 
   const rangeItems = useMemo(() => items.filter((item) => {
+    if (!isUnitTypeAllowed(expensePropertyType(item))) return false;
     const date = new Date(item.date);
     if (Number.isNaN(date.getTime())) return false;
     if (range.start && date < range.start) return false;
     if (range.end && date > range.end) return false;
     return true;
-  }), [items, range]);
+  }), [isUnitTypeAllowed, items, range]);
 
   const categories = useMemo(() => ["all", ...new Set(rangeItems.map((item) => expenseParts(item)[0]).filter(Boolean))], [rangeItems]);
   const visibleItems = useMemo(() => {

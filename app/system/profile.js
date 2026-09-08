@@ -10,16 +10,25 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import {
   ArrowLeft,
+  BedDouble,
+  Building2,
+  ChevronRight,
   CirclePlus,
+  Coins,
+  Crown,
+  DoorOpen,
   HelpCircle,
   KeyRound,
+  Layers3,
   LogOut,
+  Settings,
   ShieldCheck,
+  Store,
   WalletCards,
 } from "lucide-react-native";
 
@@ -33,7 +42,12 @@ import {
   requestSubscriptionUpgrade,
 } from "../../src/api/saasApi";
 import { clearAuthSession } from "../../src/storage/authStorage";
-import { systemColors as S, systemShadow } from "../../src/theme/systemTheme";
+import { allowedUnitTypes } from "../../src/utils/subscriptionAccess";
+import { systemColors as S } from "../../src/theme/systemTheme";
+
+const PROFILE_BLUE = "#4F7FA6";
+const PROFILE_BLUE_DARK = "#244F70";
+const PROFILE_BLUE_SOFT = "#E7F1F8";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -70,15 +84,28 @@ function InfoRow({ label, value }) {
 
 function SettingRow({ Icon, title, subtitle, onPress, danger }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.settingRow, danger && styles.settingRowDanger, pressed && styles.pressed]}>
       <View style={[styles.settingIcon, danger && styles.settingIconDanger]}>
-        <Icon size={20} color={danger ? S.red : S.deep} />
+        <Icon size={18} color={danger ? S.red : PROFILE_BLUE_DARK} />
       </View>
       <View style={styles.settingCopy}>
         <Text style={[styles.settingTitle, danger && styles.dangerText]}>{title}</Text>
-        <Text style={styles.settingSubtitle}>{subtitle}</Text>
+        <Text style={[styles.settingSubtitle, danger && styles.dangerSubtitle]}>{subtitle}</Text>
       </View>
+      <ChevronRight size={19} color={danger ? S.red : S.muted} />
     </Pressable>
+  );
+}
+
+function UnitBox({ Icon, value, label }) {
+  return (
+    <View style={styles.unitBox}>
+      <Icon size={19} color={PROFILE_BLUE_DARK} />
+      <View>
+        <Text style={styles.unitValue}>{Number(value || 0).toLocaleString("en-IN")}</Text>
+        <Text style={styles.unitLabel}>{label}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -167,7 +194,8 @@ export default function SystemProfileScreen() {
       setShowUpgrade(false);
       const walletCoinsUsed = Number(result?.upgrade?.walletCoinsUsed || 0);
 
-      if (payment?.payment?.mockSuccessUrl) {
+      const provider = String(payment?.payment?.provider || "").toLowerCase();
+      if (provider === "mock" && payment?.payment?.mockSuccessUrl) {
         await completeMockSaasPayment(transactionId);
         await load();
         Alert.alert("Package upgraded", "Payment completed and your package is active.");
@@ -219,16 +247,16 @@ export default function SystemProfileScreen() {
   }
 
   if (loading) {
-    return <View style={styles.loading}><ActivityIndicator size="large" color={S.deep} /></View>;
+    return <View style={styles.loading}><ActivityIndicator size="large" color={PROFILE_BLUE} /></View>;
   }
 
   const user = bootstrap?.user || {};
   const organization = bootstrap?.organization || {};
   const subscription = bootstrap?.subscription || {};
   const units = subscription?.units || organization?.unitAllocation || {};
+  const purchasedUnitTypes = allowedUnitTypes(subscription);
   const initials = String(user.name || user.email || "AD").trim().slice(0, 2).toUpperCase();
   const walletBalance = Number(wallet?.balance || 0);
-
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -243,61 +271,85 @@ export default function SystemProfileScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <View style={styles.hero}>
-        <View style={styles.heroCurve} />
+      <View style={styles.hero} >
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
-        <Text style={styles.name}>{user.name || "System admin"}</Text>
-        <Text style={styles.email}>{formatEmail(user.email)}</Text>
+        <View style={styles.heroCopy}>
+          <Text style={styles.name}>{user.name || "System admin"}</Text>
+          <Text style={styles.email}>{formatEmail(user.email)}</Text>
+          <View style={styles.badgeRow}>
+            <View style={styles.roleBadge}><Text style={styles.roleBadgeText}>{statusLabel(user.role || "administrator")}</Text></View>
+            {/* <View style={styles.activeBadge}><View style={styles.activeDot} /><Text style={styles.activeBadgeText}>{accountStatus}</Text></View> */}
+          </View>
+        </View>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Account information</Text>
-        <InfoRow label="Name" value={user.name || "System admin"} />
-        <InfoRow label="Email" value={user.email} />
-        <InfoRow label="Role" value={statusLabel(user.role)} />
-        <InfoRow label="Status" value={statusLabel(user.status)} />
-        <InfoRow label="Created" value={formatDate(user.createdAt)} />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Business information</Text>
-        <InfoRow label="Business" value={organization.name} />
-        <InfoRow label="Type" value={statusLabel(organization.businessType)} />
-        <InfoRow label="Owner" value={organization.ownerName} />
-        <InfoRow label="Phone" value={organization.phone} />
-        <InfoRow label="Status" value={statusLabel(organization.status)} />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Subscription</Text>
-        <InfoRow label="Status" value={statusLabel(subscription.status)} />
-        <InfoRow label="Amount" value={money(subscription.amount, subscription.currency)} />
-        <InfoRow label="Duration" value={subscription.durationMonths ? `${subscription.durationMonths} months` : "-"} />
-        <InfoRow label="Ends" value={formatDate(subscription.endDate)} />
-        <View style={styles.unitGrid}>
-          <View style={styles.unitBox}><Text style={styles.unitValue}>{units.beds || 0}</Text><Text style={styles.unitLabel}>Beds</Text></View>
-          <View style={styles.unitBox}><Text style={styles.unitValue}>{units.rooms || 0}</Text><Text style={styles.unitLabel}>Rooms</Text></View>
-          <View style={styles.unitBox}><Text style={styles.unitValue}>{units.shops || 0}</Text><Text style={styles.unitLabel}>Shops</Text></View>
+        <View style={styles.sectionHeading}><Building2 size={18} color={S.muted} /><Text style={styles.sectionTitle}>Account &amp; Business</Text></View>
+        <View style={styles.detailColumns}>
+          <View style={styles.detailColumn}>
+            <InfoRow label="Name" value={user.name || "System admin"} />
+            <InfoRow label="Role" value={statusLabel(user.role)} />
+            <InfoRow label="Created" value={formatDate(user.createdAt)} />
+            <InfoRow label="Phone" value={organization.phone || user.phone} />
+          </View>
+          <View style={styles.columnDivider} />
+          <View style={styles.detailColumn}>
+            <InfoRow label="Business" value={organization.name} />
+            <InfoRow label="Type" value={statusLabel(organization.businessType)} />
+            <InfoRow label="Owner" value={organization.ownerName} />
+          </View>
         </View>
       </View>
 
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <View>
-            <Text style={styles.sectionTitle}>Upgrade package</Text>
-            <Text style={styles.helperText}>Buy extra units for this same account.</Text>
+          <View style={styles.sectionHeading}><Crown size={19} color={S.muted} /><Text style={styles.sectionTitle}>Subscription</Text></View>
+          <View style={styles.activeBadge}><View style={styles.activeDot} /><Text style={styles.activeBadgeText}>{statusLabel(subscription.status || "active")}</Text></View>
+        </View>
+        <View style={styles.subscriptionStats}>
+          <View style={styles.subscriptionStat}><Text style={styles.statLabel}>Amount</Text><Text style={styles.statValue}>{money(subscription.amount, subscription.currency)}</Text></View>
+          <View style={styles.statDivider} />
+          <View style={styles.subscriptionStat}><Text style={styles.statLabel}>Duration</Text><Text style={styles.statValue}>{subscription.durationMonths ? `${subscription.durationMonths} months` : "-"}</Text></View>
+          <View style={styles.statDivider} />
+          <View style={styles.subscriptionStat}><Text style={styles.statLabel}>Ends</Text><Text style={styles.statValue}>{formatDate(subscription.endDate)}</Text></View>
+        </View>
+        <View style={styles.unitGrid}>
+          {purchasedUnitTypes.map((type) => {
+            if (type.value === "bed") return <UnitBox key={type.value} Icon={BedDouble} value={units.beds} label="Beds" />;
+            if (type.value === "room") return <UnitBox key={type.value} Icon={DoorOpen} value={units.rooms} label="Rooms" />;
+            return <UnitBox key={type.value} Icon={Store} value={units.shops} label="Shops" />;
+          })}
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.upgradeHeading}>
+            <Layers3 size={19} color={S.muted} />
+            <View>
+              <Text style={styles.sectionTitle}>Upgrade package</Text>
+              <Text style={styles.helperText}>Buy extra units for this account</Text>
+            </View>
           </View>
           <Pressable onPress={() => setShowUpgrade((value) => !value)} style={styles.smallAction}>
-            <CirclePlus size={17} color={S.deep} />
-            <Text style={styles.smallActionText}>{showUpgrade ? "Close" : "Add"}</Text>
+            <CirclePlus size={17} color={PROFILE_BLUE_DARK} />
+            <Text style={styles.smallActionText}>{showUpgrade ? "Close" : "Add units"}</Text>
           </Pressable>
         </View>
+        <Pressable onPress={() => router.push("/system/wallet")} style={styles.walletSummary}>
+          <Coins size={27} color={S.orange} />
+          <View style={styles.walletSummaryCopy}>
+            <Text style={styles.walletSummaryLabel}>Wallet balance</Text>
+            <Text style={styles.walletSummaryValue}>{walletBalance.toLocaleString("en-IN")} coins</Text>
+          </View>
+          <ChevronRight size={18} color={S.orange} />
+        </Pressable>
         {showUpgrade ? (
           <View style={styles.upgradeForm}>
             <View style={styles.upgradeInputs}>
-              <View style={styles.inputWrap}>
+              {purchasedUnitTypes.some((type) => type.value === "bed") ? <View style={styles.inputWrap}>
                 <Text style={styles.inputLabel}>Extra beds</Text>
                 <TextInput
                   value={upgradeUnits.beds}
@@ -306,8 +358,8 @@ export default function SystemProfileScreen() {
                   placeholder="0"
                   style={styles.input}
                 />
-              </View>
-              <View style={styles.inputWrap}>
+              </View> : null}
+              {purchasedUnitTypes.some((type) => type.value === "room") ? <View style={styles.inputWrap}>
                 <Text style={styles.inputLabel}>Extra rooms</Text>
                 <TextInput
                   value={upgradeUnits.rooms}
@@ -316,8 +368,8 @@ export default function SystemProfileScreen() {
                   placeholder="0"
                   style={styles.input}
                 />
-              </View>
-              <View style={styles.inputWrap}>
+              </View> : null}
+              {purchasedUnitTypes.some((type) => type.value === "shop") ? <View style={styles.inputWrap}>
                 <Text style={styles.inputLabel}>Extra shops</Text>
                 <TextInput
                   value={upgradeUnits.shops}
@@ -326,7 +378,7 @@ export default function SystemProfileScreen() {
                   placeholder="0"
                   style={styles.input}
                 />
-              </View>
+              </View> : null}
             </View>
             <Pressable
               onPress={() => walletBalance > 0 && setUseWalletForUpgrade((value) => !value)}
@@ -334,7 +386,7 @@ export default function SystemProfileScreen() {
               style={[styles.walletRow, !walletBalance && styles.walletDisabled]}
             >
               <View style={styles.walletIcon}>
-                <WalletCards size={19} color={S.deep} />
+                <WalletCards size={19} color={PROFILE_BLUE_DARK} />
               </View>
               <View style={styles.walletCopy}>
                 <Text style={styles.walletTitle}>Use wallet coins</Text>
@@ -355,6 +407,7 @@ export default function SystemProfileScreen() {
       </View>
 
       <View style={styles.settings}>
+        <View style={styles.settingsHeading}><Settings size={19} color={S.muted} /><Text style={styles.sectionTitle}>Account actions</Text></View>
         <SettingRow
           Icon={KeyRound}
           title="Change Password"
@@ -386,59 +439,82 @@ export default function SystemProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: S.screen },
-  content: { width: "100%", maxWidth: 430, alignSelf: "center", padding: 16, paddingBottom: 42 },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: S.screen },
-  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  backButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, backgroundColor: "#F6F8F7" },
+  content: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 20, paddingTop: 3, paddingBottom: 20 },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F6F8F7" },
+  header: { minHeight: 52, flexDirection: "row", alignItems: "center", marginBottom: 7 },
+  backButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   headerText: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
-  eyebrow: { color: S.deep, fontSize: 11, fontWeight: "900", textTransform: "uppercase" },
-  headerTitle: { marginTop: 2, color: S.text, fontSize: 24, fontWeight: "900" },
-  error: { marginBottom: 12, padding: 12, color: S.red, borderRadius: 12, backgroundColor: S.redSoft, fontWeight: "700" },
-  hero: { minHeight: 190, overflow: "hidden", alignItems: "center", padding: 16, borderWidth: 1, borderColor: S.border, borderRadius: 16, backgroundColor: S.card, ...systemShadow },
-  heroCurve: { position: "absolute", left: -30, right: -30, top: 0, height: 76, borderBottomLeftRadius: 130, borderBottomRightRadius: 130, backgroundColor: S.deep },
-  avatar: { width: 76, height: 76, marginTop: 20, alignItems: "center", justifyContent: "center", borderWidth: 4, borderColor: S.card, borderRadius: 38, backgroundColor: S.soft },
-  avatarText: { color: S.deep, fontSize: 23, fontWeight: "900" },
-  name: { marginTop: 12, color: S.text, fontSize: 21, fontWeight: "900" },
-  email: { marginTop: 5, color: S.muted, fontSize: 13, fontWeight: "700" },
-  card: { marginTop: 12, padding: 14, borderWidth: 1, borderColor: S.border, borderRadius: 14, backgroundColor: S.card, ...systemShadow },
-  sectionTitle: { marginBottom: 6, color: S.text, fontSize: 16, fontWeight: "900" },
+  eyebrow: { color: S.muted, fontSize: 9, letterSpacing: 0, fontWeight: "800", textTransform: "uppercase" },
+  headerTitle: { marginTop: 0, color: S.text, fontSize: 23, fontWeight: "900" },
+  error: { marginBottom: 10, padding: 11, color: S.red, borderRadius: 8, backgroundColor:"#fffdf8", fontWeight: "700" },
+  hero: { minHeight: 84, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: "#E1E6EA", borderRadius: 8, backgroundColor: "#FFFFFF" },
+  avatar: { width: 60, height: 60, alignItems: "center", justifyContent: "center", borderRadius: 30, backgroundColor: PROFILE_BLUE_SOFT },
+  avatarText: { color: PROFILE_BLUE_DARK, fontSize: 22, fontWeight: "900" },
+  heroCopy: { flex: 1, minWidth: 0, marginLeft: 15 },
+  name: { color: S.text, fontSize: 18, fontWeight: "900" },
+  email: { marginTop: 2, color: S.muted, fontSize: 12, fontWeight: "600" },
+  badgeRow: { marginTop: 7, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
+  roleBadge: { minHeight: 24, justifyContent: "center", paddingHorizontal: 10, borderRadius: 7, backgroundColor: "#EEF2F8" },
+  roleBadgeText: { color: "#344767", fontSize: 11, fontWeight: "700" },
+  activeBadge: { minHeight: 24, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 9, borderRadius: 12, backgroundColor: PROFILE_BLUE_SOFT },
+  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: PROFILE_BLUE },
+  activeBadgeText: { color: PROFILE_BLUE_DARK, fontSize: 11, fontWeight: "800" },
+  card: { marginTop: 10, padding: 12, borderWidth: 1, borderColor: "#E1E6EA", borderRadius: 8, backgroundColor: "#FFFFFF" },
+  sectionHeading: { flexDirection: "row", alignItems: "center", gap: 9 },
+  sectionTitle: { color: S.text, fontSize: 15, fontWeight: "900" },
   cardHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  helperText: { marginTop: 2, color: S.muted, fontSize: 11, fontWeight: "700" },
-  smallAction: { minHeight: 36, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: S.border, borderRadius: 12, backgroundColor: S.soft },
-  smallActionText: { color: S.deep, fontSize: 12, fontWeight: "900" },
-  infoRow: { minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: S.border },
-  infoLabel: { color: S.muted, fontSize: 12, fontWeight: "700" },
-  infoValue: { maxWidth: "62%", color: S.text, fontSize: 13, fontWeight: "800", textAlign: "right", textTransform: "capitalize" },
+  detailColumns: { marginTop: 9, flexDirection: "row", alignItems: "stretch" },
+  detailColumn: { flex: 1, minWidth: 0 },
+  columnDivider: { width: 1, marginHorizontal: 9, backgroundColor: "#E1E6EA" },
+  helperText: { marginTop: 2, color: S.muted, fontSize: 10, fontWeight: "600" },
+  smallAction: { minHeight: 32, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderColor: PROFILE_BLUE_DARK, borderRadius: 7, backgroundColor: "#FFFFFF" },
+  smallActionText: { color: PROFILE_BLUE_DARK, fontSize: 11, fontWeight: "900" },
+  infoRow: { minHeight: 22, flexDirection: "row", alignItems: "center", gap: 5 },
+  infoLabel: { width: 50, color: S.muted, fontSize: 10, fontWeight: "600" },
+  infoValue: { flex: 1, minWidth: 0, color: S.text, fontSize: 11, fontWeight: "800", textTransform: "capitalize" },
   infoEmailValue: { textTransform: "none" },
-  unitGrid: { marginTop: 12, flexDirection: "row", gap: 8 },
-  unitBox: { flex: 1, minHeight: 68, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: S.soft },
-  unitValue: { color: S.deep, fontSize: 21, fontWeight: "900" },
-  unitLabel: { marginTop: 4, color: S.muted, fontSize: 12, fontWeight: "800" },
+  subscriptionStats: { marginTop: 10, flexDirection: "row", alignItems: "center" },
+  subscriptionStat: { flex: 1, minWidth: 0 },
+  statDivider: { width: 1, height: 31, marginHorizontal: 8, backgroundColor: "#E1E6EA" },
+  statLabel: { color: S.muted, fontSize: 10, fontWeight: "600" },
+  statValue: { marginTop: 2, color: S.text, fontSize: 14, fontWeight: "900" },
+  unitGrid: { marginTop: 8, flexDirection: "row", gap: 6 },
+  unitBox: { flex: 1, minHeight: 46, paddingHorizontal: 7, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 7, backgroundColor: PROFILE_BLUE_SOFT },
+  unitValue: { color: PROFILE_BLUE_DARK, fontSize: 15, fontWeight: "900" },
+  unitLabel: { marginTop: 0, color: S.muted, fontSize: 10, fontWeight: "600" },
+  upgradeHeading: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-start", gap: 11 },
+  walletSummary: { minHeight: 46, marginTop: 8, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 7, backgroundColor: "#FFF4DE" },
+  walletSummaryCopy: { flex: 1, minWidth: 0 },
+  walletSummaryLabel: { color: S.text, fontSize: 10, fontWeight: "700" },
+  walletSummaryValue: { marginTop: 1, color: S.text, fontSize: 15, fontWeight: "900" },
   upgradeForm: { marginTop: 12, gap: 12 },
   upgradeInputs: { flexDirection: "row", gap: 8 },
   inputWrap: { flex: 1, minWidth: 0 },
   inputLabel: { marginBottom: 5, color: S.muted, fontSize: 11, fontWeight: "800" },
   input: { minHeight: 42, paddingHorizontal: 10, borderWidth: 1, borderColor: S.border, borderRadius: 12, backgroundColor: "#fff", color: S.text, fontSize: 14, fontWeight: "800" },
-  walletRow: { minHeight: 62, padding: 10, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: S.border, borderRadius: 13, backgroundColor: S.soft },
+  walletRow: { minHeight: 62, padding: 10, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: "#D9E1E7", borderRadius: 13, backgroundColor: PROFILE_BLUE_SOFT },
   walletDisabled: { opacity: 0.62 },
-  walletIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: S.greenSoft },
+  walletIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "#D8E8F3" },
   walletCopy: { flex: 1, minWidth: 0 },
   walletTitle: { color: S.text, fontSize: 13, fontWeight: "900" },
   walletText: { marginTop: 3, color: S.muted, fontSize: 11, lineHeight: 15, fontWeight: "700" },
   toggle: { width: 44, height: 26, padding: 3, justifyContent: "center", borderRadius: 13, backgroundColor: S.border },
-  toggleActive: { backgroundColor: S.deep },
+  toggleActive: { backgroundColor: PROFILE_BLUE_DARK },
   toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff" },
   toggleKnobActive: { alignSelf: "flex-end" },
-  upgradeButton: { minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, backgroundColor: S.deep },
+  upgradeButton: { minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, backgroundColor: PROFILE_BLUE_DARK },
   upgradeButtonText: { color: "#fff", fontSize: 13, fontWeight: "900" },
-  settings: { marginTop: 14, gap: 10 },
-  settingRow: { minHeight: 64, padding: 12, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: S.border, borderRadius: 14, backgroundColor: S.card, ...systemShadow },
-  settingIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: S.soft },
-  settingIconDanger: { backgroundColor: S.redSoft },
-  settingCopy: { flex: 1, minWidth: 0, marginLeft: 12 },
-  settingTitle: { color: S.text, fontSize: 14, fontWeight: "900" },
-  settingSubtitle: { marginTop: 3, color: S.muted, fontSize: 11, fontWeight: "700" },
+  settings: { marginTop: 10, overflow: "hidden", borderWidth: 1, borderColor: "#E1E6EA", borderRadius: 8, backgroundColor: "#FFFFFF" },
+  settingsHeading: { minHeight: 40, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 9, borderBottomWidth: 1, borderBottomColor: "#E1E6EA" },
+  settingRow: { minHeight: 42, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E1E6EA", backgroundColor: "#FFFFFF" },
+  settingRowDanger: { margin: 4, borderBottomWidth: 0, borderRadius: 7, backgroundColor: S.redSoft },
+  settingIcon: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
+  settingIconDanger: { backgroundColor: "transparent" },
+  settingCopy: { flex: 1, minWidth: 0, marginLeft: 7 },
+  settingTitle: { color: S.text, fontSize: 12, fontWeight: "800" },
+  settingSubtitle: { marginTop: 1, color: S.muted, fontSize: 9, fontWeight: "600" },
   dangerText: { color: S.red },
+  dangerSubtitle: { color: "#D76A62" },
   pressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
 });
