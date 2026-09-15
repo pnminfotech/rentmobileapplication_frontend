@@ -984,16 +984,40 @@ export default function TenantsScreen() {
                           <View style={styles.photoFallback}><Text style={styles.photoFallbackText}>{String(tenant.name || "T").trim().charAt(0).toUpperCase()}</Text></View>
                         )}
                       </View>
-                      <View style={styles.tenantInfo}>
-                        <Text style={styles.tenantName}>{toDisplayName(tenant.name)}</Text>
-                        {!awaitingForm ? (
-                          <Text style={[
-                            styles.cycleBadge,
-                            tenant.firstRentStatus === "ADVANCE_PAID" && styles.cycleBadgeAdvance,
-                          ]}>
-                            {tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid" : "Normal cycle"}
-                          </Text>
-                        ) : null}
+                   <View style={styles.tenantInfo}>
+  <Text style={styles.tenantName}>
+    {toDisplayName(tenant.name)}
+  </Text>
+
+  {!awaitingForm ? (
+    <View style={styles.badgeRow}>
+
+     
+
+      {/* Existing Payment Cycle Status */}
+      <Text
+        style={[
+          styles.cycleBadge,
+          tenant.firstRentStatus === "ADVANCE_PAID" &&
+            styles.cycleBadgeAdvance,
+        ]}
+      >
+        {tenant.firstRentStatus === "ADVANCE_PAID"
+          ? "Advance paid"
+          : "Normal cycle"}
+      </Text>
+ {/* Separate Canteen Status */}
+      {tenant.hasCanteen === true ||
+      String(tenant.hasCanteen || "").trim().toLowerCase() === "yes" ? (
+        <View style={styles.canteenStatusBadge}>
+          <Text style={styles.canteenStatusText}>
+            Canteen
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  ) : null}
+
                         {tenant.phoneNo ? <Text style={styles.tenantPhone}>+91 {tenant.phoneNo}</Text> : null}
                         <Text style={styles.tenantLocation} numberOfLines={1}>{tenant.category || "Property"} · {tenantUnitBadgeLabel(tenant)}</Text>
                        
@@ -1232,6 +1256,22 @@ const styles = StyleSheet.create({
   tenantDueAmount: { marginTop: 4, color: S.red, fontSize: 11, fontWeight: "900" },
   tenantPaidAmount: { color: UI.blue },
   badgeRow: { marginTop: 8, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
+ canteenStatusBadge: {
+  alignSelf: "flex-start",
+  paddingHorizontal: 8,
+  paddingVertical: 3,
+  borderRadius: 999,
+  overflow: "hidden",
+  backgroundColor: "#FFF4E6",
+  borderWidth: 1,
+  borderColor: "#F2D1A7",
+},
+
+canteenStatusText: {
+  color: "#A96313",
+  fontSize: 9,
+  fontWeight: "900",
+},
   cycleBadge: { alignSelf: "flex-start", maxWidth: 128, marginTop: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: "hidden", backgroundColor: UI.blueSoft, color: UI.blueDark, fontSize: 9, fontWeight: "900" },
   cycleBadgeAdvance: { backgroundColor: UI.blueSoft, color: UI.blueDark },
   unitPill: { alignSelf: "flex-start", maxWidth: "100%", marginTop: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, overflow: "hidden", backgroundColor: "#F3A6B7", color: colors.surface, fontSize: 11, fontWeight: "900" },
@@ -1253,18 +1293,18 @@ const styles = StyleSheet.create({
   monthScroll: { width: "100%" },
   monthStrip: { paddingHorizontal: 0, paddingBottom: 0, flexDirection: "row", alignItems: "stretch", gap: 0 },
   monthBox: { minWidth: 0, height: 126, paddingHorizontal: 6, paddingTop: 9, paddingBottom: 8, alignItems: "center", justifyContent: "flex-start", borderWidth: 1, borderColor: "#DADDF7", backgroundColor: "#F7F8FF" },
-  monthBoxPaid: { borderColor: "#B9D0E1", backgroundColor: "#F0F6FA" },
-  monthBoxDue: { borderColor: "#F2CACA", backgroundColor: "#FFF5F4" },
+  monthBoxPaid: { borderColor: "#86efac", backgroundColor: "#edfdf3" },
+  monthBoxDue: { borderColor: "#F0A0A0", backgroundColor: "#FFF5F4" },
   monthBoxUpcoming: { borderColor: "#D5DDF8", backgroundColor: "#F4F6FF" },
   monthBoxInactive: { borderColor: S.border, backgroundColor: S.pale, opacity: 0.75 },
   monthName: { width: "100%", height: 17, color: S.text, fontSize: 10, lineHeight: 14, fontWeight: "900", textAlign: "center" },
   monthStatusPill: { width: "100%", height: 27, marginTop: 8, paddingHorizontal: 4, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 999 },
-  monthPaidPill: { borderColor: "#9FC0D8", backgroundColor: UI.blueSoft },
+  monthPaidPill: {borderColor: "#86efac", backgroundColor: "#dcfce7"},
   monthDuePill: { borderColor: "#F0A0A0", backgroundColor: "#FFF0ED" },
   monthUpcomingPill: { borderColor: "#CAD3F5", backgroundColor: "#E9EEFF" },
   monthInactivePill: { borderColor: S.border, backgroundColor: S.card },
   monthStatusText: { width: "100%", textAlign: "center", fontSize: 9, lineHeight: 12, fontWeight: "900" },
-  monthPaidText: { color: S.mid },
+  monthPaidText: { color: "#166534" },
   monthDueText: { color: S.red },
   monthUpcomingText: { color: "#324AA0" },
   monthRange: { width: "100%", height: 14, marginTop: 8, color: S.text, fontSize: 9, lineHeight: 12, fontWeight: "800", textAlign: "center" },

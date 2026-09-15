@@ -16,8 +16,9 @@ import {
 } from "lucide-react-native";
 
 import { getAppBootstrap, getWalletSummary } from "../../src/api/saasApi";
+import { getCanteenSettings } from "../../src/api/canteenApi";
 import { systemShadow } from "../../src/theme/systemTheme";
-import { hasCanteenFeature } from "../../src/utils/featureAccess";
+import { hasCanteenFeature, needsCanteenAttendance } from "../../src/utils/featureAccess";
 
 const UI = {
   screen: "#F6F8F7",
@@ -99,15 +100,17 @@ function CompactCard({ Icon, title, subtitle, tone, onPress }) {
 export default function MoreScreen() {
   const router = useRouter();
   const [bootstrap, setBootstrap] = useState(null);
+  const [canteenSettings, setCanteenSettings] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
 
   useFocusEffect(useCallback(() => {
     let active = true;
 
-    Promise.allSettled([getAppBootstrap(), getWalletSummary()]).then(([bootstrapResult, walletResult]) => {
+    Promise.allSettled([getAppBootstrap(), getWalletSummary(), getCanteenSettings()]).then(([bootstrapResult, walletResult, canteenResult]) => {
       if (!active) return;
       setBootstrap(bootstrapResult.status === "fulfilled" ? bootstrapResult.value : null);
       setWalletBalance(walletResult.status === "fulfilled" ? Number(walletResult.value?.balance || 0) : null);
+      setCanteenSettings(canteenResult.status === "fulfilled" ? canteenResult.value : null);
     });
 
     return () => {
@@ -116,6 +119,7 @@ export default function MoreScreen() {
   }, []));
 
   const canteenEnabled = hasCanteenFeature(bootstrap);
+  const showCanteenAttendance = canteenEnabled && needsCanteenAttendance(canteenSettings);
   const walletValue = walletBalance === null ? undefined : walletBalance.toLocaleString("en-IN");
 
   return (
@@ -157,7 +161,9 @@ export default function MoreScreen() {
             <Text style={styles.sectionTitle}>Canteen</Text>
             <View style={styles.compactGrid}>
               <CompactCard Icon={Utensils} title="Canteen settings" subtitle="Plans & meal prices" tone="amber" onPress={() => router.push("/system/canteen-settings")} />
-              <CompactCard Icon={Users} title="Canteen attendance" subtitle="Mark hostel meals" tone="indigo" onPress={() => router.push("/system/canteen-attendance")} />
+              {showCanteenAttendance ? (
+                <CompactCard Icon={Users} title="Canteen attendance" subtitle="Mark hostel meals" tone="indigo" onPress={() => router.push("/system/canteen-attendance")} />
+              ) : null}
             </View>
           </>
         ) : null}

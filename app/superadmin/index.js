@@ -58,28 +58,37 @@ import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/utils/responsive";
 
 const COLORS = {
-  bg: "#FFF8F1",
-  card: "#FFFDF9",
-  soft: "#F8EFE6",
-  text: colors.text,
-  muted: colors.muted,
-  subtle: colors.subtle,
-  border: "#EFE0D3",
-  blue: "#7A365D",
-  blueDark: "#4A2138",
-  blueSoft: "#F5E6EE",
-  green: "#496E3F",
-  greenSoft: "#EEF3E8",
-  orange: "#D9742F",
-  orangeSoft: "#FFF0E4",
-  red: colors.danger,
-  redSoft: colors.dangerSoft,
-  purple: "#7A365D",
-  purpleSoft: "#F5E6EE",
-  teal: "#7A365D",
-  tealSoft: "#F5E6EE",
-};
+  // Base — matching System Admin
+  bg: "#F6F8F8",
+  card: "#FFFFFF",
+  soft: "#F0F3F4",
 
+  text: "#101828",
+  muted: "#667085",
+  subtle: "#98A2B3",
+  border: "#D9E1E5",
+
+  // Super Admin identity
+  blue: "#147D76",
+  blueDark: "#0D625D",
+  blueSoft: "#E4F3F1",
+
+  // Status
+  green: "#27845C",
+  greenSoft: "#E7F5ED",
+
+  orange: "#C98216",
+  orangeSoft: "#FFF3DE",
+
+  red: "#D14343",
+  redSoft: "#FDEAEA",
+
+  purple: "#6857C7",
+  purpleSoft: "#EFEDFF",
+
+  teal: "#147D76",
+  tealSoft: "#E4F3F1",
+};
 const FILTERS = [
   { value: "all", label: "All", Icon: LayoutGrid, color: COLORS.blue, bg: COLORS.blueSoft },
   { value: "active", label: "Active", Icon: Users, color: COLORS.green, bg: COLORS.greenSoft },
@@ -138,10 +147,34 @@ function getWalletPricing(transaction) {
   };
 }
 
-function IconBox({ Icon, color = COLORS.blue, bg = COLORS.blueSoft, size = 54 }) {
+function IconBox({
+  Icon,
+  color = COLORS.blue,
+  bg = COLORS.blueSoft,
+  size = 44,
+}) {
+  const iconSize =
+    size >= 52 ? 23 :
+    size >= 44 ? 21 :
+    size >= 38 ? 19 : 18;
+
   return (
-    <View style={[styles.iconBox, { width: size, height: size, backgroundColor: bg }]}>
-      <Icon size={size > 50 ? 27 : 22} color={color} strokeWidth={2.2} />
+    <View
+      style={[
+        styles.iconBox,
+        {
+          width: size,
+          height: size,
+          borderRadius: Math.round(size * 0.32),
+          backgroundColor: bg,
+        },
+      ]}
+    >
+      <Icon
+        size={iconSize}
+        color={color}
+        strokeWidth={2.1}
+      />
     </View>
   );
 }
@@ -256,7 +289,7 @@ function AttentionTile({ Icon, label, value, color, bg }) {
   return (
     <View style={styles.attentionTile}>
       <View style={[styles.attentionIcon, { backgroundColor: bg }]}>
-        <Icon size={18} color={color} />
+     <Icon size={15} color={color} />
       </View>
       <Text style={styles.attentionValue}>{value}</Text>
       <Text style={styles.attentionLabel} numberOfLines={2}>{label}</Text>
@@ -291,24 +324,106 @@ function StatusBadge({ status }) {
   );
 }
 
-function KpiTile({ Icon, label, value, color, bg, style }) {
+function KpiTile({
+  Icon,
+  label,
+  value,
+  color,
+  bg,
+  style,
+}) {
   return (
     <View style={[styles.kpiTile, style]}>
-      <IconBox Icon={Icon} color={color} bg={bg} size={42} />
+      <IconBox
+        Icon={Icon}
+        color={color}
+        bg={bg}
+        size={34}
+      />
+
       <View style={styles.kpiCopy}>
-        <Text style={styles.kpiValue}>{value}</Text>
-        <Text style={styles.kpiLabel}>{label}</Text>
+        <Text style={styles.kpiValue}>
+          {value}
+        </Text>
+
+        <Text style={styles.kpiLabel}>
+          {label}
+        </Text>
       </View>
-      {label === "Organizations" ? <ChevronRight size={18} color={COLORS.muted} /> : null}
+
+      {label === "Organizations" ? (
+        <ChevronRight
+          size={18}
+          color={COLORS.muted}
+        />
+      ) : null}
     </View>
   );
 }
+function QuickAction({
+  Icon,
+  label,
+  onPress,
+  tone = "teal",
+}) {
+  const toneMap = {
+    teal: {
+      color: COLORS.blue,
+      bg: COLORS.blueSoft,
+    },
+    purple: {
+      color: COLORS.purple,
+      bg: COLORS.purpleSoft,
+    },
+    green: {
+      color: COLORS.green,
+      bg: COLORS.greenSoft,
+    },
+    neutral: {
+      color: "#526779",
+      bg: "#EDF2F5",
+    },
+  };
 
-function QuickAction({ Icon, label, onPress }) {
+  const selected =
+    toneMap[tone] || toneMap.teal;
+
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.quickAction, pressed && styles.pressed]}>
-      <IconBox Icon={Icon} color={COLORS.blue} bg={COLORS.blueSoft} size={42} />
-      <Text style={styles.quickActionText} numberOfLines={2}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.quickAction,
+        pressed && {
+          opacity: 0.78,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.quickActionIconWrap,
+          {
+            backgroundColor: selected.bg,
+          },
+        ]}
+      >
+        <Icon
+          size={21}
+          color={selected.color}
+          strokeWidth={2.1}
+        />
+      </View>
+
+      <Text
+        style={styles.quickActionText}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+
+      <ChevronRight
+        size={17}
+        color={COLORS.muted}
+      />
     </Pressable>
   );
 }
@@ -610,102 +725,481 @@ export default function SuperAdminScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding, paddingBottom: 188 + Math.max(insets.bottom, 12) }]} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Pressable onPress={() => setSidebarOpen(true)} style={styles.menuButton}>
-            <Menu size={24} color={COLORS.text} />
-          </Pressable>
-          <View style={styles.headerText}>
-            <Text style={styles.eyebrow}>SAAS CONTROL CENTER</Text>
-            <Text style={styles.title}>{activeTab === "organizations" ? "Organizations" : activeTab === "transactions" ? "Transactions" : activeTab === "more" ? "More" : "Superadmin"}</Text>
-          </View>
-          {activeTab === "organizations" ? (
-            <View style={styles.headerActions}>
-              <Pressable style={styles.topIconButton}>
-                <Search size={21} color={COLORS.text} />
-              </Pressable>
-              <Pressable onPress={() => router.push("/superadmin/plans")} style={styles.topAddButton}>
-                <Plus size={23} color={colors.surface} />
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.headerActions}>
-              <Pressable onPress={() => router.push("/superadmin/notifications")} style={styles.bellButton}>
-                <Bell size={21} color={COLORS.text} />
-                {unreadNotifications > 0 ? (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{unreadNotifications > 99 ? "99+" : unreadNotifications}</Text>
-                  </View>
-                ) : null}
-              </Pressable>
-              <Pressable onPress={logout} style={styles.bellButton}>
-                <LogOut size={21} color={COLORS.red} />
-              </Pressable>
-            </View>
-          )}
-        </View>
+    <ScrollView
+  contentContainerStyle={[
+    styles.content,
+    {
+      paddingHorizontal: responsive.pagePadding,
 
+      paddingBottom:
+        88 +
+        Math.max(insets.bottom, 8),
+    },
+  ]}
+  showsVerticalScrollIndicator={false}
+>
+    {activeTab !== "dashboard" ? (
+  <View style={styles.header}>
+    <Pressable
+      onPress={() => setSidebarOpen(true)}
+      style={styles.menuButton}
+    >
+      <Menu size={24} color={COLORS.text} />
+    </Pressable>
+
+    <View style={styles.headerText}>
+      <Text style={styles.eyebrow}>
+        SAAS CONTROL CENTER
+      </Text>
+
+      <Text style={styles.title}>
+        {activeTab === "organizations"
+          ? "Organizations"
+          : activeTab === "transactions"
+            ? "Transactions"
+            : activeTab === "more"
+              ? "More"
+              : "Superadmin"}
+      </Text>
+    </View>
+
+    {activeTab === "organizations" ? (
+      <View style={styles.headerActions}>
+        <Pressable style={styles.topIconButton}>
+          <Search size={21} color={COLORS.text} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => router.push("/superadmin/plans")}
+          style={styles.topAddButton}
+        >
+          <Plus size={23} color={colors.surface} />
+        </Pressable>
+      </View>
+    ) : (
+      <View style={styles.headerActions}>
+        <Pressable
+          onPress={() =>
+            router.push("/superadmin/notifications")
+          }
+          style={styles.bellButton}
+        >
+          <Bell size={21} color={COLORS.text} />
+
+          {unreadNotifications > 0 ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {unreadNotifications > 99
+                  ? "99+"
+                  : unreadNotifications}
+              </Text>
+            </View>
+          ) : null}
+        </Pressable>
+
+        <Pressable
+          onPress={logout}
+          style={styles.bellButton}
+        >
+          <LogOut size={21} color={COLORS.red} />
+        </Pressable>
+      </View>
+    )}
+  </View>
+) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {activeTab === "dashboard" ? (
-          <>
-            <View style={styles.revenueCard}>
-              <View style={styles.revenueOrbLarge} />
-              <View style={styles.revenueOrbSmall} />
-              <View style={styles.revenueTop}>
-                <View>
-                  <Text style={styles.revenueLabel}>Total Revenue</Text>
-                  <Text style={styles.revenueValue}>{money(successRevenue)}</Text>
-                </View>
-                <View style={styles.walletBubble}>
-                  <WalletCards size={31} color={colors.surface} />
-                </View>
-              </View>
-              <View style={styles.growthPill}>
-                <Text style={styles.growthText}>● {dashboard?.revenue?.pendingTransactions || 0} pending transactions</Text>
-              </View>
-              <View style={styles.revenueBottom}>
-                <Image
-                  source={require("../../assets/images/superadmin-revenue-home.png")}
-                  style={styles.revenueImage}
-                  resizeMode="cover"
-                />
-              </View>
-            </View>
+       {activeTab === "dashboard" ? (
+  <>
+    {/* ===========================
+        DASHBOARD HEADER
+    ============================ */}
 
-            <View style={styles.kpiGrid}>
-              <KpiTile style={{ width: responsive.twoColumnWidth }} Icon={Building2} label="Organizations" value={dashboard?.organizations?.total || 0} color={COLORS.orange} bg={COLORS.orangeSoft} />
-              <KpiTile style={{ width: responsive.twoColumnWidth }} Icon={Users} label="Active" value={dashboard?.organizations?.active || 0} color={COLORS.green} bg={COLORS.greenSoft} />
-              <KpiTile style={{ width: responsive.twoColumnWidth }} Icon={Clock3} label="Pending" value={dashboard?.organizations?.pendingPayment || 0} color={COLORS.blue} bg={COLORS.blueSoft} />
-              <KpiTile style={{ width: responsive.twoColumnWidth }} Icon={ShieldOff} label="Suspended" value={dashboard?.organizations?.suspended || 0} color={COLORS.orange} bg={COLORS.orangeSoft} />
-            </View>
+    <View style={styles.dashboardHeader}>
+      <View style={styles.dashboardHeaderCopy}>
+        <Text style={styles.dashboardEyebrow}>
+          SUPER ADMIN
+        </Text>
 
-            <View style={styles.middlePanel}>
-              <View style={styles.middleHeader}>
-                <Text style={styles.middleTitle}>Needs attention</Text>
-                <Pressable onPress={loadData} style={styles.middleRefresh}>
-                  <RefreshCw size={15} color={COLORS.blue} />
-                </Pressable>
-              </View>
-              <View style={styles.attentionGrid}>
-                <AttentionTile Icon={BadgeIndianRupee} label="Pending payments" value={dashboard?.revenue?.pendingTransactions || 0} color={COLORS.orange} bg={COLORS.orangeSoft} />
-                <AttentionTile Icon={Clock3} label="Expiring soon" value={expiringSoonCount} color={COLORS.blue} bg={COLORS.blueSoft} />
-                <AttentionTile Icon={ShieldOff} label="Suspended" value={suspendedCount} color={COLORS.green} bg={COLORS.greenSoft} />
-              </View>
+        <Text style={styles.dashboardTitle}>
+          Dashboard
+        </Text>
 
-              <View style={styles.activityCard}>
-                <View style={styles.activityHeader}>
-                  <Text style={styles.activityHeading}>Recent activity</Text>
-                  <Pressable onPress={() => setActiveTab("transactions")}>
-                    <Text style={styles.activityLink}>View all</Text>
-                  </Pressable>
-                </View>
-                {!recentTransactions.length ? <Text style={styles.activityEmpty}>No recent activity yet.</Text> : null}
-                {recentTransactions.slice(0, 3).map((transaction) => <ActivityMiniRow key={transaction._id} transaction={transaction} />)}
-              </View>
-            </View>
-          </>
-        ) : null}
+        <Text style={styles.dashboardSubtitle}>
+          Overview of all organizations and revenue
+        </Text>
+      </View>
+
+      <View style={styles.dashboardHeaderActions}>
+        <Pressable
+          onPress={() =>
+            router.push("/superadmin/notifications")
+          }
+          style={styles.dashboardHeaderButton}
+        >
+          <Bell
+            size={21}
+            color={COLORS.text}
+          />
+
+          {unreadNotifications > 0 ? (
+            <View
+              style={styles.dashboardNotificationDot}
+            />
+          ) : null}
+        </Pressable>
+
+        <View style={styles.dashboardAvatar}>
+          <Text style={styles.dashboardAvatarText}>
+            SA
+          </Text>
+        </View>
+      </View>
+    </View>
+
+
+    {/* ===========================
+        HERO
+    ============================ */}
+
+    <View style={styles.dashboardHero}>
+      <View style={styles.dashboardHeroContent}>
+        <Text style={styles.dashboardHeroTitle}>
+          Your platform{"\n"}is growing! 🚀
+        </Text>
+
+        <Text style={styles.dashboardHeroDescription}>
+          More organizations, higher revenue,
+          stronger communities.
+        </Text>
+
+        <Pressable
+          onPress={() =>
+            setActiveTab("transactions")
+          }
+          style={styles.dashboardHeroButton}
+        >
+          <Text style={styles.dashboardHeroButtonText}>
+            View Insights
+          </Text>
+
+          <ChevronRight
+            size={16}
+            color={COLORS.blue}
+          />
+        </Pressable>
+      </View>
+
+      <View style={styles.dashboardHeroRevenue}>
+        <View style={styles.dashboardHeroRevenueIcon}>
+          <BadgeIndianRupee
+            size={19}
+            color="#FFFFFF"
+          />
+        </View>
+
+        <View>
+          <Text style={styles.dashboardHeroRevenueValue}>
+            {money(successRevenue)}
+          </Text>
+
+          <Text style={styles.dashboardHeroRevenueLabel}>
+            Total Revenue
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.dashboardHeroScene}>
+        <PropertyScene />
+      </View>
+    </View>
+
+
+    {/* ===========================
+        KPI
+    ============================ */}
+
+  <View style={styles.kpiGrid}>
+  <KpiTile
+    Icon={Building2}
+    label="Organizations"
+    value={dashboard?.organizations?.total || 0}
+    color="#34789A"
+    bg="#E7F3F8"
+  />
+
+  <KpiTile
+    Icon={Users}
+    label="Active"
+    value={dashboard?.organizations?.active || 0}
+    color={COLORS.green}
+    bg={COLORS.greenSoft}
+  />
+
+  <KpiTile
+    Icon={Clock3}
+    label="Pending"
+    value={
+      dashboard?.organizations?.pendingPayment || 0
+    }
+    color={COLORS.orange}
+    bg={COLORS.orangeSoft}
+  />
+
+  <KpiTile
+    Icon={ShieldOff}
+    label="Suspended"
+    value={
+      dashboard?.organizations?.suspended || 0
+    }
+    color={COLORS.red}
+    bg={COLORS.redSoft}
+  />
+</View>
+
+    {/* ===========================
+        REVENUE TREND
+    ============================ */}
+
+    <View style={styles.revenueTrendCard}>
+      <View style={styles.revenueTrendHeader}>
+        <View>
+          <Text style={styles.revenueTrendTitle}>
+            Revenue Trend
+          </Text>
+
+          <Text style={styles.revenueTrendSubtitle}>
+            Monthly revenue from all organizations
+          </Text>
+        </View>
+
+        <View style={styles.revenuePeriodButton}>
+          <Text style={styles.revenuePeriodText}>
+            Last 6 Months
+          </Text>
+
+          <ChevronRight
+            size={14}
+            color={COLORS.blue}
+          />
+        </View>
+      </View>
+
+   <View style={styles.revenueChartWrap}>
+  <View style={styles.revenueChartGrid}>
+    <View style={styles.revenueGridLine} />
+    <View style={styles.revenueGridLine} />
+    <View style={styles.revenueGridLine} />
+    <View style={styles.revenueGridLine} />
+
+    <View style={styles.revenueBarsArea}>
+      {[34, 44, 53, 65, 77, 90].map(
+        (height, index) => (
+          <View
+            key={index}
+            style={styles.revenueChartColumn}
+          >
+            <View
+              style={[
+                styles.revenueChartBar,
+                {
+                  height: `${height}%`,
+                },
+              ]}
+            />
+          </View>
+        )
+      )}
+    </View>
+  </View>
+
+  <View style={styles.revenueMonthsRow}>
+    {["Apr", "May", "Jun", "Jul", "Aug", "Sep"].map(
+      (month) => (
+        <Text
+          key={month}
+          style={styles.revenueChartMonth}
+        >
+          {month}
+        </Text>
+      )
+    )}
+  </View>
+</View>
+      <View style={styles.revenueGrowthBox}>
+        <View style={styles.revenueGrowthIcon}>
+          <BadgeIndianRupee
+            size={17}
+         color={COLORS.blue}
+          />
+        </View>
+
+        <View style={styles.revenueGrowthCopy}>
+          <Text style={styles.revenueGrowthTitle}>
+            +18% Revenue Growth
+          </Text>
+
+          <Text style={styles.revenueGrowthText}>
+            Your platform revenue has increased compared
+            to last month.
+          </Text>
+        </View>
+
+        <ChevronRight
+          size={18}
+    color={COLORS.blue}
+        />
+      </View>
+    </View>
+
+
+    {/* ===========================
+        NEEDS ATTENTION
+    ============================ */}
+
+    <View style={styles.dashboardSectionHeader}>
+      <Text style={styles.dashboardSectionTitle}>
+        Needs Attention
+      </Text>
+
+      <Pressable
+        onPress={loadData}
+        style={styles.middleRefresh}
+      >
+        <RefreshCw
+          size={15}
+          color={COLORS.blue}
+        />
+      </Pressable>
+    </View>
+
+    <View style={styles.attentionGrid}>
+      <AttentionTile
+        Icon={BadgeIndianRupee}
+        label="Pending payments"
+        value={
+          dashboard?.revenue?.pendingTransactions || 0
+        }
+        color={COLORS.orange}
+        bg={COLORS.orangeSoft}
+      />
+
+      <AttentionTile
+        Icon={ShieldOff}
+        label="Suspended"
+        value={suspendedCount}
+        color={COLORS.green}
+        bg={COLORS.greenSoft}
+      />
+    </View>
+
+
+    {/* ===========================
+        RECENT ACTIVITY
+    ============================ */}
+
+    <View style={styles.dashboardSectionHeader}>
+      <Text style={styles.dashboardSectionTitle}>
+        Recent Activity
+      </Text>
+
+      <Pressable
+        onPress={() =>
+          setActiveTab("transactions")
+        }
+      >
+        <Text style={styles.dashboardViewAll}>
+          View all
+        </Text>
+      </Pressable>
+    </View>
+
+    <View style={styles.activityCard}>
+      {!recentTransactions.length ? (
+        <Text style={styles.activityEmpty}>
+          No recent activity yet.
+        </Text>
+      ) : null}
+
+      {recentTransactions
+        .slice(0, 3)
+        .map((transaction) => (
+          <ActivityMiniRow
+            key={transaction._id}
+            transaction={transaction}
+          />
+        ))}
+    </View>
+
+
+    {/* ===========================
+        QUICK ACTIONS
+    ============================ */}
+
+    <View style={styles.dashboardSectionHeader}>
+      <Text style={styles.dashboardSectionTitle}>
+        Quick Actions
+      </Text>
+    </View>
+
+ <View style={styles.dashboardSectionHeader}>
+  <Text style={styles.dashboardSectionTitle}>
+    Quick Actions
+  </Text>
+
+  <Pressable>
+    <Text style={styles.dashboardViewAll}>
+      View all
+    </Text>
+  </Pressable>
+</View>
+
+<View style={styles.dashboardQuickGrid}>
+  <QuickAction
+    Icon={Building2}
+    label="Organizations"
+    tone="teal"
+    onPress={() =>
+      setActiveTab("organizations")
+    }
+  />
+
+  <QuickAction
+    Icon={Tags}
+    label="Plans"
+    tone="purple"
+    onPress={() =>
+      router.push("/superadmin/plans")
+    }
+  />
+
+  <QuickAction
+    Icon={BadgeIndianRupee}
+    label="Transactions"
+    tone="green"
+    onPress={() =>
+      setActiveTab("transactions")
+    }
+  />
+
+  <QuickAction
+    Icon={SlidersHorizontal}
+    label="Settings"
+    tone="neutral"
+    onPress={() =>
+      setActiveTab("more")
+    }
+  />
+</View>
+    {/* ===========================
+        TRACK
+    ============================ */}
+
+    <View style={styles.dashboardTrackWrap}>
+      <TrackCard />
+    </View>
+  </>
+) : null}
 
         {activeTab === "organizations" ? (
           <>
@@ -825,13 +1319,16 @@ export default function SuperAdminScreen() {
         ) : null}
       </ScrollView>
 
-      {activeTab === "dashboard" ? (
-        <View style={[styles.floatingTrackWrap, { left: responsive.pagePadding, right: responsive.pagePadding }]}>
-          <TrackCard />
-        </View>
-      ) : null}
+     
 
-      <View style={[styles.bottomNav, { left: responsive.pagePadding, right: responsive.pagePadding, bottom: Math.max(insets.bottom, 8) }]}>
+<View
+  style={[
+    styles.bottomNav,
+    {
+      paddingBottom: Math.max(insets.bottom, 6),
+    },
+  ]}
+>
         <Pressable onPress={() => setActiveTab("dashboard")} style={styles.navItem}>
           <House size={21} color={activeTab === "dashboard" ? COLORS.blue : COLORS.muted} />
           <Text style={[styles.navText, activeTab === "dashboard" && styles.navActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68}>Dashboard</Text>
@@ -896,203 +1393,2272 @@ export default function SuperAdminScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.bg },
-  content: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 188 },
-  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  menuButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  headerText: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
-  eyebrow: { color: COLORS.orange, fontSize: 11, fontWeight: "900" },
-  title: { marginTop: 2, color: COLORS.text, fontSize: 24, fontWeight: "900" },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
-  bellButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 10 },
-  avatar: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 19, backgroundColor: COLORS.blueSoft },
-  avatarText: { color: COLORS.blue, fontSize: 13, fontWeight: "900" },
-  topIconButton: { width: 50, height: 50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, backgroundColor: COLORS.card },
-  topAddButton: { width: 50, height: 50, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: COLORS.blue },
-  badge: { position: "absolute", right: 1, top: 1, minWidth: 18, height: 18, paddingHorizontal: 5, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: COLORS.red },
-  badgeText: { color: colors.surface, fontSize: 10, fontWeight: "800" },
-  error: { marginBottom: 12, padding: 12, color: COLORS.red, borderRadius: 12, backgroundColor: COLORS.redSoft },
+  /* ==========================================================
+     BASE
+  ========================================================== */
 
-  revenueCard: { minHeight: 218, padding: 18, borderRadius: 13, overflow: "hidden", backgroundColor: COLORS.blueDark, shadowColor: COLORS.blueDark, shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 5 },
-  revenueOrbLarge: { position: "absolute", right: -52, bottom: -78, width: 220, height: 220, borderRadius: 110, backgroundColor: "rgba(255,255,255,0.06)" },
-  revenueOrbSmall: { position: "absolute", right: 72, bottom: 56, width: 42, height: 42, borderRadius: 21, backgroundColor: "rgba(216,134,110,0.68)" },
-  revenueTop: { zIndex: 1, flexDirection: "row", justifyContent: "space-between" },
-  revenueLabel: { color: "#F6D7CF", fontSize: 13, fontWeight: "800" },
-  revenueValue: { marginTop: 10, color: colors.surface, fontSize: 31, fontWeight: "900" },
-  walletBubble: { width: 52, height: 52, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "rgba(255,255,255,0.18)" },
-  growthPill: { zIndex: 1, alignSelf: "flex-start", marginTop: 18, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.13)" },
-  growthText: { color: "#FBE2D8", fontSize: 12, fontWeight: "900" },
-  revenueImageArea: { height: 86, marginTop: 10, justifyContent: "flex-end" },
-  revenueBottom: { position: "absolute", right: 0, bottom: 0, width: "72%", height: 112, zIndex: 0, overflow: "hidden" },
-  revenueImage: { width: "145%", height: 112, marginLeft: -64, opacity: 0.78 },
-  pendingMiniCard: { width: 150, minHeight: 62, paddingHorizontal: 13, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.24)", borderRadius: 12, backgroundColor: "rgba(255,255,255,0.12)" },
-  pendingCount: { color: colors.surface, fontSize: 13, fontWeight: "900" },
-  pendingLabel: { marginTop: 2, color: colors.primarySoft, fontSize: 9, lineHeight: 11, fontWeight: "800" },
-  revenueBars: { flex: 1, height: 72, marginLeft: 14, flexDirection: "row", alignItems: "flex-end", justifyContent: "flex-end", gap: 9 },
-  revenueBar: { width: 13, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.68)" },
+  screen: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
 
-  kpiGrid: { marginTop: 12, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 10 },
-  kpiTile: { width: "48%", minHeight: 82, padding: 12, flexDirection: "row", alignItems: "center", overflow: "hidden", borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
-  kpiAccent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, opacity: 0.88 },
-  iconBox: { alignItems: "center", justifyContent: "center", borderRadius: 12 },
-  kpiCopy: { flex: 1, minWidth: 0, marginLeft: 12 },
-  kpiValue: { color: COLORS.text, fontSize: 19, fontWeight: "900" },
-  kpiLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: "800" },
-  middlePanel: { marginTop: 14, gap: 10 },
-  middleHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  middleTitle: { color: COLORS.text, fontSize: 15, fontWeight: "900" },
-  middleRefresh: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: COLORS.blueSoft },
-  attentionGrid: { flexDirection: "row", gap: 8 },
-  attentionTile: { flex: 1, minHeight: 78, padding: 9, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
-  attentionIcon: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 10 },
-  attentionValue: { marginTop: 7, color: COLORS.text, fontSize: 16, fontWeight: "900" },
-  attentionLabel: { marginTop: 2, color: COLORS.muted, fontSize: 9.5, lineHeight: 12, fontWeight: "800" },
-  activityCard: { padding: 12, borderWidth: 1, borderColor: COLORS.border, borderRadius: 13, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
-  activityHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
-  activityHeading: { color: COLORS.text, fontSize: 14, fontWeight: "900" },
-  activityLink: { color: COLORS.blue, fontSize: 12, fontWeight: "900" },
-  activityRow: { minHeight: 42, flexDirection: "row", alignItems: "center", borderTopWidth: 1, borderTopColor: COLORS.soft },
-  activityIcon: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderRadius: 10 },
-  activityCopy: { flex: 1, minWidth: 0, paddingHorizontal: 9 },
-  activityTitle: { color: COLORS.text, fontSize: 12.5, fontWeight: "900" },
-  activityMeta: { marginTop: 2, color: COLORS.muted, fontSize: 10.5, fontWeight: "700" },
-  activityAmount: { color: COLORS.text, fontSize: 12, fontWeight: "900" },
-  activityEmpty: { paddingVertical: 10, color: COLORS.muted, fontSize: 12, fontWeight: "700", textAlign: "center" },
-  sectionHeading: { marginTop: 18, marginBottom: 8 },
-  sectionSmallTitle: { color: COLORS.text, fontSize: 14, fontWeight: "900" },
-  quickGrid: { flexDirection: "row", gap: 10, marginBottom: 2 },
-  quickAction: { flex: 1, minHeight: 82, padding: 10, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.border, borderRadius: 13, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.05, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
-  quickActionText: { marginTop: 8, color: COLORS.text, fontSize: 10, lineHeight: 13, fontWeight: "800", textAlign: "center" },
-  pressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
+  loading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.bg,
+  },
 
-  floatingTrackWrap: { position: "absolute", bottom: 82, maxWidth: 410, alignSelf: "center" },
-  trackCard: { minHeight: 78, paddingHorizontal: 10, paddingVertical: 8, flexDirection: "row", alignItems: "center", borderRadius: 12, backgroundColor: "#FFE8D3", shadowColor: COLORS.text, shadowOpacity: 0.10, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
-  trackImage: { width: 96, height: 62 },
-  trackCopy: { flex: 1.25, minWidth: 0, paddingHorizontal: 8 },
-  trackTitle: { color: COLORS.text, fontSize: 12, lineHeight: 15, fontWeight: "900" },
-  trackText: { marginTop: 4, color: COLORS.muted, fontSize: 10.4, lineHeight: 13.5, fontWeight: "700" },
-  trackIcon: { width: 50, height: 50, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: COLORS.blue },
+  content: {
+    width: "100%",
+    maxWidth: 430,
+    alignSelf: "center",
+    paddingTop: 6,
+  },
 
-  sectionCard: { marginTop: 14, padding: 14, borderWidth: 1, borderColor: COLORS.border, borderRadius: 14, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.04, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
-  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
-  sectionTitle: { color: COLORS.text, fontSize: 17, fontWeight: "800" },
-  monthButton: { minHeight: 32, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, backgroundColor: COLORS.card },
-  monthText: { color: COLORS.text, fontSize: 12, fontWeight: "800" },
-  donutWrap: { alignItems: "center", paddingVertical: 2 },
-  donut: { width: 126, height: 126, alignItems: "center", justifyContent: "center", borderWidth: 18, borderColor: COLORS.blue, borderTopColor: COLORS.orange, borderRadius: 63 },
-  donutInner: { alignItems: "center" },
-  donutAmount: { color: COLORS.text, fontSize: 16, fontWeight: "800" },
-  donutText: { marginTop: 4, color: COLORS.muted, fontSize: 12, fontWeight: "700" },
-  legend: { marginTop: 12, gap: 11 },
-  legendRow: { flexDirection: "row", alignItems: "center" },
-  legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 13 },
-  legendLabel: { flex: 1, color: COLORS.text, fontSize: 14, fontWeight: "700" },
-  legendValue: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
+  error: {
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
 
-  filterGrid: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12, gap: 6 },
-  filterTile: { flex: 1, minWidth: 0, minHeight: 86, padding: 7, justifyContent: "space-between", borderWidth: 1, borderColor: COLORS.border, borderRadius: 13, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
-  filterTileSelected: { borderColor: COLORS.blue, backgroundColor: "#FFF8FB" },
-  filterTileTiny: { flex: 0, width: 86 },
-  filterIcon: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 10 },
-  filterLabel: { width: "100%", color: COLORS.muted, fontSize: 10.5, fontWeight: "900" },
-  filterLabelSelected: { color: COLORS.blue },
-  filterCount: { fontSize: 15, fontWeight: "900" },
-  searchBox: { height: 50, marginBottom: 12, paddingLeft: 13, paddingRight: 6, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: COLORS.border, borderRadius: 14, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.04, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
-  searchInput: { flex: 1, height: "100%", marginLeft: 8, color: COLORS.text, fontSize: 13.5 },
-  searchFilterButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: COLORS.soft },
-  orgList: { gap: 10 },
-  orgCard: { padding: 12, overflow: "hidden", borderWidth: 1, borderColor: COLORS.border, borderRadius: 15, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.05, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
-  orgAccent: { position: "absolute", left: 0, top: 0, bottom: 0, width: 5, opacity: 1 },
-  orgHeader: { flexDirection: "row", alignItems: "flex-start", paddingLeft: 7 },
-  orgInfo: { flex: 1, minWidth: 0, paddingHorizontal: 10 },
-  orgName: { color: COLORS.text, fontSize: 17, fontWeight: "900" },
-  orgOwner: { color: COLORS.muted, fontSize: 12, fontWeight: "800" },
-  orgEmail: { marginTop: 4, color: COLORS.muted, fontSize: 11.5, fontWeight: "700" },
-  orgPhoneRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  orgPhone: { color: COLORS.text, fontSize: 12, fontWeight: "900" },
-  orgRight: { alignItems: "flex-end", gap: 9 },
-  statusBadge: { minHeight: 27, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderRadius: 9 },
-  status_active: { backgroundColor: COLORS.greenSoft },
-  status_pending: { backgroundColor: COLORS.orangeSoft },
-  status_suspended: { backgroundColor: COLORS.redSoft },
-  status_expired: { backgroundColor: COLORS.orangeSoft },
-  statusText: { fontSize: 11, fontWeight: "800" },
-  statusText_active: { color: COLORS.green },
-  statusText_pending: { color: COLORS.orange },
-  statusText_suspended: { color: COLORS.red },
-  statusText_expired: { color: COLORS.orange },
-  unitStrip: { marginTop: 12, marginLeft: 7, paddingVertical: 9, flexDirection: "row", borderRadius: 13, backgroundColor: COLORS.blueSoft },
-  unitCell: { flex: 1, alignItems: "center" },
-  unitDivider: { width: 1, backgroundColor: COLORS.border },
-  unitLabel: { color: COLORS.blue, fontSize: 10.5, fontWeight: "900" },
-  unitValue: { marginTop: 4, color: COLORS.blue, fontSize: 15, fontWeight: "900" },
-  orgFooter: { marginTop: 11, marginLeft: 7, flexDirection: "row", alignItems: "center" },
-  subscriptionBlock: { flex: 1, minWidth: 0 },
-  subscriptionText: { color: COLORS.muted, fontSize: 12.5, fontWeight: "800" },
-  subscriptionStatus: { color: COLORS.green },
-  subscriptionDate: { color: COLORS.muted, fontSize: 12, fontWeight: "800" },
-  renewButton: { minWidth: 102, height: 42, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.blue, borderRadius: 8, backgroundColor: COLORS.card },
-  renewText: { color: COLORS.blue, fontSize: 13, fontWeight: "800" },
-  inlineStatusAction: { alignSelf: "flex-end", marginTop: -34, marginRight: 18, minHeight: 34, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 11, backgroundColor: COLORS.redSoft },
-  inlineStatusReactivate: { backgroundColor: COLORS.greenSoft },
-  inlineStatusText: { color: COLORS.red, fontSize: 11.5, fontWeight: "900" },
+    color: COLORS.red,
+    fontSize: 12,
+    fontWeight: "700",
 
-  transactionPage: { marginTop: 12, minHeight: 640 },
-  transactionSkyline: { display: "none" },
-  transactionPanel: { marginHorizontal: 0, paddingTop: 16, paddingBottom: 8, borderRadius: 20 },
-  transactionPanelHeader: { minHeight: 42, marginBottom: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  transactionPanelTitle: { flex: 1, color: COLORS.text, fontSize: 18, fontWeight: "900" },
-  transactionRefresh: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: COLORS.blueSoft },
-  transactionRow: { marginBottom: 10, padding: 10, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
-  transactionMainRow: { minHeight: 76, flexDirection: "row", alignItems: "center" },
-  transactionInfo: { flex: 1, minWidth: 0, paddingHorizontal: 9 },
-  transactionTitle: { color: COLORS.text, fontSize: 13.5, fontWeight: "900" },
-  transactionMeta: { marginTop: 4, color: COLORS.muted, fontSize: 11, fontWeight: "700" },
-  transactionRight: { width: 96, alignItems: "flex-end", justifyContent: "center" },
-  transactionStatusPill: { minWidth: 66, maxWidth: 78, minHeight: 27, marginTop: 6, paddingHorizontal: 8, alignItems: "center", justifyContent: "center", borderRadius: 11 },
-  transactionStatusText: { fontSize: 10, fontWeight: "900" },
-  transactionAmount: { width: "100%", color: COLORS.text, fontSize: 13.5, fontWeight: "900", textAlign: "right" },
-  transactionWalletText: { marginTop: 3, width: "100%", color: COLORS.blue, fontSize: 9.5, fontWeight: "900", textAlign: "right" },
-  amountSuccess: { color: COLORS.green },
-  amountFailed: { color: COLORS.red },
-  amountPending: { color: COLORS.text },
-  transactionDetailsCard: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.soft },
-  transactionDetailRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 },
-  transactionDetailLabel: { flex: 1, minWidth: 0, color: COLORS.muted, fontSize: 10.5, fontWeight: "800" },
-  transactionDetailValue: { flex: 1.4, minWidth: 0, color: COLORS.text, fontSize: 10.5, fontWeight: "800", textAlign: "right" },
-  detailSuccess: { color: COLORS.green },
-  detailDanger: { color: COLORS.red },
-  viewAll: { color: COLORS.blue, fontSize: 13, fontWeight: "800" },
-  morePanel: { marginTop: 8, gap: 10 },
-  moreRow: { minHeight: 72, padding: 10, flexDirection: "row", alignItems: "center", gap: 13, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+    borderRadius: 10,
+    backgroundColor: COLORS.redSoft,
+  },
+
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.985 }],
+  },
+
+  /* ==========================================================
+     NORMAL PAGE HEADER
+  ========================================================== */
+
+  header: {
+    minHeight: 52,
+    marginBottom: 7,
+
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  menuButton: {
+    width: 36,
+    height: 36,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 10,
+  },
+
+  headerText: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 5,
+  },
+
+  eyebrow: {
+    color: COLORS.blue,
+
+    fontSize: 10,
+    fontWeight: "900",
+
+    letterSpacing: 0.7,
+  },
+
+  title: {
+    marginTop: 1,
+
+    color: COLORS.text,
+
+    fontSize: 23,
+    lineHeight: 27,
+    fontWeight: "900",
+  },
+
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  bellButton: {
+    width: 36,
+    height: 36,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 10,
+  },
+
+  avatar: {
+    width: 38,
+    height: 38,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 19,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  avatarText: {
+    color: COLORS.blue,
+
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  topIconButton: {
+    width: 40,
+    height: 40,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 12,
+    backgroundColor: COLORS.card,
+  },
+
+  topAddButton: {
+    width: 40,
+    height: 40,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 12,
+    backgroundColor: COLORS.blue,
+  },
+
+  badge: {
+    position: "absolute",
+
+    right: 0,
+    top: 0,
+
+    minWidth: 16,
+    height: 16,
+
+    paddingHorizontal: 4,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 8,
+    backgroundColor: COLORS.red,
+  },
+
+  badgeText: {
+    color: "#FFFFFF",
+
+    fontSize: 9,
+    fontWeight: "800",
+  },
+
+  /* ==========================================================
+     REUSABLE ICON BOX
+  ========================================================== */
+
+  iconBox: {
+    flexShrink: 0,
+
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  /* ==========================================================
+     DASHBOARD HEADER
+  ========================================================== */
+
+  dashboardHeader: {
+    minHeight: 70,
+    marginBottom: 8,
+
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+
+  dashboardHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  dashboardEyebrow: {
+    color: COLORS.blue,
+
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: "900",
+
+    letterSpacing: 0.8,
+  },
+
+  dashboardTitle: {
+    marginTop: 2,
+
+    color: COLORS.text,
+
+    fontSize: 27,
+    lineHeight: 31,
+    fontWeight: "900",
+  },
+
+  dashboardSubtitle: {
+    marginTop: 2,
+
+    color: COLORS.muted,
+
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "600",
+  },
+
+  dashboardHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  dashboardHeaderButton: {
+    width: 38,
+    height: 38,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 19,
+    backgroundColor: COLORS.card,
+  },
+
+  dashboardAvatar: {
+    width: 38,
+    height: 38,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 19,
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  dashboardAvatarText: {
+    color: COLORS.blue,
+
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  dashboardNotificationDot: {
+    position: "absolute",
+
+    top: 4,
+    right: 4,
+
+    width: 7,
+    height: 7,
+
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+
+    borderRadius: 4,
+    backgroundColor: COLORS.red,
+  },
+
+  /* ==========================================================
+     HERO
+  ========================================================== */
+
+  dashboardHero: {
+    position: "relative",
+
+    minHeight: 124,
+
+    marginBottom: 8,
+
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+
+    overflow: "hidden",
+
+    borderWidth: 1,
+    borderColor: "#D2E2E0",
+
+    borderRadius: 14,
+
+    backgroundColor: "#EAF4F3",
+  },
+
+  dashboardHeroContent: {
+    width: "54%",
+    zIndex: 4,
+  },
+
+  dashboardHeroTitle: {
+    color: COLORS.text,
+
+    fontSize: 19,
+    lineHeight: 22,
+    fontWeight: "900",
+  },
+
+  dashboardHeroDescription: {
+    marginTop: 4,
+
+    color: COLORS.muted,
+
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "600",
+  },
+
+  dashboardHeroButton: {
+    alignSelf: "flex-start",
+
+    minHeight: 30,
+
+    marginTop: 8,
+
+    paddingHorizontal: 10,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 3,
+
+    borderRadius: 15,
+    backgroundColor: COLORS.blue,
+  },
+
+  dashboardHeroButtonText: {
+    color: "#FFFFFF",
+
+    fontSize: 9.5,
+    fontWeight: "900",
+  },
+
+  dashboardHeroRevenue: {
+    position: "absolute",
+
+    top: 9,
+    right: 9,
+
+    zIndex: 5,
+
+    minHeight: 39,
+
+    paddingHorizontal: 8,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 5,
+
+    borderWidth: 1,
+    borderColor: "#D8E6E4",
+
+    borderRadius: 11,
+    backgroundColor: "#FFFFFF",
+  },
+
+  dashboardHeroRevenueIcon: {
+    width: 28,
+    height: 28,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 14,
+    backgroundColor: COLORS.blue,
+  },
+
+  dashboardHeroRevenueValue: {
+    color: COLORS.text,
+
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  dashboardHeroRevenueLabel: {
+    marginTop: 1,
+
+    color: COLORS.muted,
+
+    fontSize: 7.5,
+    fontWeight: "600",
+  },
+
+  dashboardHeroScene: {
+    position: "absolute",
+
+    right: -34,
+    bottom: -15,
+
+    width: "69%",
+    opacity: 0.58,
+  },
+
+  /* ==========================================================
+     OLD REVENUE COMPONENT
+  ========================================================== */
+
+  revenueCard: {
+    minHeight: 160,
+    padding: 14,
+
+    overflow: "hidden",
+
+    borderRadius: 15,
+    backgroundColor: COLORS.blueDark,
+  },
+
+  revenueOrbLarge: {
+    position: "absolute",
+
+    right: -52,
+    bottom: -78,
+
+    width: 220,
+    height: 220,
+
+    borderRadius: 110,
+
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+
+  revenueOrbSmall: {
+    position: "absolute",
+
+    right: 72,
+    bottom: 56,
+
+    width: 42,
+    height: 42,
+
+    borderRadius: 21,
+
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+
+  revenueTop: {
+    zIndex: 1,
+
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  revenueLabel: {
+    color: "#D9EFEC",
+
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  revenueValue: {
+    marginTop: 7,
+
+    color: "#FFFFFF",
+
+    fontSize: 27,
+    fontWeight: "900",
+  },
+
+  walletBubble: {
+    width: 40,
+    height: 40,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+
+    borderRadius: 12,
+
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+
+  growthPill: {
+    zIndex: 1,
+
+    alignSelf: "flex-start",
+
+    marginTop: 12,
+
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+
+    borderRadius: 8,
+
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+
+  growthText: {
+    color: "#E5F4F2",
+
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  revenueImageArea: {
+    height: 65,
+    marginTop: 7,
+    justifyContent: "flex-end",
+  },
+
+  revenueBottom: {
+    position: "absolute",
+
+    right: 0,
+    bottom: 0,
+
+    width: "72%",
+    height: 90,
+
+    overflow: "hidden",
+  },
+
+  revenueImage: {
+    width: "145%",
+    height: 90,
+
+    marginLeft: -55,
+
+    opacity: 0.7,
+  },
+
+  pendingMiniCard: {
+    width: 135,
+
+    minHeight: 50,
+
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 8,
+
+    borderRadius: 10,
+
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+
+  pendingCount: {
+    color: "#FFFFFF",
+
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  pendingLabel: {
+    marginTop: 1,
+
+    color: "#DCEFED",
+
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: "800",
+  },
+
+  revenueBars: {
+    flex: 1,
+
+    height: 58,
+
+    marginLeft: 10,
+
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "flex-end",
+
+    gap: 6,
+  },
+
+  revenueBar: {
+    width: 10,
+
+    borderRadius: 6,
+
+    backgroundColor: "rgba(255,255,255,0.65)",
+  },
+
+  /* ==========================================================
+     KPI
+  ========================================================== */
+
+  kpiGrid: {
+    marginTop: 1,
+
+    flexDirection: "row",
+    flexWrap: "wrap",
+
+    justifyContent: "space-between",
+
+    rowGap: 7,
+  },
+
+  kpiTile: {
+    width: "48.7%",
+
+    minHeight: 60,
+
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 12,
+
+    backgroundColor: COLORS.card,
+  },
+
+  kpiCopy: {
+    flex: 1,
+    minWidth: 0,
+
+    marginLeft: 8,
+  },
+
+  kpiValue: {
+    color: COLORS.text,
+
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "900",
+  },
+
+  kpiLabel: {
+    marginTop: 1,
+
+    color: COLORS.muted,
+
+    fontSize: 9.5,
+    lineHeight: 12,
+    fontWeight: "700",
+  },
+
+  /* ==========================================================
+     REVENUE TREND
+  ========================================================== */
+
+  revenueTrendCard: {
+    marginTop: 8,
+
+    padding: 10,
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 13,
+
+    backgroundColor: COLORS.card,
+  },
+
+  revenueTrendHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+
+    gap: 5,
+  },
+
+  revenueTrendTitle: {
+    color: COLORS.text,
+
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  revenueTrendSubtitle: {
+    marginTop: 1,
+
+    color: COLORS.muted,
+
+    fontSize: 8.5,
+    fontWeight: "600",
+  },
+
+  revenuePeriodButton: {
+    minHeight: 26,
+
+    paddingHorizontal: 8,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 2,
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 13,
+
+    backgroundColor: COLORS.card,
+  },
+
+  revenuePeriodText: {
+    color: COLORS.text,
+
+    fontSize: 8,
+    fontWeight: "800",
+  },
+
+  revenueChartWrap: {
+    marginTop: 8,
+  },
+
+  revenueChartGrid: {
+    position: "relative",
+
+    height: 92,
+
+    overflow: "hidden",
+
+    justifyContent: "space-between",
+  },
+
+  revenueGridLine: {
+    height: 1,
+
+    backgroundColor: "#E9EEF0",
+  },
+
+  revenueBarsArea: {
+    position: "absolute",
+
+    left: 3,
+    right: 3,
+    top: 3,
+    bottom: 1,
+
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+
+  revenueChartColumn: {
+    width: "15%",
+    height: "100%",
+
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+
+  revenueChartBar: {
+    width: 15,
+
+    minHeight: 3,
+
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+
+    backgroundColor: COLORS.blue,
+  },
+
+  revenueMonthsRow: {
+    marginTop: 4,
+
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  revenueChartMonth: {
+    width: "16%",
+
+    color: COLORS.muted,
+
+    fontSize: 7.5,
+    fontWeight: "700",
+
+    textAlign: "center",
+  },
+
+  revenueGrowthBox: {
+    minHeight: 42,
+
+    marginTop: 8,
+
+    paddingHorizontal: 8,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 6,
+
+    borderRadius: 10,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  revenueGrowthIcon: {
+    width: 28,
+    height: 28,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 14,
+
+    backgroundColor: "#D8ECE9",
+  },
+
+  revenueGrowthCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  revenueGrowthTitle: {
+    color: COLORS.blue,
+
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  revenueGrowthText: {
+    marginTop: 1,
+
+    color: COLORS.muted,
+
+    fontSize: 8.5,
+    lineHeight: 11,
+    fontWeight: "600",
+  },
+
+  /* ==========================================================
+     DASHBOARD SECTIONS
+  ========================================================== */
+
+  dashboardSectionHeader: {
+    marginTop: 11,
+    marginBottom: 6,
+
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  dashboardSectionTitle: {
+    color: COLORS.text,
+
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: "900",
+  },
+
+  dashboardViewAll: {
+    color: COLORS.blue,
+
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  middlePanel: {
+    marginTop: 10,
+
+    gap: 7,
+  },
+
+  middleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  middleTitle: {
+    color: COLORS.text,
+
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  middleRefresh: {
+    width: 29,
+    height: 29,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 9,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  /* ==========================================================
+     NEEDS ATTENTION
+  ========================================================== */
+
+  attentionGrid: {
+    flexDirection: "row",
+
+    gap: 7,
+  },
+
+  attentionTile: {
+    flex: 1,
+
+    minHeight: 58,
+
+    paddingHorizontal: 7,
+    paddingVertical: 6,
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 12,
+
+    backgroundColor: COLORS.card,
+  },
+
+  attentionIcon: {
+    width: 27,
+    height: 27,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 8,
+  },
+
+  attentionValue: {
+    marginTop: 4,
+
+    color: COLORS.text,
+
+    fontSize: 15,
+    lineHeight: 17,
+    fontWeight: "900",
+  },
+
+  attentionLabel: {
+    marginTop: 1,
+
+    color: COLORS.muted,
+
+    fontSize: 8.5,
+    lineHeight: 10,
+    fontWeight: "700",
+  },
+
+  /* ==========================================================
+     RECENT ACTIVITY
+  ========================================================== */
+
+  activityCard: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 12,
+
+    backgroundColor: COLORS.card,
+  },
+
+  activityHeader: {
+    minHeight: 28,
+
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+
+    marginBottom: 3,
+  },
+
+  activityHeading: {
+    color: COLORS.text,
+
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  activityLink: {
+    color: COLORS.blue,
+
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  activityRow: {
+    minHeight: 40,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderTopWidth: 1,
+    borderTopColor: "#EDF1F2",
+  },
+
+  activityIcon: {
+    width: 29,
+    height: 29,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 8,
+  },
+
+  activityCopy: {
+    flex: 1,
+    minWidth: 0,
+
+    paddingHorizontal: 7,
+  },
+
+  activityTitle: {
+    color: COLORS.text,
+
+    fontSize: 11.5,
+    fontWeight: "900",
+  },
+
+  activityMeta: {
+    marginTop: 1,
+
+    color: COLORS.muted,
+
+    fontSize: 9,
+    fontWeight: "600",
+  },
+
+  activityAmount: {
+    color: COLORS.text,
+
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  activityEmpty: {
+    paddingVertical: 8,
+
+    color: COLORS.muted,
+
+    fontSize: 11,
+    fontWeight: "700",
+
+    textAlign: "center",
+  },
+
+  /* ==========================================================
+     QUICK ACTIONS
+  ========================================================== */
+
+  dashboardQuickGrid: {
+    width: "100%",
+
+    flexDirection: "row",
+    flexWrap: "wrap",
+
+    justifyContent: "space-between",
+
+    rowGap: 7,
+  },
+
+  quickAction: {
+    width: "48.7%",
+
+    minHeight: 50,
+
+    paddingHorizontal: 7,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 11,
+
+    backgroundColor: COLORS.card,
+  },
+
+  quickActionIconWrap: {
+    width: 33,
+    height: 33,
+
+    flexShrink: 0,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 9,
+  },
+
+  quickActionText: {
+    flex: 1,
+
+    marginLeft: 7,
+
+    color: COLORS.text,
+
+    fontSize: 10.5,
+    lineHeight: 13,
+    fontWeight: "800",
+  },
+
+  quickActionPressed: {
+    opacity: 0.78,
+
+    transform: [{ scale: 0.98 }],
+  },
+
+  /* ==========================================================
+     TRACK CARD
+  ========================================================== */
+
+  dashboardTrackWrap: {
+    marginTop: 9,
+    marginBottom: 3,
+  },
+
+  floatingTrackWrap: {
+    position: "absolute",
+
+    bottom: 76,
+
+    maxWidth: 410,
+
+    alignSelf: "center",
+  },
+
+  trackCard: {
+    minHeight: 60,
+
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderWidth: 1,
+    borderColor: "#D9E7E5",
+
+    borderRadius: 12,
+
+    backgroundColor: "#EEF7F5",
+  },
+
+  trackImage: {
+    width: 66,
+    height: 44,
+  },
+
+  trackCopy: {
+    flex: 1,
+    minWidth: 0,
+
+    paddingHorizontal: 6,
+  },
+
+  trackTitle: {
+    color: COLORS.text,
+
+    fontSize: 10.5,
+    lineHeight: 13,
+    fontWeight: "900",
+  },
+
+  trackText: {
+    marginTop: 2,
+
+    color: COLORS.muted,
+
+    fontSize: 8.5,
+    lineHeight: 11,
+    fontWeight: "600",
+  },
+
+  trackIcon: {
+    width: 36,
+    height: 36,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 11,
+
+    backgroundColor: COLORS.blue,
+  },
+
+  /* ==========================================================
+     REPORT / SECTION CARDS
+  ========================================================== */
+
+  sectionHeading: {
+    marginTop: 12,
+    marginBottom: 6,
+  },
+
+  sectionSmallTitle: {
+    color: COLORS.text,
+
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  sectionCard: {
+    marginTop: 10,
+
+    padding: 10,
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 12,
+
+    backgroundColor: COLORS.card,
+  },
+
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+
+    marginBottom: 7,
+  },
+
+  sectionTitle: {
+    color: COLORS.text,
+
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  monthButton: {
+    minHeight: 28,
+
+    paddingHorizontal: 8,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 8,
+
+    backgroundColor: COLORS.card,
+  },
+
+  monthText: {
+    color: COLORS.text,
+
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  donutWrap: {
+    alignItems: "center",
+
+    paddingVertical: 2,
+  },
+
+  donut: {
+    width: 108,
+    height: 108,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 15,
+    borderColor: COLORS.blue,
+    borderTopColor: COLORS.orange,
+
+    borderRadius: 54,
+  },
+
+  donutInner: {
+    alignItems: "center",
+  },
+
+  donutAmount: {
+    color: COLORS.text,
+
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  donutText: {
+    marginTop: 3,
+
+    color: COLORS.muted,
+
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  legend: {
+    marginTop: 8,
+
+    gap: 7,
+  },
+
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  legendDot: {
+    width: 9,
+    height: 9,
+
+    marginRight: 8,
+
+    borderRadius: 5,
+  },
+
+  legendLabel: {
+    flex: 1,
+
+    color: COLORS.text,
+
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  legendValue: {
+    color: COLORS.text,
+
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  /* ==========================================================
+     ORGANIZATION FILTERS
+  ========================================================== */
+
+  filterGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+
+    marginBottom: 8,
+
+    gap: 5,
+  },
+
+  filterTile: {
+    flex: 1,
+    minWidth: 0,
+
+    minHeight: 68,
+
+    padding: 6,
+
+    justifyContent: "space-between",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 11,
+
+    backgroundColor: COLORS.card,
+  },
+
+  filterTileSelected: {
+    borderColor: COLORS.blue,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  filterTileTiny: {
+    flex: 0,
+
+    width: 76,
+  },
+
+  filterIcon: {
+    width: 30,
+    height: 30,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 9,
+  },
+
+  filterLabel: {
+    width: "100%",
+
+    color: COLORS.muted,
+
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  filterLabelSelected: {
+    color: COLORS.blue,
+  },
+
+  filterCount: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  searchBox: {
+    height: 44,
+
+    marginBottom: 8,
+
+    paddingLeft: 10,
+    paddingRight: 5,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 12,
+
+    backgroundColor: COLORS.card,
+  },
+
+  searchInput: {
+    flex: 1,
+
+    height: "100%",
+
+    marginLeft: 6,
+
+    color: COLORS.text,
+
+    fontSize: 13,
+  },
+
+  searchFilterButton: {
+    width: 34,
+    height: 34,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 10,
+
+    backgroundColor: COLORS.soft,
+  },
+
+  /* ==========================================================
+     ORGANIZATION CARDS
+  ========================================================== */
+
+  orgList: {
+    gap: 8,
+  },
+
+  orgCard: {
+    padding: 10,
+
+    overflow: "hidden",
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 13,
+
+    backgroundColor: COLORS.card,
+  },
+
+  orgAccent: {
+    position: "absolute",
+
+    left: 0,
+    top: 0,
+    bottom: 0,
+
+    width: 4,
+  },
+
+  orgHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+
+    paddingLeft: 5,
+  },
+
+  orgInfo: {
+    flex: 1,
+    minWidth: 0,
+
+    paddingHorizontal: 8,
+  },
+
+  orgName: {
+    color: COLORS.text,
+
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  orgOwner: {
+    color: COLORS.muted,
+
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  orgEmail: {
+    marginTop: 2,
+
+    color: COLORS.muted,
+
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
+  orgPhoneRow: {
+    marginTop: 2,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 4,
+  },
+
+  orgPhone: {
+    color: COLORS.text,
+
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+
+  orgRight: {
+    alignItems: "flex-end",
+
+    gap: 6,
+  },
+
+  statusBadge: {
+    minHeight: 23,
+
+    paddingHorizontal: 8,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 8,
+  },
+
+  status_active: {
+    backgroundColor: COLORS.greenSoft,
+  },
+
+  status_pending: {
+    backgroundColor: COLORS.orangeSoft,
+  },
+
+  status_suspended: {
+    backgroundColor: COLORS.redSoft,
+  },
+
+  status_expired: {
+    backgroundColor: COLORS.orangeSoft,
+  },
+
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  statusText_active: {
+    color: COLORS.green,
+  },
+
+  statusText_pending: {
+    color: COLORS.orange,
+  },
+
+  statusText_suspended: {
+    color: COLORS.red,
+  },
+
+  statusText_expired: {
+    color: COLORS.orange,
+  },
+
+  unitStrip: {
+    marginTop: 8,
+    marginLeft: 5,
+
+    paddingVertical: 6,
+
+    flexDirection: "row",
+
+    borderRadius: 10,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  unitCell: {
+    flex: 1,
+
+    alignItems: "center",
+  },
+
+  unitDivider: {
+    width: 1,
+
+    backgroundColor: COLORS.border,
+  },
+
+  unitLabel: {
+    color: COLORS.blue,
+
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  unitValue: {
+    marginTop: 2,
+
+    color: COLORS.blue,
+
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  orgFooter: {
+    marginTop: 8,
+    marginLeft: 5,
+
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  subscriptionBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  subscriptionText: {
+    color: COLORS.muted,
+
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+
+  subscriptionStatus: {
+    color: COLORS.green,
+  },
+
+  subscriptionDate: {
+    marginTop: 1,
+
+    color: COLORS.muted,
+
+    fontSize: 9.5,
+    fontWeight: "700",
+  },
+
+  renewButton: {
+    minWidth: 84,
+    height: 34,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderWidth: 1,
+    borderColor: COLORS.blue,
+
+    borderRadius: 9,
+
+    backgroundColor: COLORS.card,
+  },
+
+  renewText: {
+    color: COLORS.blue,
+
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+
+  inlineStatusAction: {
+    alignSelf: "flex-end",
+
+    marginTop: -28,
+    marginRight: 12,
+
+    minHeight: 29,
+
+    paddingHorizontal: 9,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 4,
+
+    borderRadius: 9,
+
+    backgroundColor: COLORS.redSoft,
+  },
+
+  inlineStatusReactivate: {
+    backgroundColor: COLORS.greenSoft,
+  },
+
+  inlineStatusText: {
+    color: COLORS.red,
+
+    fontSize: 9.5,
+    fontWeight: "900",
+  },
+
+  /* ==========================================================
+     TRANSACTIONS
+  ========================================================== */
+
+  transactionPage: {
+    marginTop: 6,
+
+    minHeight: 500,
+  },
+
+  transactionSkyline: {
+    display: "none",
+  },
+
+  transactionPanel: {
+    marginHorizontal: 0,
+
+    paddingTop: 8,
+    paddingBottom: 4,
+
+    borderRadius: 14,
+  },
+
+  transactionPanelHeader: {
+    minHeight: 34,
+
+    marginBottom: 5,
+
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  transactionPanelTitle: {
+    flex: 1,
+
+    color: COLORS.text,
+
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  transactionRefresh: {
+    width: 32,
+    height: 32,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 10,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  transactionRow: {
+    marginBottom: 7,
+
+    padding: 8,
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 11,
+
+    backgroundColor: COLORS.card,
+  },
+
+  transactionMainRow: {
+    minHeight: 58,
+
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  transactionInfo: {
+    flex: 1,
+    minWidth: 0,
+
+    paddingHorizontal: 7,
+  },
+
+  transactionTitle: {
+    color: COLORS.text,
+
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+
+  transactionMeta: {
+    marginTop: 2,
+
+    color: COLORS.muted,
+
+    fontSize: 9.5,
+    fontWeight: "600",
+  },
+
+  transactionRight: {
+    width: 86,
+
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+
+  transactionStatusPill: {
+    minWidth: 58,
+    maxWidth: 72,
+
+    minHeight: 23,
+
+    marginTop: 4,
+
+    paddingHorizontal: 7,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 9,
+  },
+
+  transactionStatusText: {
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  transactionAmount: {
+    width: "100%",
+
+    color: COLORS.text,
+
+    fontSize: 12,
+    fontWeight: "900",
+
+    textAlign: "right",
+  },
+
+  transactionWalletText: {
+    marginTop: 2,
+
+    width: "100%",
+
+    color: COLORS.blue,
+
+    fontSize: 8.5,
+    fontWeight: "900",
+
+    textAlign: "right",
+  },
+
+  amountSuccess: {
+    color: COLORS.green,
+  },
+
+  amountFailed: {
+    color: COLORS.red,
+  },
+
+  amountPending: {
+    color: COLORS.text,
+  },
+
+  transactionDetailsCard: {
+    marginTop: 6,
+    paddingTop: 6,
+
+    borderTopWidth: 1,
+    borderTopColor: COLORS.soft,
+  },
+
+  transactionDetailRow: {
+    marginBottom: 3,
+
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  transactionDetailLabel: {
+    flex: 1,
+    minWidth: 0,
+
+    color: COLORS.muted,
+
+    fontSize: 9.5,
+    fontWeight: "800",
+  },
+
+  transactionDetailValue: {
+    flex: 1.4,
+    minWidth: 0,
+
+    color: COLORS.text,
+
+    fontSize: 9.5,
+    fontWeight: "800",
+
+    textAlign: "right",
+  },
+
+  detailSuccess: {
+    color: COLORS.green,
+  },
+
+  detailDanger: {
+    color: COLORS.red,
+  },
+
+  viewAll: {
+    color: COLORS.blue,
+
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  /* ==========================================================
+     MORE
+  ========================================================== */
+
+  morePanel: {
+    marginTop: 5,
+
+    gap: 7,
+  },
+
+  moreRow: {
+    minHeight: 56,
+
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 9,
+
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    borderRadius: 11,
+
+    backgroundColor: COLORS.card,
+  },
+
   moreRowLast: {},
-  moreIconBox: { width: 46, height: 46, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: COLORS.blueSoft },
-  moreIconDanger: { backgroundColor: COLORS.redSoft },
-  moreCopy: { flex: 1, minWidth: 0 },
-  moreText: { color: COLORS.text, fontSize: 15, fontWeight: "900" },
-  moreSubText: { marginTop: 4, color: COLORS.muted, fontSize: 12, fontWeight: "700" },
-  empty: { paddingVertical: 22, color: COLORS.muted, textAlign: "center", fontWeight: "700" },
-  bottomNav: { position: "absolute", left: 10, right: 10, bottom: 8, maxWidth: 410, alignSelf: "center", minHeight: 64, paddingHorizontal: 4, paddingTop: 7, paddingBottom: 6, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
-  navItem: { flex: 1, minWidth: 0, alignItems: "center", justifyContent: "center", gap: 3, paddingHorizontal: 1 },
-  navText: { width: "100%", color: COLORS.muted, fontSize: 9.5, fontWeight: "800", textAlign: "center" },
-  navActive: { color: COLORS.blue },
-  centerAdd: { width: 48, height: 48, marginHorizontal: 2, marginTop: -29, alignItems: "center", justifyContent: "center", borderRadius: 24, backgroundColor: COLORS.blue },
-  sidebarOverlay: { flex: 1, flexDirection: "row", backgroundColor: "rgba(16,24,40,0.30)" },
-  sidebarScrim: { flex: 1 },
-  sidebarPanel: { width: "82%", maxWidth: 330, height: "100%", paddingHorizontal: 16, paddingTop: 24, paddingBottom: 18, backgroundColor: COLORS.card, shadowColor: COLORS.text, shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 6, height: 0 }, elevation: 8 },
-  sidebarTop: { minHeight: 82, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  sidebarAvatar: { width: 52, height: 52, alignItems: "center", justifyContent: "center", borderRadius: 26, backgroundColor: COLORS.blueSoft },
-  sidebarAvatarText: { color: COLORS.blue, fontSize: 17, fontWeight: "900" },
-  sidebarProfile: { flex: 1, minWidth: 0, marginLeft: 12 },
-  sidebarName: { color: COLORS.text, fontSize: 17, fontWeight: "900" },
-  sidebarEmail: { marginTop: 3, color: COLORS.muted, fontSize: 12, fontWeight: "700" },
-  sidebarClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 18, backgroundColor: COLORS.soft },
-  sidebarMenu: { paddingTop: 14, gap: 8 },
-  sidebarFooter: { marginTop: "auto", paddingTop: 14, borderTopWidth: 1, borderTopColor: COLORS.border },
-  sidebarItem: { minHeight: 48, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 12 },
-  sidebarItemActive: { backgroundColor: COLORS.blueSoft },
-  sidebarItemText: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
-  sidebarItemTextActive: { color: COLORS.blue },
-  sidebarItemTextDanger: { color: COLORS.red },
+
+  moreIconBox: {
+    width: 36,
+    height: 36,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 11,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  moreIconDanger: {
+    backgroundColor: COLORS.redSoft,
+  },
+
+  moreCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  moreText: {
+    color: COLORS.text,
+
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  moreSubText: {
+    marginTop: 2,
+
+    color: COLORS.muted,
+
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
+  empty: {
+    paddingVertical: 16,
+
+    color: COLORS.muted,
+
+    fontSize: 12,
+    fontWeight: "700",
+
+    textAlign: "center",
+  },
+
+  /* ==========================================================
+     BOTTOM NAV
+  ========================================================== */
+
+  bottomNav: {
+    position: "absolute",
+
+    left: 0,
+    right: 0,
+    bottom: 0,
+
+    width: "100%",
+
+    minHeight: 64,
+
+    paddingHorizontal: 6,
+    paddingTop: 6,
+
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+
+    backgroundColor: "#FFFFFF",
+
+    shadowColor: "#101828",
+    shadowOpacity: 0.06,
+    shadowRadius: 7,
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+
+    elevation: 8,
+  },
+
+  navItem: {
+    flex: 1,
+    minWidth: 0,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    gap: 2,
+
+    paddingHorizontal: 1,
+  },
+
+  navText: {
+    width: "100%",
+
+    color: COLORS.muted,
+
+    fontSize: 9.5,
+    fontWeight: "700",
+
+    textAlign: "center",
+  },
+
+  navActive: {
+    color: COLORS.blue,
+
+    fontWeight: "900",
+  },
+
+  centerAdd: {
+    width: 46,
+    height: 46,
+
+    marginHorizontal: 3,
+    marginTop: -22,
+
+    flexShrink: 0,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 23,
+
+    backgroundColor: COLORS.blue,
+
+    shadowColor: COLORS.blue,
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+
+    elevation: 4,
+  },
+
+  /* ==========================================================
+     SIDEBAR
+  ========================================================== */
+
+  sidebarOverlay: {
+    flex: 1,
+
+    flexDirection: "row",
+
+    backgroundColor: "rgba(16,24,40,0.30)",
+  },
+
+  sidebarScrim: {
+    flex: 1,
+  },
+
+  sidebarPanel: {
+    width: "82%",
+    maxWidth: 320,
+    height: "100%",
+
+    paddingHorizontal: 14,
+    paddingTop: 20,
+    paddingBottom: 15,
+
+    backgroundColor: COLORS.card,
+
+    shadowColor: COLORS.text,
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    shadowOffset: {
+      width: 5,
+      height: 0,
+    },
+
+    elevation: 8,
+  },
+
+  sidebarTop: {
+    minHeight: 68,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+
+  sidebarAvatar: {
+    width: 44,
+    height: 44,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 22,
+
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  sidebarAvatarText: {
+    color: COLORS.blue,
+
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  sidebarProfile: {
+    flex: 1,
+    minWidth: 0,
+
+    marginLeft: 9,
+  },
+
+  sidebarName: {
+    color: COLORS.text,
+
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  sidebarEmail: {
+    marginTop: 2,
+
+    color: COLORS.muted,
+
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
+  sidebarClose: {
+    width: 32,
+    height: 32,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    borderRadius: 16,
+
+    backgroundColor: COLORS.soft,
+  },
+
+  sidebarMenu: {
+    paddingTop: 10,
+
+    gap: 5,
+  },
+
+  sidebarFooter: {
+    marginTop: "auto",
+
+    paddingTop: 10,
+
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+
+  sidebarItem: {
+    minHeight: 42,
+
+    paddingHorizontal: 10,
+
+    flexDirection: "row",
+    alignItems: "center",
+
+    gap: 9,
+
+    borderRadius: 10,
+  },
+
+  sidebarItemActive: {
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  sidebarItemText: {
+    color: COLORS.text,
+
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  sidebarItemTextActive: {
+    color: COLORS.blue,
+  },
+
+  sidebarItemTextDanger: {
+    color: COLORS.red,
+  },
 });

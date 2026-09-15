@@ -1,730 +1,2875 @@
-import { useCallback, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+
+import { Image } from "expo-image";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Image } from "expo-image";
-import { Archive, ArrowLeft, ArrowRightLeft, CheckCircle2, ExternalLink, FileDown, FileText, LogOut, Pencil, Plus, Trash2, UserRound, XCircle } from "lucide-react-native";
 
-import { getSystemDashboard } from "../../src/api/saasApi";
-import { archiveTenant, deleteTenant, getRentSummary, getTenant, getTenantRentDue } from "../../src/api/tenantApi";
-import { formatTenantUnit, isPrimaryUnitSlot, propertyTypeFromTenant } from "../../src/utils/unitLabels";
-import { documentStatusForTenant } from "../../src/utils/tenantDocuments";
-import { useResponsive } from "../../src/utils/responsive";
-import { hasCanteenFeature } from "../../src/utils/featureAccess";
-import { systemColors as colors } from "../../src/theme/systemTheme";
+import {
+  ArrowLeft,
+  BedDouble,
+  Building2,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  FileText,
+  Home,
+  MessageCircle,
+  Pencil,
+  Phone,
+  ReceiptText,
+  Share2,
+  ShieldCheck,
+  StickyNote,
+  Utensils,
+  UserRound,
+} from "lucide-react-native";
+
+import { getTenant } from "../../src/api/tenantApi";
+
+/* ============================================================
+   THEME
+============================================================ */
+
+const UI = {
+  screen: "#F6F8F7",
+  card: "#FFFFFF",
+
+  text: "#111B2A",
+  muted: "#63738A",
+  subtle: "#94A3B8",
+
+  border: "#D9E1E7",
+
+  primary: "#4F7FA6",
+  primaryDark: "#244F70",
+  primarySoft: "#E7F1F8",
+
+  green: "#258467",
+  greenSoft: "#E8F6F1",
+
+  orange: "#A96313",
+  orangeSoft: "#FFF4E6",
+  orangeBorder: "#F2D1A7",
+
+  purple: "#7459A6",
+  purpleSoft: "#F2ECFA",
+
+  red: "#D64B4B",
+  redSoft: "#FFF1F0",
+
+  yellow: "#B07815",
+  yellowSoft: "#FFF7DE",
+};
+
+/* avoids shadow* warning on web */
+
+const lightShadow = Platform.select({
+  web: {
+    boxShadow: "0px 3px 10px rgba(36,79,112,0.06)",
+  },
+
+  android: {
+    elevation: 1,
+  },
+
+  ios: {
+    shadowColor: "#244F70",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+  },
+
+  default: {},
+});
+
+const mediumShadow = Platform.select({
+  web: {
+    boxShadow: "0px 5px 16px rgba(36,79,112,0.10)",
+  },
+
+  android: {
+    elevation: 3,
+  },
+
+  ios: {
+    shadowColor: "#244F70",
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+  },
+
+  default: {},
+});
+
+/* ============================================================
+   TABS
+============================================================ */
+
+const TABS = [
+  {
+    key: "overview",
+    label: "Overview",
+    icon: Home,
+  },
+  {
+    key: "payments",
+    label: "Payments",
+    icon: ReceiptText,
+  },
+  {
+    key: "documents",
+    label: "Documents",
+    icon: FileText,
+  },
+  {
+    key: "notes",
+    label: "Notes",
+    icon: StickyNote,
+  },
+];
+
+/* ============================================================
+   HELPERS
+============================================================ */
 
 function formatDate(value) {
   if (!value) return "-";
+
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function money(value) {
   return `Rs. ${Number(value || 0).toLocaleString("en-IN")}`;
 }
 
-function monthTime(value) {
-  const match = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2})$/.exec(String(value || ""));
-  if (!match) return 0;
-  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(match[1]);
-  return new Date(2000 + Number(match[2]), month, 1).getTime();
+function toDisplayName(value) {
+  return String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(
+      (part) =>
+        part.charAt(0).toUpperCase() +
+        part.slice(1).toLowerCase()
+    )
+    .join(" ");
 }
 
-function Row({ label, value }) {
+function hasCanteenEnabled(tenant) {
+  if (tenant?.hasCanteen === true) return true;
+
+  const value = String(tenant?.hasCanteen || "")
+    .trim()
+    .toLowerCase();
+
+  return ["yes", "true", "enabled", "1"].includes(value);
+}
+
+function isAdvancePaid(tenant) {
+  const value = String(tenant?.firstRentStatus || "")
+    .trim()
+    .toUpperCase();
+
+  return value === "ADVANCE_PAID";
+}
+
+function phoneValue(tenant) {
+  return String(
+    tenant?.phoneNo ||
+      tenant?.phone ||
+      ""
+  ).replace(/\D/g, "");
+}
+
+function tenantInitials(name) {
+  const parts = String(name || "Tenant")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return "T";
+  }
+
+  if (parts.length === 1) {
+    return parts[0]
+      .charAt(0)
+      .toUpperCase();
+  }
+
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value === undefined || value === null || value === "" ? "-" : String(value)}</Text>
+    parts[0].charAt(0) +
+    parts[parts.length - 1].charAt(0)
+  ).toUpperCase();
+}
+
+function tenantPhotoUrl(tenant) {
+  if (tenant?.avatarUrl) {
+    return tenant.avatarUrl;
+  }
+
+  if (tenant?.photoUrl) {
+    return tenant.photoUrl;
+  }
+
+  const documents = Array.isArray(tenant?.documents)
+    ? tenant.documents
+    : [];
+
+  const photo = documents.find((document) => {
+    const label = `
+      ${document?.relation || ""}
+      ${document?.fileName || ""}
+      ${document?.storedName || ""}
+    `.toLowerCase();
+
+    return (
+      document?.url &&
+      (
+        label.includes("photo") ||
+        label.includes("selfie") ||
+        label.includes("photograph")
+      )
+    );
+  });
+
+  return photo?.url || "";
+}
+
+function propertyType(tenant) {
+  const raw = String(
+    tenant?.propertyType || ""
+  ).toLowerCase();
+
+  if (raw === "room") return "room";
+  if (raw === "shop") return "shop";
+
+  return "bed";
+}
+
+function roomNumber(tenant) {
+  if (propertyType(tenant) === "shop") {
+    return (
+      tenant?.shopNumber ||
+      tenant?.roomNo ||
+      "-"
+    );
+  }
+
+  return tenant?.roomNo || "-";
+}
+
+function unitText(tenant) {
+  const type = propertyType(tenant);
+
+  if (type === "shop") {
+    const value =
+      tenant?.shopNumber ||
+      tenant?.roomNo;
+
+    return value
+      ? `Shop ${value}`
+      : "-";
+  }
+
+  if (type === "room") {
+    return tenant?.roomNo
+      ? `Room ${tenant.roomNo}`
+      : "-";
+  }
+
+  return [
+    tenant?.roomNo
+      ? `Room ${tenant.roomNo}`
+      : "",
+
+    tenant?.bedNo
+      ? `Bed ${tenant.bedNo}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" | ") || "-";
+}
+
+/* ============================================================
+   RENT PAYMENT HELPER
+============================================================ */
+
+function flattenPayments(tenant) {
+  const rents = Array.isArray(tenant?.rents)
+    ? tenant.rents
+    : [];
+
+  const result = [];
+
+  rents.forEach((rent) => {
+    let payments = [];
+
+    if (
+      Array.isArray(rent?.payments) &&
+      rent.payments.length
+    ) {
+      payments = rent.payments;
+    } else if (
+      Number(rent?.rentAmount || rent?.totalAmount || 0) > 0
+    ) {
+      payments = [
+        {
+          amount:
+            rent.totalAmount ??
+            rent.rentAmount ??
+            0,
+
+          date:
+            rent.date ||
+            rent.createdAt,
+
+          paymentMode:
+            rent.paymentMode,
+        },
+      ];
+    }
+
+    payments.forEach((payment, index) => {
+      result.push({
+        key: `${
+          rent?._id ||
+          rent?.month ||
+          "rent"
+        }-${index}`,
+
+        month:
+          rent?.month ||
+          "Rent",
+
+        amount: Number(
+          payment?.amount ||
+            payment?.rentAmount ||
+            0
+        ),
+
+        date:
+          payment?.date ||
+          payment?.createdAt ||
+          rent?.date,
+
+        paymentMode:
+          payment?.paymentMode ||
+          "-",
+      });
+    });
+  });
+
+  return result.sort((a, b) => {
+    const left =
+      new Date(a.date || 0).getTime();
+
+    const right =
+      new Date(b.date || 0).getTime();
+
+    return right - left;
+  });
+}
+
+/* ============================================================
+   NOTES
+============================================================ */
+
+function getTenantNotes(tenant) {
+  if (Array.isArray(tenant?.notes)) {
+    return tenant.notes
+      .map((note, index) => ({
+        key:
+          note?._id ||
+          note?.id ||
+          String(index),
+
+        text:
+          typeof note === "string"
+            ? note
+            : note?.text ||
+              note?.note ||
+              note?.message ||
+              "",
+
+        date:
+          typeof note === "object"
+            ? note?.createdAt ||
+              note?.date
+            : null,
+      }))
+      .filter((note) => note.text);
+  }
+
+  const text =
+    tenant?.note ||
+    tenant?.remarks ||
+    tenant?.remark ||
+    "";
+
+  if (!text) return [];
+
+  return [
+    {
+      key: "note",
+      text,
+      date: null,
+    },
+  ];
+}
+
+/* ============================================================
+   REUSABLE COMPONENTS
+============================================================ */
+
+function InfoRow({
+  label,
+  value,
+  last = false,
+}) {
+  return (
+    <View
+      style={[
+        styles.infoRow,
+        last && styles.infoRowLast,
+      ]}
+    >
+      <Text style={styles.infoLabel}>
+        {label}
+      </Text>
+
+      <Text
+        style={styles.infoValue}
+        numberOfLines={3}
+      >
+        {value || "-"}
+      </Text>
     </View>
   );
 }
 
-function canteenPlanLabel(value) {
-  if (value === "full_package") return "Full food package";
-  if (value === "per_meal") return "Per meal pricing";
-  if (value === "meal_package") return "Meal package monthly";
-  return "-";
+function SectionHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  action,
+  onAction,
+  tone = "blue",
+}) {
+  const iconStyle =
+    tone === "orange"
+      ? styles.sectionIconOrange
+      : tone === "green"
+        ? styles.sectionIconGreen
+        : tone === "purple"
+          ? styles.sectionIconPurple
+          : styles.sectionIconBlue;
+
+  const iconColor =
+    tone === "orange"
+      ? UI.orange
+      : tone === "green"
+        ? UI.green
+        : tone === "purple"
+          ? UI.purple
+          : UI.primaryDark;
+
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionTitleWrap}>
+        <View
+          style={[
+            styles.sectionIcon,
+            iconStyle,
+          ]}
+        >
+          <Icon
+            size={17}
+            color={iconColor}
+          />
+        </View>
+
+        <View style={styles.sectionHeadingCopy}>
+          <Text style={styles.sectionTitle}>
+            {title}
+          </Text>
+
+          {subtitle ? (
+            <Text
+              style={styles.sectionSubtitle}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      {action ? (
+        <Pressable
+          onPress={onAction}
+          style={styles.sectionAction}
+        >
+          <Pencil
+            size={13}
+            color={UI.primary}
+          />
+
+          <Text style={styles.sectionActionText}>
+            {action}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
-function Section({ title, children }) {
-  return <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>;
-}
-
-function tenantPhotoUrl(tenant) {
-  const documents = Array.isArray(tenant?.documents) ? tenant.documents : [];
-  const photo = documents.find((document) => {
-    const label = `${document?.relation || ""} ${document?.fileName || ""} ${document?.storedName || ""}`.toLowerCase();
-    return (document?.url || document?.filePath) && (label.includes("photo") || label.includes("selfie") || label.includes("photograph"));
-  });
-  return photo?.url || photo?.filePath || "";
-}
-
-function currentMonthKey() {
-  const date = new Date();
-  return `${date.toLocaleString("en-US", { month: "short" })}-${String(date.getFullYear()).slice(-2)}`;
-}
-
-function rentHistoryEntries(tenant) {
-  const rents = Array.isArray(tenant?.rents) ? tenant.rents : [];
-  return rents.flatMap((rent) => {
-    const payments = Array.isArray(rent.payments) && rent.payments.length
-      ? rent.payments
-      : [{ amount: rent.rentAmount, date: rent.date, paymentMode: rent.paymentMode, utr: rent.utr, note: rent.note }];
-    return payments.map((payment, index) => ({
-      key: `${rent.month || "month"}-${index}-${payment.date || ""}`,
-      month: rent.month || "-",
-      date: formatDate(payment.date),
-      amount: money(payment.amount),
-      mode: payment.paymentMode || rent.paymentMode || "-",
-      utr: payment.utr || "-",
-      note: payment.note || "-",
-      rentAmount: money(payment.rentAmount || rent.rentAmount || 0),
-      canteenAmount: Number(payment.canteenAmount || rent.canteenAmount || 0) > 0 ? money(payment.canteenAmount || rent.canteenAmount || 0) : "",
-      totalAmount: money(payment.amount || rent.totalAmount || rent.rentAmount || 0),
-    }));
-  }).sort((a, b) => monthTime(b.month) - monthTime(a.month));
-}
-
-function movementHistoryEntries(tenant) {
-  const history = Array.isArray(tenant?.rentHistory) ? tenant.rentHistory : [];
-  return [...history]
-    .sort((a, b) => new Date(b.effectiveFrom || 0).getTime() - new Date(a.effectiveFrom || 0).getTime())
-    .map((entry, index) => ({
-      key: `${entry.effectiveFrom || "move"}-${index}`,
-      effectiveFrom: formatDate(entry.effectiveFrom),
-      previousUnit: `${entry.previousRoomNo || "-"}${entry.previousBedNo ? ` / ${entry.previousBedNo}` : ""}`,
-      newUnit: `${entry.roomNo || "-"}${entry.bedNo ? ` / ${entry.bedNo}` : ""}`,
-      rent: money(entry.baseRent || entry.rentAmount || 0),
-      source: entry.source || "-",
-    }));
-}
+/* ============================================================
+   MAIN SCREEN
+============================================================ */
 
 export default function TenantDetailsScreen() {
   const router = useRouter();
-  const responsive = useResponsive();
-  const { id, returnTo = "/system/tenants" } = useLocalSearchParams();
-  const [tenant, setTenant] = useState(null);
-  const [canteenEnabled, setCanteenEnabled] = useState(false);
-  const [due, setDue] = useState({ totalDue: 0, dueMonths: [] });
-  const [rentSummary, setRentSummary] = useState(new Map());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [deletePassword, setDeletePassword] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [historyVisible, setHistoryVisible] = useState(false);
 
-  const loadTenant = useCallback(async () => {
-    if (!id) return;
+  const params =
+    useLocalSearchParams();
+
+  const id = Array.isArray(params.id)
+    ? params.id[0]
+    : params.id;
+
+  const returnTo = Array.isArray(params.returnTo)
+    ? params.returnTo[0]
+    : params.returnTo ||
+      "/system/tenants";
+
+  const [tenant, setTenant] =
+    useState(null);
+
+  const [activeTab, setActiveTab] =
+    useState("overview");
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  /* ========================================================
+     LOAD
+  ======================================================== */
+
+  const load = useCallback(async () => {
+    if (!id) {
+      setError("Tenant id is missing.");
+      setLoading(false);
+      return;
+    }
+
     try {
       setError("");
-      const tenantData = await getTenant(id);
-      const months = [...new Set((tenantData.rents || []).map((rent) => rent.month).filter(Boolean))];
-      const [dueData, summaries, dashboardData] = await Promise.all([
-        getTenantRentDue(id),
-        Promise.all(months.map((month) => getRentSummary(month).then((data) => [month, data]).catch(() => [month, null]))),
-        getSystemDashboard(),
-      ]);
-      const summaryMap = new Map();
-      summaries.forEach(([month, summary]) => {
-        const row = (summary?.rows || []).find((item) => String(item.tenantId) === String(id));
-        if (row) summaryMap.set(month, row);
-      });
-      setTenant(tenantData);
-      setCanteenEnabled(hasCanteenFeature(dashboardData));
-      setDue(dueData);
-      setRentSummary(summaryMap);
+
+      const data =
+        await getTenant(id);
+
+      setTenant(data);
     } catch (err) {
-      setError(err.response?.data?.message || "Unable to load tenant details.");
+      setError(
+        err.response?.data?.message ||
+          err.message ||
+          "Unable to load tenant details."
+      );
     } finally {
       setLoading(false);
     }
   }, [id]);
 
-  useFocusEffect(useCallback(() => { loadTenant(); }, [loadTenant]));
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      load();
+    }, [load])
+  );
 
-  if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
-  if (!tenant) return <View style={styles.loading}><Text style={styles.error}>{error || "Tenant not found."}</Text><Pressable onPress={() => router.replace(String(returnTo))}><Text style={styles.backText}>Go back</Text></Pressable></View>;
+  /* ========================================================
+     DERIVED
+  ======================================================== */
 
-  const address = [tenant.houseNo, tenant.address, tenant.nearbyPlace, tenant.city, tenant.state, tenant.pincode].filter(Boolean).join(", ");
-  const documents = Array.isArray(tenant.documents) ? tenant.documents : [];
-  const isActive = !tenant.leaveDate || new Date(tenant.leaveDate) > new Date();
-  const canArchive = tenant.leaveDate && new Date(tenant.leaveDate) <= new Date();
-  const propertyType = propertyTypeFromTenant(tenant);
-  const isResidentialRoom = propertyType === "room";
-  const isShop = propertyType === "shop";
-  const typeLabel = isShop ? "Commercial Shop" : isResidentialRoom ? "Residential Room" : "Hostel Bed";
-  const documentStatus = documentStatusForTenant(tenant);
-  const photoUrl = tenantPhotoUrl(tenant);
-  const paidTotal = Array.isArray(tenant.rents)
-    ? tenant.rents.reduce((sum, rent) => sum + Number(rent.totalAmount || rent.rentAmount || 0), 0)
-    : 0;
-  const currentMonthSummary = rentSummary.get(currentMonthKey());
-  const currentMonthBalance = Math.max(Number(currentMonthSummary?.totalBalance || 0), 0);
-  const currentPending = currentMonthBalance + Number(due.totalDue || 0);
-  const paymentHistory = rentHistoryEntries(tenant);
-  const movementHistory = movementHistoryEntries(tenant);
+  const payments = useMemo(
+    () => flattenPayments(tenant),
+    [tenant]
+  );
 
-  function confirmArchive() {
-    Alert.alert(
-      "Archive tenant",
-      "This removes the tenant from active records and keeps them in Former Tenants.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Archive", style: "destructive", onPress: async () => {
-          try {
-            await archiveTenant(tenant._id);
-            router.replace("/system/tenants");
-          } catch (err) {
-            Alert.alert("Unable to archive", err.response?.data?.message || "Please try again.");
-          }
-        } },
-      ]
+  const documents = useMemo(
+    () =>
+      Array.isArray(tenant?.documents)
+        ? tenant.documents
+        : [],
+    [tenant]
+  );
+
+  const notes = useMemo(
+    () => getTenantNotes(tenant),
+    [tenant]
+  );
+
+  const canteen =
+    hasCanteenEnabled(tenant);
+
+  const advance =
+    isAdvancePaid(tenant);
+
+  const photoUrl =
+    tenantPhotoUrl(tenant);
+
+  const phone =
+    phoneValue(tenant);
+
+  /* ========================================================
+     NAVIGATION
+  ======================================================== */
+
+  function goBack() {
+    router.replace(returnTo);
+  }
+
+  function editTenant() {
+    router.push({
+      pathname:
+        "/system/tenant-edit",
+
+      params: {
+        id,
+        returnTo:
+          "/system/tenant-details",
+      },
+    });
+  }
+
+  function markLeaving() {
+    router.push({
+      pathname:
+        "/system/tenant-leave",
+
+      params: {
+        id,
+        returnTo:
+          "/system/tenant-details",
+      },
+    });
+  }
+
+  /* ========================================================
+     ACTIONS
+  ======================================================== */
+
+  async function callTenant() {
+    if (!phone) return;
+
+    await Linking.openURL(
+      `tel:${phone}`
     );
   }
 
-  async function confirmDeleteTenant() {
-    if (!deletePassword.trim()) {
-      Alert.alert("Password required", "Enter the delete password to continue.");
-      return;
-    }
+  async function messageTenant() {
+    if (!phone) return;
 
-    try {
-      setDeleting(true);
-      const result = await deleteTenant(tenant._id, deletePassword.trim());
-      if (!result?.ok || String(result.deletedTenantId) !== String(tenant._id)) {
-        throw new Error("The server did not confirm this tenant was deleted.");
-      }
-      setDeleteModalVisible(false);
-      setDeletePassword("");
-      Alert.alert("Tenant deleted", result.message || "Tenant deleted successfully.", [
-        { text: "OK", onPress: () => router.replace(String(returnTo)) },
-      ]);
-    } catch (err) {
-      const status = err.response?.status;
-      const message = err.response?.data?.message ||
-        (err.request ? "Cannot reach the backend. Check that the backend is running and the phone is on the same Wi-Fi." : err.message) ||
-        "Please check the password and try again.";
-      Alert.alert("Unable to delete", status ? `${message} (HTTP ${status})` : message);
-    } finally {
-      setDeleting(false);
-    }
+    await Linking.openURL(
+      `sms:${phone}`
+    );
   }
+
+  async function shareTenant() {
+    await Share.share({
+      title: "Tenant details",
+
+      message: [
+        toDisplayName(
+          tenant?.name
+        ),
+
+        phone
+          ? `+91 ${phone}`
+          : "",
+
+        tenant?.category ||
+          "",
+
+        unitText(tenant),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+  }
+
+  /* ========================================================
+     LOADING
+  ======================================================== */
+
+  if (loading) {
+    return (
+      <View style={styles.loading}>
+        <View style={styles.loadingIcon}>
+          <UserRound
+            size={28}
+            color={UI.primaryDark}
+          />
+        </View>
+
+        <ActivityIndicator
+          size="small"
+          color={UI.primary}
+          style={{ marginTop: 14 }}
+        />
+
+        <Text style={styles.loadingText}>
+          Loading tenant details...
+        </Text>
+      </View>
+    );
+  }
+
+  /* ========================================================
+     ERROR
+  ======================================================== */
+
+  if (error || !tenant) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.error}>
+          {error ||
+            "Tenant not found."}
+        </Text>
+
+        <Pressable
+          onPress={goBack}
+          style={styles.backButtonLarge}
+        >
+          <Text
+            style={
+              styles.backButtonLargeText
+            }
+          >
+            Back to tenants
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  /* ========================================================
+     UI
+  ======================================================== */
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.replace(String(returnTo))} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Tenant details</Text>
-          <Text style={styles.subtitle}>Admission #{tenant.srNo || "-"}</Text>
-        </View>
-        <Pressable onPress={() => router.push({ pathname: "/system/rent-form", params: { id: tenant._id, returnTo: `/system/tenant-details?id=${tenant._id}&returnTo=${encodeURIComponent(String(returnTo))}` } })} style={styles.headerAction}>
-          <Plus size={18} color={colors.surface} /><Text style={styles.headerActionText}>Add rent</Text>
-        </Pressable>
-      </View>
 
-      <ScrollView contentContainerStyle={[styles.content, { padding: responsive.pagePadding }]} showsVerticalScrollIndicator={false}>
-        <View style={styles.heroCard}>
-          <View style={styles.heroTop}>
-            <View style={styles.heroIdentity}>
-              <View style={styles.heroAvatar}>
+      <View style={styles.content}>
+
+        {/* HEADER */}
+
+        <View style={styles.header}>
+          <Pressable
+            onPress={goBack}
+            style={styles.headerButton}
+          >
+            <ArrowLeft
+              size={21}
+              color={UI.primaryDark}
+            />
+          </Pressable>
+
+          <View style={styles.headerCopy}>
+            <Text style={styles.headerTitle}>
+              Tenant Details
+            </Text>
+
+            <Text
+              style={styles.headerSubtitle}
+            >
+              Complete tenant profile and stay information
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={editTenant}
+            style={styles.headerEditButton}
+          >
+            <Pencil
+              size={16}
+              color={UI.primaryDark}
+            />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={
+            styles.scrollContent
+          }
+          showsVerticalScrollIndicator={false}
+        >
+
+          {/* =============================================
+              PROFILE HERO
+          ============================================= */}
+
+          <View style={styles.profileCard}>
+
+            <View style={styles.profileTop}>
+
+              <View style={styles.profileDecorCircleOne} />
+              <View style={styles.profileDecorCircleTwo} />
+
+              <View style={styles.avatar}>
                 {photoUrl ? (
-                  <Image source={{ uri: photoUrl }} style={styles.heroAvatarImage} contentFit="cover" />
+                  <Image
+                    source={{
+                      uri: photoUrl,
+                    }}
+                    style={styles.avatarImage}
+                    contentFit="cover"
+                  />
                 ) : (
-                  <View style={styles.heroAvatarFallback}><UserRound size={30} color={colors.surface} /></View>
+                  <Text style={styles.avatarText}>
+                    {tenantInitials(
+                      tenant.name
+                    )}
+                  </Text>
                 )}
               </View>
-              <View style={styles.heroText}>
-                <Text style={styles.heroName}>{tenant.name}</Text>
-                <View style={styles.heroBadgeRow}>
-                  <Text style={styles.heroCycleBadge}>{tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid" : "Normal cycle"}</Text>
-                  {!isShop && !isResidentialRoom && canteenEnabled && tenant.hasCanteen ? (
-                    <Text style={styles.heroCanteenBadge}>Canteen taken</Text>
-                  ) : null}
-                </View>
-                <Text style={styles.heroUnit}>{formatTenantUnit(tenant)}</Text>
-                <Text style={styles.heroPhone}>{tenant.phoneNo || "No phone number"}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
 
-        <View style={styles.metricCard}>
-          <View style={styles.metricGrid}>
-            <View style={styles.metricCell}>
-              <Text style={styles.metricLabel}>Deposit</Text>
-              <Text style={styles.metricValue}>{money(tenant.depositAmount)}</Text>
-            </View>
-            <View style={styles.metricCell}>
-              <Text style={styles.metricLabel}>Paid</Text>
-              <Text style={styles.metricValue}>{money(paidTotal)}</Text>
-            </View>
-            <View style={styles.metricCellWide}>
-              <Text style={styles.metricLabel}>Final due amount</Text>
-              <Text style={styles.metricValueAccent}>{money(currentPending)}</Text>
-            </View>
-            {!isShop && !isResidentialRoom && canteenEnabled ? (
-              <View style={styles.metricTagRow}>
-                {!tenant.hasCanteen ? <Text style={styles.metricTag}>Canteen: Not taken</Text> : null}
-              </View>
-            ) : null}
-          </View>
-        </View>
+              <View style={styles.profileCopy}>
 
-        <View style={styles.actions}>
-          <Pressable onPress={() => setHistoryVisible(true)} style={styles.action}>
-            <FileText size={17} color={colors.primary} />
-            <Text style={styles.actionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>History</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push({ pathname: "/system/tenant-edit", params: { id: tenant._id, returnTo } })} style={styles.action}>
-            <Pencil size={17} color={colors.primary} />
-            <Text style={styles.actionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Edit</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push({ pathname: "/system/tenant-shift", params: { id: tenant._id, returnTo } })} disabled={!isActive} style={[styles.action, !isActive && styles.actionDisabled]}>
-            <ArrowRightLeft size={17} color={colors.primary} />
-            <Text style={styles.actionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Shift</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push({ pathname: "/system/tenant-leave", params: { id: tenant._id, returnTo } })} style={styles.action}>
-            <LogOut size={17} color={colors.warning} />
-            <Text style={[styles.actionText, styles.leaveText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{tenant.leaveDate ? "Leaving" : "Leaving"}</Text>
-          </Pressable>
-          <Pressable onPress={() => setDeleteModalVisible(true)} style={styles.action}>
-            <Trash2 size={17} color={colors.danger} />
-            <Text style={[styles.actionText, styles.archiveText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Delete</Text>
-          </Pressable>
-        </View>
+                <Text
+                  style={styles.profileName}
+                  numberOfLines={2}
+                >
+                  {toDisplayName(
+                    tenant.name
+                  )}
+                </Text>
 
-        {canArchive ? (
-          <Pressable onPress={confirmArchive} style={styles.archiveButton}>
-            <Archive size={16} color={colors.danger} />
-            <Text style={styles.archiveButtonText}>Move to former tenants</Text>
-          </Pressable>
-        ) : null}
+                <Text
+                  style={styles.profilePhone}
+                >
+                  {phone
+                    ? `+91 ${phone}`
+                    : "Phone not available"}
+                </Text>
 
-        <View style={[styles.dueSection, !due.totalDue && styles.dueClear]}>
-          <View style={styles.dueHeader}>
-            <View><Text style={[styles.dueLabel, !due.totalDue && styles.dueClearText]}>{due.totalDue ? "Overdue rent" : "Rent status"}</Text><Text style={styles.dueHint}>{due.totalDue ? `${due.dueMonths.length} billing cycle${due.dueMonths.length === 1 ? "" : "s"} pending` : "No completed rent cycle is overdue"}</Text></View>
-            <Text style={[styles.dueAmount, !due.totalDue && styles.dueClearText]}>{due.totalDue ? money(due.totalDue) : "Clear"}</Text>
-          </View>
-          {due.dueMonths.map((month) => (
-            <View key={month.month} style={styles.dueMonthRow}>
-              <View style={styles.dueMonthInfo}>
-                <Text style={styles.dueMonthName}>{month.month}</Text>
-                <Text style={styles.dueMonthMeta}>{money(month.paid)} paid of {money(month.expected)}</Text>
-              </View>
-              <Text style={styles.dueMonthAmount}>{money(month.outstanding)}</Text>
-            </View>
-          ))}
-        </View>
+                <View style={styles.badgeRow}>
 
-        <Section title="Personal information">
-          <Row label="Full name" value={tenant.name} />
-          <Row label="Phone number" value={tenant.phoneNo} />
-          <Row label="Date of birth" value={formatDate(tenant.dob)} />
-          <Row label="Joining date" value={formatDate(tenant.joiningDate)} />
-          {tenant.leaveDate ? <Row label="Leave date" value={formatDate(tenant.leaveDate)} /> : null}
-        </Section>
+                  {canteen ? (
+                    <View
+                      style={styles.canteenBadge}
+                    >
+                      <Utensils
+                        size={12}
+                        color={UI.orange}
+                      />
 
-        <Section title="Unit assignment">
-          <Row label="Type" value={typeLabel} />
-          <Row label={isShop || isResidentialRoom ? "Building" : "Hostel/building"} value={tenant.category} />
-          <Row label="Wing/block" value={tenant.wingName} />
-          <Row label="Floor" value={tenant.floorNo} />
-          <Row label={isShop ? "Shop" : isResidentialRoom ? "Flat/room" : "Room"} value={tenant.roomNo} />
-          {!isShop && !isResidentialRoom && !isPrimaryUnitSlot(tenant.bedNo) ? <Row label="Bed number" value={tenant.bedNo} /> : null}
-          {!isShop && !isResidentialRoom && canteenEnabled ? <Row label="Canteen" value={tenant.hasCanteen ? "Taken" : "Not taken"} /> : null}
-          {!isShop && !isResidentialRoom && canteenEnabled && tenant.hasCanteen ? <Row label="Canteen plan" value={canteenPlanLabel(tenant.canteenPlanType)} /> : null}
-          {!isShop && !isResidentialRoom && canteenEnabled && tenant.hasCanteen && tenant.canteenMonthlyAmount ? <Row label="Canteen monthly" value={money(tenant.canteenMonthlyAmount)} /> : null}
-          <Row label="Display unit" value={formatTenantUnit(tenant)} />
-        </Section>
-
-        <Section title="Financial information">
-          <Row label="Monthly rent" value={money(tenant.baseRent)} />
-          <Row label="Deposit" value={money(tenant.depositAmount)} />
-          <Row label="Payment cycle" value={tenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid - joining cycle paid" : "Normal cycle - payable after month completes"} />
-          <Row label="First rent month" value={tenant.firstRentMonth} />
-          <Row label="Recorded payments" value={Array.isArray(tenant.rents) ? tenant.rents.length : 0} />
-        </Section>
-
-        <Section title="Rent history">
-          {!tenant.rents?.length ? <Text style={styles.noDocuments}>No rent payments recorded.</Text> : null}
-          {[...(tenant.rents || [])].sort((a, b) => monthTime(b.month) - monthTime(a.month)).map((rent) => {
-            const dueMonth = (due.dueMonths || []).find((month) => month.month === rent.month);
-            const summary = rentSummary.get(rent.month);
-            const expected = Number(dueMonth?.expected ?? summary?.expected ?? rent.rentAmount ?? tenant.baseRent ?? 0);
-            const paid = Number(summary?.paid ?? rent.rentAmount ?? 0);
-            const canteenExpected = Number(summary?.canteenExpected || 0);
-            const canteenPaid = Number(summary?.canteenPaid ?? rent.canteenAmount ?? 0);
-            const totalExpected = Number(summary?.totalExpected ?? expected + canteenExpected);
-            const totalPaid = Number(summary?.totalPaid ?? rent.totalAmount ?? paid + canteenPaid);
-            const mealCounts = summary?.canteenMealCounts || {};
-            const status = totalPaid >= totalExpected ? "Paid" : totalPaid > 0 ? "Partial" : "Pending";
-            const transactions = Array.isArray(rent.payments) && rent.payments.length ? rent.payments : [{ amount: paid, date: rent.date, paymentMode: rent.paymentMode, utr: rent.utr, note: rent.note }];
-            return (
-              <View key={rent._id || rent.month} style={styles.rentMonth}>
-                <View style={styles.rentHeader}>
-                  <View style={styles.rentHeaderText}><Text style={styles.rentMonthName} numberOfLines={1}>{rent.month}</Text><Text style={styles.rentBalance} numberOfLines={2}>Rent {money(paid)}{canteenPaid || canteenExpected ? ` | Canteen ${money(canteenPaid)}` : ""} | Balance {money(Math.max(totalExpected - totalPaid, 0))}</Text></View>
-                  <View style={[styles.rentStatus, status === "Partial" && styles.rentPartial]}><Text style={[styles.rentStatusText, status === "Partial" && styles.rentPartialText]}>{status}</Text></View>
-                </View>
-                {canteenExpected ? (
-                  <Text style={styles.canteenHistoryMeta}>
-                    Canteen charge {money(canteenExpected)} | Breakfast {mealCounts.breakfast || 0}, Lunch {mealCounts.lunch || 0}, Dinner {mealCounts.dinner || 0}
-                    {summary?.canteenPresentDays ? ` | Charged ${summary.canteenPresentDays}/${summary.canteenDaysInMonth} days` : ""}
-                  </Text>
-                ) : null}
-                {transactions.map((payment, index) => (
-                  <View key={payment._id || `${rent.month}-${index}`} style={styles.transaction}>
-                    <View style={styles.transactionMain}>
-                      <Text style={styles.transactionAmount}>{money(payment.amount)}</Text>
-                      <Text style={styles.transactionMeta}>{formatDate(payment.date)} | {payment.paymentMode || "Cash"}</Text>
-                      {Number(payment.canteenAmount || 0) > 0 ? <Text style={styles.transactionMeta}>Rent {money(payment.rentAmount)} + Canteen {money(payment.canteenAmount)}</Text> : null}
+                      <Text
+                        style={
+                          styles.canteenBadgeText
+                        }
+                      >
+                        Canteen
+                      </Text>
                     </View>
-                  <View style={styles.transactionActions}><Pressable accessibilityLabel="Payment receipt" onPress={() => router.push({ pathname: "/system/payment-receipt", params: { id: tenant._id, rentId: rent._id, paymentIndex: index, returnTo } })} style={[styles.editPayment, responsive.isTiny && styles.editPaymentTiny]}><FileDown size={15} color={colors.primary} /><Text style={styles.editPaymentText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Receipt</Text></Pressable><Pressable accessibilityLabel="Edit payment" onPress={() => router.push({ pathname: "/system/payment-edit", params: { id: tenant._id, rentId: rent._id, paymentIndex: index, returnTo } })} style={[styles.editPayment, responsive.isTiny && styles.editPaymentTiny]}><Pencil size={15} color={colors.primary} /><Text style={styles.editPaymentText} numberOfLines={1}>Edit</Text></Pressable></View>
-                    {payment.utr ? <Text style={styles.transactionRef}>UTR: {payment.utr}</Text> : null}
-                    {payment.note ? <Text style={styles.transactionNote}>{payment.note}</Text> : null}
+                  ) : null}
+
+                  <View style={styles.cycleBadge}>
+
+                    {advance ? (
+                      <Check
+                        size={12}
+                        color={UI.primaryDark}
+                      />
+                    ) : null}
+
+                    <Text
+                      style={styles.cycleBadgeText}
+                    >
+                      {advance
+                        ? "Advance paid"
+                        : "Normal cycle"}
+                    </Text>
+                  </View>
+
+                </View>
+
+              </View>
+
+              <View
+                style={[
+                  styles.activeBadge,
+                  tenant.leaveDate &&
+                    styles.leavingBadge,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.activeDot,
+                    tenant.leaveDate &&
+                      styles.leavingDot,
+                  ]}
+                />
+
+                <Text
+                  style={[
+                    styles.activeText,
+                    tenant.leaveDate &&
+                      styles.leavingText,
+                  ]}
+                >
+                  {tenant.leaveDate
+                    ? "Leaving"
+                    : "Active"}
+                </Text>
+              </View>
+
+            </View>
+
+            {/* PROPERTY STATS */}
+
+            <View style={styles.quickStats}>
+
+              <View style={styles.quickStat}>
+                <View style={styles.quickStatIconBlue}>
+                  <Building2
+                    size={17}
+                    color={UI.primaryDark}
+                  />
+                </View>
+
+                <Text style={styles.quickStatLabel}>
+                  Property
+                </Text>
+
+                <Text
+                  style={styles.quickStatValue}
+                  numberOfLines={2}
+                >
+                  {tenant.category ||
+                    "Property"}
+                </Text>
+              </View>
+
+              <View style={styles.quickDivider} />
+
+              <View style={styles.quickStat}>
+                <View style={styles.quickStatIconOrange}>
+                  <BedDouble
+                    size={17}
+                    color={UI.orange}
+                  />
+                </View>
+
+                <Text style={styles.quickStatLabel}>
+                  Room / Bed
+                </Text>
+
+                <Text
+                  style={styles.quickStatValue}
+                  numberOfLines={2}
+                >
+                  {unitText(tenant)}
+                </Text>
+              </View>
+
+              <View style={styles.quickDivider} />
+
+              <View style={styles.quickStat}>
+                <View style={styles.quickStatIconPurple}>
+                  <CalendarDays
+                    size={17}
+                    color={UI.purple}
+                  />
+                </View>
+
+                <Text style={styles.quickStatLabel}>
+                  Joined
+                </Text>
+
+                <Text
+                  style={styles.quickStatValue}
+                  numberOfLines={2}
+                >
+                  {formatDate(
+                    tenant.joiningDate ||
+                      tenant.createdAt
+                  )}
+                </Text>
+              </View>
+
+            </View>
+
+          </View>
+
+          {/* =============================================
+              QUICK ACTIONS
+          ============================================= */}
+
+          <View style={styles.quickActions}>
+
+            <Pressable
+              onPress={callTenant}
+              disabled={!phone}
+              style={[
+                styles.quickAction,
+                styles.quickActionCall,
+                !phone && styles.disabled,
+              ]}
+            >
+              <View style={styles.quickActionIconGreen}>
+                <Phone
+                  size={18}
+                  color={UI.green}
+                />
+              </View>
+
+              <Text style={styles.quickActionText}>
+                Call
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={messageTenant}
+              disabled={!phone}
+              style={[
+                styles.quickAction,
+                styles.quickActionMessage,
+                !phone && styles.disabled,
+              ]}
+            >
+              <View style={styles.quickActionIconBlue}>
+                <MessageCircle
+                  size={18}
+                  color={UI.primaryDark}
+                />
+              </View>
+
+              <Text style={styles.quickActionText}>
+                Message
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() =>
+                setActiveTab("payments")
+              }
+              style={[
+                styles.quickAction,
+                styles.quickActionRent,
+              ]}
+            >
+              <View style={styles.quickActionIconOrange}>
+                <ReceiptText
+                  size={18}
+                  color={UI.orange}
+                />
+              </View>
+
+              <Text style={styles.quickActionText}>
+                Rent
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={shareTenant}
+              style={[
+                styles.quickAction,
+                styles.quickActionShare,
+              ]}
+            >
+              <View style={styles.quickActionIconPurple}>
+                <Share2
+                  size={18}
+                  color={UI.purple}
+                />
+              </View>
+
+              <Text style={styles.quickActionText}>
+                Share
+              </Text>
+            </Pressable>
+
+          </View>
+
+          {/* =============================================
+              TAB BAR
+          ============================================= */}
+
+          <View style={styles.tabs}>
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+
+              const active =
+                activeTab === tab.key;
+
+              return (
+                <Pressable
+                  key={tab.key}
+                  onPress={() =>
+                    setActiveTab(tab.key)
+                  }
+                  style={[
+                    styles.tab,
+                    active &&
+                      styles.tabActive,
+                  ]}
+                >
+                  <Icon
+                    size={16}
+                    color={
+                      active
+                        ? UI.primaryDark
+                        : UI.muted
+                    }
+                  />
+
+                  <Text
+                    style={[
+                      styles.tabText,
+                      active &&
+                        styles.tabTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* =============================================
+              OVERVIEW
+          ============================================= */}
+
+          {activeTab === "overview" ? (
+            <>
+
+              {/* PERSONAL INFORMATION */}
+
+              <View
+                style={[
+                  styles.sectionCard,
+                  styles.sectionCardBlue,
+                ]}
+              >
+                <SectionHeader
+                  icon={UserRound}
+                  title="Personal Information"
+                  subtitle="Basic tenant and contact details"
+                  action="Edit"
+                  onAction={editTenant}
+                  tone="blue"
+                />
+
+                <View style={styles.sectionBody}>
+                  <InfoRow
+                    label="Full Name"
+                    value={toDisplayName(
+                      tenant.name
+                    )}
+                  />
+
+                  <InfoRow
+                    label="Phone Number"
+                    value={
+                      phone
+                        ? `+91 ${phone}`
+                        : "-"
+                    }
+                  />
+
+                  <InfoRow
+                    label="Email"
+                    value={
+                      tenant.email || "-"
+                    }
+                  />
+
+                  <InfoRow
+                    label="Date of Birth"
+                    value={formatDate(
+                      tenant.dob ||
+                        tenant.dateOfBirth
+                    )}
+                  />
+
+                  <InfoRow
+                    label="Emergency Contact"
+                    value={
+                      tenant.emergencyContact ||
+                      tenant.relative1Phone ||
+                      "-"
+                    }
+                  />
+
+                  <InfoRow
+                    label="Address"
+                    value={
+                      tenant.address || "-"
+                    }
+                    last
+                  />
+                </View>
+              </View>
+
+              {/* STAY INFORMATION */}
+
+              <View
+                style={[
+                  styles.sectionCard,
+                  styles.sectionCardPurple,
+                ]}
+              >
+                <SectionHeader
+                  icon={Home}
+                  title="Stay Information"
+                  subtitle="Property, rent and occupancy details"
+                  action="Edit"
+                  onAction={editTenant}
+                  tone="purple"
+                />
+
+                <View style={styles.sectionBody}>
+
+                  <InfoRow
+                    label="Property"
+                    value={
+                      tenant.category || "-"
+                    }
+                  />
+
+                  {tenant.wingName ? (
+                    <InfoRow
+                      label="Wing"
+                      value={
+                        tenant.wingName
+                      }
+                    />
+                  ) : null}
+
+                  <InfoRow
+                    label={
+                      propertyType(tenant) ===
+                      "shop"
+                        ? "Shop No."
+                        : "Room No."
+                    }
+                    value={roomNumber(
+                      tenant
+                    )}
+                  />
+
+                  {propertyType(tenant) ===
+                  "bed" ? (
+                    <InfoRow
+                      label="Bed No."
+                      value={
+                        tenant.bedNo || "-"
+                      }
+                    />
+                  ) : null}
+
+                  <InfoRow
+                    label="Joining Date"
+                    value={formatDate(
+                      tenant.joiningDate
+                    )}
+                  />
+
+                  <InfoRow
+                    label="Leave Date"
+                    value={formatDate(
+                      tenant.leaveDate
+                    )}
+                  />
+
+                  <InfoRow
+                    label="Deposit"
+                    value={money(
+                      tenant.depositAmount
+                    )}
+                  />
+
+                  <InfoRow
+                    label="Monthly Rent"
+                    value={money(
+                      tenant.baseRent
+                    )}
+                    last
+                  />
+
+                </View>
+              </View>
+
+              {/* CANTEEN */}
+
+              {propertyType(tenant) === "bed" ? (
+                <View
+                  style={[
+                    styles.sectionCard,
+                    styles.sectionCardOrange,
+                  ]}
+                >
+                  <SectionHeader
+                    icon={Utensils}
+                    title="Additional Services"
+                    subtitle="Services enabled for this tenant"
+                    tone="orange"
+                  />
+
+                  <View
+                    style={[
+                      styles.serviceRow,
+                      canteen
+                        ? styles.serviceRowActive
+                        : styles.serviceRowInactive,
+                    ]}
+                  >
+
+                    <View style={styles.serviceIcon}>
+                      <Utensils
+                        size={20}
+                        color={
+                          canteen
+                            ? UI.orange
+                            : UI.muted
+                        }
+                      />
+                    </View>
+
+                    <View style={styles.serviceCopy}>
+                      <Text style={styles.serviceTitle}>
+                        Canteen
+                      </Text>
+
+                      <Text style={styles.serviceSubtitle}>
+                        Breakfast / lunch / dinner service
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.serviceStatus,
+                        canteen
+                          ? styles.serviceEnabled
+                          : styles.serviceDisabled,
+                      ]}
+                    >
+                      {canteen ? (
+                        <Check
+                          size={12}
+                          color={UI.green}
+                        />
+                      ) : null}
+
+                      <Text
+                        style={[
+                          styles.serviceStatusText,
+                          canteen
+                            ? styles.serviceEnabledText
+                            : styles.serviceDisabledText,
+                        ]}
+                      >
+                        {canteen
+                          ? "Enabled"
+                          : "Not enabled"}
+                      </Text>
+                    </View>
+
+                  </View>
+                </View>
+              ) : null}
+
+              {/* RECENT PAYMENTS */}
+
+              <View
+                style={[
+                  styles.sectionCard,
+                  styles.sectionCardGreen,
+                ]}
+              >
+                <View style={styles.sectionHeader}>
+
+                  <View style={styles.sectionTitleWrap}>
+
+                    <View
+                      style={[
+                        styles.sectionIcon,
+                        styles.sectionIconGreen,
+                      ]}
+                    >
+                      <ReceiptText
+                        size={17}
+                        color={UI.green}
+                      />
+                    </View>
+
+                    <View style={styles.sectionHeadingCopy}>
+                      <Text style={styles.sectionTitle}>
+                        Recent Payments
+                      </Text>
+
+                      <Text style={styles.sectionSubtitle}>
+                        Latest rent payment transactions
+                      </Text>
+                    </View>
+
+                  </View>
+
+                  <Pressable
+                    onPress={() =>
+                      setActiveTab("payments")
+                    }
+                    style={styles.viewAllButton}
+                  >
+                    <Text style={styles.viewAllText}>
+                      View all
+                    </Text>
+
+                    <ChevronRight
+                      size={15}
+                      color={UI.primary}
+                    />
+                  </Pressable>
+
+                </View>
+
+                <View style={styles.simpleList}>
+
+                  {payments
+                    .slice(0, 3)
+                    .map((payment) => (
+                      <View
+                        key={payment.key}
+                        style={styles.paymentCard}
+                      >
+
+                        <View style={styles.paymentIcon}>
+                          <ReceiptText
+                            size={17}
+                            color={UI.green}
+                          />
+                        </View>
+
+                        <View style={styles.paymentMain}>
+                          <Text style={styles.paymentMonth}>
+                            {payment.month}
+                          </Text>
+
+                          <Text style={styles.paymentDate}>
+                            {formatDate(
+                              payment.date
+                            )}
+                          </Text>
+                        </View>
+
+                        <View style={styles.paymentRight}>
+                          <Text style={styles.paymentAmount}>
+                            {money(
+                              payment.amount
+                            )}
+                          </Text>
+
+                          <View style={styles.paidBadge}>
+                            <Check
+                              size={10}
+                              color={UI.green}
+                            />
+
+                            <Text style={styles.paidBadgeText}>
+                              Paid
+                            </Text>
+                          </View>
+                        </View>
+
+                      </View>
+                    ))}
+
+                  {!payments.length ? (
+                    <View style={styles.emptyBox}>
+                      <ReceiptText
+                        size={22}
+                        color={UI.subtle}
+                      />
+
+                      <Text style={styles.emptyText}>
+                        No rent payments recorded yet.
+                      </Text>
+                    </View>
+                  ) : null}
+
+                </View>
+              </View>
+
+            </>
+          ) : null}
+
+          {/* =============================================
+              PAYMENTS TAB
+          ============================================= */}
+
+          {activeTab === "payments" ? (
+            <View
+              style={[
+                styles.sectionCard,
+                styles.sectionCardGreen,
+              ]}
+            >
+              <SectionHeader
+                icon={ReceiptText}
+                title="Payment History"
+                subtitle={`${payments.length} payment transaction${
+                  payments.length === 1
+                    ? ""
+                    : "s"
+                }`}
+                tone="green"
+              />
+
+              <View style={styles.simpleList}>
+
+                {payments.map(
+                  (payment) => (
+                    <View
+                      key={payment.key}
+                      style={styles.paymentCard}
+                    >
+
+                      <View style={styles.paymentIcon}>
+                        <ReceiptText
+                          size={17}
+                          color={UI.green}
+                        />
+                      </View>
+
+                      <View style={styles.paymentMain}>
+                        <Text style={styles.paymentMonth}>
+                          {payment.month}
+                        </Text>
+
+                        <Text style={styles.paymentDate}>
+                          {formatDate(
+                            payment.date
+                          )}
+                          {" · "}
+                          {payment.paymentMode}
+                        </Text>
+                      </View>
+
+                      <View style={styles.paymentRight}>
+                        <Text style={styles.paymentAmount}>
+                          {money(
+                            payment.amount
+                          )}
+                        </Text>
+
+                        <View style={styles.paidBadge}>
+                          <Check
+                            size={10}
+                            color={UI.green}
+                          />
+
+                          <Text style={styles.paidBadgeText}>
+                            Paid
+                          </Text>
+                        </View>
+                      </View>
+
+                    </View>
+                  )
+                )}
+
+                {!payments.length ? (
+                  <View style={styles.emptyBox}>
+                    <ReceiptText
+                      size={24}
+                      color={UI.subtle}
+                    />
+
+                    <Text style={styles.emptyTitle}>
+                      No payments yet
+                    </Text>
+
+                    <Text style={styles.emptyText}>
+                      Rent payments will appear here once they are recorded.
+                    </Text>
+                  </View>
+                ) : null}
+
+              </View>
+            </View>
+          ) : null}
+
+          {/* =============================================
+              DOCUMENTS
+          ============================================= */}
+
+          {activeTab === "documents" ? (
+            <View
+              style={[
+                styles.sectionCard,
+                styles.sectionCardBlue,
+              ]}
+            >
+              <SectionHeader
+                icon={FileText}
+                title="Documents"
+                subtitle={`${documents.length} uploaded document${
+                  documents.length === 1
+                    ? ""
+                    : "s"
+                }`}
+                tone="blue"
+              />
+
+              <View style={styles.simpleList}>
+
+                {documents.map(
+                  (document, index) => (
+                    <View
+                      key={
+                        document?._id ||
+                        document?.url ||
+                        index
+                      }
+                      style={styles.documentCard}
+                    >
+
+                      <View style={styles.documentIcon}>
+                        <FileText
+                          size={18}
+                          color={UI.primaryDark}
+                        />
+                      </View>
+
+                      <View style={styles.documentCopy}>
+
+                        <Text
+                          style={styles.documentTitle}
+                          numberOfLines={1}
+                        >
+                          {document?.documentType ||
+                            document?.relation ||
+                            document?.fileName ||
+                            `Document ${
+                              index + 1
+                            }`}
+                        </Text>
+
+                        <Text style={styles.documentMeta}>
+                          {document?.createdAt
+                            ? `Uploaded · ${formatDate(
+                                document.createdAt
+                              )}`
+                            : "Uploaded document"}
+                        </Text>
+
+                      </View>
+
+                      <View style={styles.availableBadge}>
+                        <ShieldCheck
+                          size={12}
+                          color={UI.green}
+                        />
+
+                        <Text style={styles.availableText}>
+                          Available
+                        </Text>
+                      </View>
+
+                    </View>
+                  )
+                )}
+
+                {!documents.length ? (
+                  <View style={styles.emptyBox}>
+                    <FileText
+                      size={24}
+                      color={UI.subtle}
+                    />
+
+                    <Text style={styles.emptyTitle}>
+                      No documents
+                    </Text>
+
+                    <Text style={styles.emptyText}>
+                      Uploaded tenant documents will appear here.
+                    </Text>
+                  </View>
+                ) : null}
+
+              </View>
+            </View>
+          ) : null}
+
+          {/* =============================================
+              NOTES
+          ============================================= */}
+
+          {activeTab === "notes" ? (
+            <View
+              style={[
+                styles.sectionCard,
+                styles.sectionCardPurple,
+              ]}
+            >
+              <SectionHeader
+                icon={StickyNote}
+                title="Notes"
+                subtitle="Internal remarks and tenant information"
+                tone="purple"
+              />
+
+              <View style={styles.simpleList}>
+
+                {notes.map((note) => (
+                  <View
+                    key={note.key}
+                    style={styles.noteCard}
+                  >
+                    <View style={styles.noteIcon}>
+                      <StickyNote
+                        size={16}
+                        color={UI.purple}
+                      />
+                    </View>
+
+                    <View style={styles.noteCopy}>
+                      <Text style={styles.noteText}>
+                        {note.text}
+                      </Text>
+
+                      {note.date ? (
+                        <Text style={styles.noteDate}>
+                          {formatDate(
+                            note.date
+                          )}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
                 ))}
+
+                {!notes.length ? (
+                  <View style={styles.emptyBox}>
+                    <StickyNote
+                      size={24}
+                      color={UI.subtle}
+                    />
+
+                    <Text style={styles.emptyTitle}>
+                      No notes added
+                    </Text>
+
+                    <Text style={styles.emptyText}>
+                      Tenant remarks or notes will appear here.
+                    </Text>
+                  </View>
+                ) : null}
+
               </View>
-            );
-          })}
-        </Section>
+            </View>
+          ) : null}
 
-        <Section title="Permanent address">
-          <Row label="Complete address" value={address} />
-          <Row label="House number" value={tenant.houseNo} />
-          <Row label="Nearby place" value={tenant.nearbyPlace} />
-          <Row label="City" value={tenant.city} />
-          <Row label="State" value={tenant.state} />
-          <Row label="Pincode" value={tenant.pincode} />
-        </Section>
+          {/* =============================================
+              BOTTOM ACTIONS
+          ============================================= */}
 
-        {!isResidentialRoom && !isShop ? (
-          <Section title="Emergency contacts">
-            <Text style={styles.contactTitle}>First contact</Text>
-            <Row label="Relation" value={tenant.relative1Relation} />
-            <Row label="Name" value={tenant.relative1Name} />
-            <Row label="Phone" value={tenant.relative1Phone} />
-            <Text style={styles.contactTitle}>Second contact</Text>
-            <Row label="Relation" value={tenant.relative2Relation} />
-            <Row label="Name" value={tenant.relative2Name} />
-            <Row label="Phone" value={tenant.relative2Phone} />
-          </Section>
-        ) : null}
+          <View style={styles.bottomActions}>
 
-        {isResidentialRoom ? (
-          <Section title="Family and work">
-            <Row label="Family members" value={tenant.familyMembers} />
-            <Row label="Company/college" value={tenant.companyAddress} />
-            <Row label="Joining date" value={formatDate(tenant.dateOfJoiningCollege)} />
-          </Section>
-        ) : isShop ? (
-          <Section title="Shop details">
-            <Row label="Shop name" value={tenant.shopName} />
-            <Row label="Shop work/business" value={tenant.shopBusiness} />
-          </Section>
-        ) : (
-          <Section title="Work or education">
-            <Row label="Company/college" value={tenant.companyAddress} />
-            <Row label="Joining date" value={formatDate(tenant.dateOfJoiningCollege)} />
-          </Section>
-        )}
+            <Pressable
+              onPress={markLeaving}
+              style={styles.leaveButton}
+            >
+              <View style={styles.leaveButtonIcon}>
+                <ArrowLeft
+                  size={16}
+                  color={UI.red}
+                />
+              </View>
 
-        <Section title="Documents">
-          <View style={[styles.documentSummary, documentStatus.complete ? styles.documentSummaryComplete : styles.documentSummaryMissing]}>
-            <View>
-              <Text style={[styles.documentSummaryTitle, documentStatus.complete ? styles.documentSummaryTitleComplete : styles.documentSummaryTitleMissing]}>
-                {documentStatus.complete ? "Required documents complete" : `${documentStatus.missing.length} required document${documentStatus.missing.length === 1 ? "" : "s"} missing`}
+              <Text style={styles.leaveButtonText}>
+                Mark Leaving
               </Text>
-              <Text style={styles.documentSummaryMeta}>{documentStatus.uploadedCount} of {documentStatus.requiredCount} required documents uploaded</Text>
-            </View>
-            <Pressable onPress={() => router.push({ pathname: "/system/tenant-edit", params: { id: tenant._id, returnTo } })} style={styles.documentEditButton}>
-              <Text style={styles.documentEditText}>{documentStatus.complete ? "Replace" : "Add"}</Text>
             </Pressable>
+
+            <Pressable
+              onPress={editTenant}
+              style={styles.editButton}
+            >
+              <Pencil
+                size={17}
+                color="#FFFFFF"
+              />
+
+              <Text style={styles.editButtonText}>
+                Edit Tenant
+              </Text>
+            </Pressable>
+
           </View>
-          <View style={styles.requiredDocuments}>
-            {documentStatus.required.map((item) => (
-              <View key={item.relation} style={styles.requiredDocumentRow}>
-                {item.uploaded ? <CheckCircle2 size={16} color={colors.success} /> : <XCircle size={16} color={colors.danger} />}
-                <Text style={[styles.requiredDocumentText, !item.uploaded && styles.requiredDocumentMissing]}>{item.label}</Text>
-              </View>
-            ))}
-          </View>
-          {!documents.length ? <Text style={styles.noDocuments}>No documents uploaded.</Text> : null}
-          <View style={styles.documentGrid}>
-            {documents.map((document, index) => (
-              <Pressable
-                key={document._id || `${document.relation}-${index}`}
-                onPress={() => (document.url || document.filePath) && router.push({
-                  pathname: "/system/document-preview",
-                  params: {
-                    url: document.url || document.filePath,
-                    title: document.relation || "Document",
-                    fileName: document.fileName || document.storedName || document.relation || "document",
-                    returnTo: `/system/tenant-details?id=${tenant._id}&returnTo=${encodeURIComponent(String(returnTo))}`,
-                  },
-                })}
-                disabled={!document.url && !document.filePath}
-                style={styles.document}
-              >
-                {document.url || document.filePath ? <Image source={{ uri: document.url || document.filePath }} style={styles.documentImage} contentFit="cover" transition={150} /> : <View style={styles.documentPlaceholder}><FileText size={27} color={colors.muted} /></View>}
-                <View style={styles.documentFooter}>
-                  <View style={styles.documentText}>
-                    <Text style={styles.documentTitle} numberOfLines={1}>{document.relation || "Document"}</Text>
-                    <Text style={styles.documentMeta} numberOfLines={1}>{document.fileName || document.storedName || (document.url ? "Tap to preview" : "Missing file")}</Text>
-                  </View>
-                  {document.url || document.filePath ? <ExternalLink size={15} color={colors.primary} /> : null}
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        </Section>
-      </ScrollView>
-      <Modal transparent visible={historyVisible} animationType="fade" onRequestClose={() => setHistoryVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.historyModalCard}>
-            <Text style={styles.modalTitle}>Tenant history</Text>
-            <Text style={styles.modalText}>
-              {tenant.name} | {formatTenantUnit(tenant)} | Joined {formatDate(tenant.joiningDate)}
-            </Text>
-            <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyContent} showsVerticalScrollIndicator={false}>
-              <View style={styles.historySection}>
-                <Text style={styles.historyTitle}>Rent payment history</Text>
-                {paymentHistory.length ? (
-                  <View style={styles.historyTable}>
-                    <View style={styles.historyTableHeader}>
-                      <Text style={[styles.historyHeaderCell, styles.historyHeaderMonth]}>Month</Text>
-                      <Text style={[styles.historyHeaderCell, styles.historyHeaderDate]}>Date / Mode</Text>
-                      <Text style={[styles.historyHeaderCell, styles.historyHeaderAmount]}>Amount</Text>
-                    </View>
-                    {paymentHistory.map((entry) => (
-                      <View key={entry.key} style={styles.historyTableRow}>
-                        <View style={styles.historyMonthCell}>
-                          <Text style={styles.historyCellPrimary}>{entry.month}</Text>
-                          <Text style={styles.historyCellSecondary} numberOfLines={1}>UTR: {entry.utr}</Text>
-                        </View>
-                        <View style={styles.historyDateCell}>
-                          <Text style={styles.historyCellPrimary}>{entry.date}</Text>
-                          <Text style={styles.historyCellSecondary}>{entry.mode}</Text>
-                        </View>
-                        <View style={styles.historyAmountCell}>
-                          <Text style={styles.historyCellAmount}>{entry.amount}</Text>
-                          {entry.canteenAmount ? <Text style={styles.historyCellSecondary}>Canteen: {entry.canteenAmount}</Text> : null}
-                        </View>
-                        {entry.note !== "-" ? <Text style={styles.historyRowNote}>Note: {entry.note}</Text> : null}
-                      </View>
-                    ))}
-                  </View>
-                ) : <Text style={styles.historyEmpty}>No rent history found.</Text>}
-              </View>
-              <View style={styles.historySection}>
-                <Text style={styles.historyTitle}>Room / rent movement history</Text>
-                {movementHistory.length ? (
-                  <View style={styles.historyTable}>
-                    <View style={styles.historyTableHeader}>
-                      <Text style={[styles.historyHeaderCell, styles.historyHeaderDate]}>Date</Text>
-                      <Text style={[styles.historyHeaderCell, styles.historyHeaderMove]}>Shift details</Text>
-                      <Text style={[styles.historyHeaderCell, styles.historyHeaderAmount]}>Rent</Text>
-                    </View>
-                    {movementHistory.map((entry) => (
-                      <View key={entry.key} style={styles.historyTableRow}>
-                        <View style={styles.historyDateCell}>
-                          <Text style={styles.historyCellPrimary}>{entry.effectiveFrom}</Text>
-                          <Text style={styles.historyCellSecondary}>{entry.source}</Text>
-                        </View>
-                        <View style={styles.historyMoveCell}>
-                          <Text style={styles.historyCellPrimary}>From: {entry.previousUnit}</Text>
-                          <Text style={styles.historyCellSecondary}>To: {entry.newUnit}</Text>
-                        </View>
-                        <View style={styles.historyAmountCell}>
-                          <Text style={styles.historyCellAmount}>{entry.rent}</Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                ) : <Text style={styles.historyEmpty}>No room or rent movement recorded yet.</Text>}
-              </View>
-            </ScrollView>
-            <View style={styles.modalActions}>
-              <Pressable onPress={() => setHistoryVisible(false)} style={styles.cancelButton}>
-                <Text style={styles.cancelText}>Close</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      <Modal transparent visible={deleteModalVisible} animationType="fade" onRequestClose={() => !deleting && setDeleteModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Delete tenant?</Text>
-            <Text style={styles.modalText}>This permanently removes {tenant.name}. A backup copy is kept in deleted records.</Text>
-            <Text style={styles.modalLabel}>Delete password</Text>
-            <TextInput
-              value={deletePassword}
-              onChangeText={setDeletePassword}
-              secureTextEntry
-              autoCapitalize="none"
-              placeholder="Enter password"
-              style={styles.passwordInput}
-              editable={!deleting}
-            />
-            <View style={styles.modalActions}>
-              <Pressable disabled={deleting} onPress={() => { setDeleteModalVisible(false); setDeletePassword(""); }} style={styles.cancelButton}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable disabled={deleting} onPress={confirmDeleteTenant} style={[styles.deleteButton, deleting && styles.actionDisabled]}>
-                {deleting ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.deleteText}>Delete tenant</Text>}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+
+        </ScrollView>
+
+      </View>
     </View>
   );
 }
 
+/* ============================================================
+   STYLES
+============================================================ */
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  header: { width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: 14, paddingVertical: 12, flexDirection: "row", alignItems: "center", backgroundColor: colors.surface },
-  iconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  headerText: { flex: 1, marginLeft: 4 },
-  title: { color: colors.text, fontSize: 23, fontWeight: "800" },
-  subtitle: { marginTop: 2, color: colors.muted, fontSize: 12 },
-  headerAction: { height: 42, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 14, backgroundColor: colors.primary },
-  headerActionText: { color: colors.surface, fontSize: 13, fontWeight: "700" },
-  content: { width: "100%", maxWidth: 720, alignSelf: "center", padding: 18, paddingBottom: 40, gap: 12 },
-  heroCard: { padding: 16, borderRadius: 22, backgroundColor: colors.deep, ...(colors.shadow ? {} : {}) },
-  heroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
-  heroIdentity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
-  heroAvatar: { width: 84, height: 84, borderRadius: 26, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.18)" },
-  heroAvatarImage: { width: "100%", height: "100%" },
-  heroAvatarFallback: { flex: 1, alignItems: "center", justifyContent: "center" },
-  heroText: { flex: 1, minWidth: 0, marginLeft: 14 },
-  heroName: { color: colors.surface, fontSize: 18, fontWeight: "900" },
-  heroBadgeRow: { marginTop: 6, flexDirection: "row", gap: 6 },
-  heroCycleBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden", backgroundColor: colors.soft, color: colors.mid, fontSize: 11, fontWeight: "900" },
-  heroCanteenBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden", backgroundColor: colors.soft, color: colors.mid, fontSize: 11, fontWeight: "900" },
-  heroUnit: { marginTop: 8, color: "#F1F6FA", fontSize: 15, fontWeight: "700" },
-  heroPhone: { marginTop: 8, color: "#DCEAF4", fontSize: 14, fontWeight: "700" },
-  metricCard: { padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOpacity: 0.08, shadowRadius: 13, shadowOffset: { width: 0, height: 7 }, elevation: 3 },
-  metricGrid: { gap: 12 },
-  metricCell: { width: "48%" },
-  metricCellWide: { width: "100%" },
-  metricLabel: { color: colors.muted, fontSize: 12, fontWeight: "800" },
-  metricValue: { marginTop: 5, color: colors.text, fontSize: 16, fontWeight: "900" },
-  metricValueAccent: { marginTop: 5, color: colors.warning, fontSize: 16, fontWeight: "900" },
-  metricTagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  metricTag: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, overflow: "hidden", backgroundColor: colors.soft, color: colors.mid, fontSize: 12, fontWeight: "800" },
-  avatar: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 24, backgroundColor: colors.primarySoft },
-  profileText: { flex: 1, minWidth: 0, marginLeft: 12 },
-  name: { color: colors.text, fontSize: 18, fontWeight: "700" },
-  phone: { marginTop: 4, color: colors.muted, fontSize: 13 },
-  status: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.successSoft },
-  statusText: { color: colors.success, fontSize: 12, fontWeight: "700" },
-  statusInactive: { backgroundColor: colors.dangerSoft },
-  statusInactiveText: { color: colors.danger },
-  actions: { minHeight: 62, flexDirection: "row", flexWrap: "nowrap", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
-  action: { flex: 1, minWidth: 0, minHeight: 58, paddingHorizontal: 2, alignItems: "center", justifyContent: "center", gap: 5, borderRightWidth: 1, borderRightColor: colors.surfaceSoft },
-  actionText: { width: "100%", color: colors.primary, fontSize: 10, fontWeight: "700", textAlign: "center" },
-  leaveText: { color: colors.warning },
-  archiveText: { color: colors.danger },
-  archiveButton: { minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderColor: colors.dangerSoft, borderRadius: 8, backgroundColor: colors.dangerSoft },
-  archiveButtonText: { color: colors.danger, fontSize: 12, fontWeight: "800" },
-  actionDisabled: { opacity: 0.4 },
-  dueSection: { padding: 14, borderWidth: 1, borderColor: colors.dangerSoft, borderRadius: 18, backgroundColor: colors.dangerSoft },
-  dueClear: { borderColor: colors.successSoft, backgroundColor: colors.successSoft },
-  dueHeader: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  dueLabel: { color: colors.danger, fontSize: 15, fontWeight: "700" },
-  dueHint: { marginTop: 3, color: colors.muted, fontSize: 11 },
-  dueAmount: { color: colors.danger, fontSize: 18, fontWeight: "700", flexShrink: 0 },
-  dueClearText: { color: colors.success },
-  dueMonthRow: { minHeight: 48, marginTop: 9, paddingTop: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, borderTopWidth: 1, borderTopColor: colors.dangerSoft },
-  dueMonthInfo: { flex: 1, minWidth: 0 },
-  dueMonthName: { color: colors.danger, fontSize: 12, fontWeight: "700" },
-  dueMonthMeta: { marginTop: 3, color: colors.muted, fontSize: 11 },
-  dueMonthAmount: { flexShrink: 0, maxWidth: "42%", color: colors.danger, fontSize: 12, fontWeight: "700", textAlign: "right" },
-  section: { padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
-  sectionTitle: { marginBottom: 9, color: colors.text, fontSize: 18, fontWeight: "800" },
-  row: { minHeight: 39, paddingVertical: 8, flexDirection: "row", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft },
-  rowLabel: { flexBasis: "42%", minWidth: 112, paddingRight: 10, color: colors.muted, fontSize: 13 },
-  rowValue: { flex: 1, color: colors.text, fontSize: 13, fontWeight: "600", textAlign: "right" },
-  contactTitle: { marginTop: 12, color: colors.primary, fontSize: 13, fontWeight: "700" },
-  rentMonth: { marginTop: 9, padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.card },
-  rentHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
-  rentHeaderText: { flex: 1, minWidth: 0 },
-  rentMonthName: { color: colors.text, fontWeight: "700" },
-  rentBalance: { marginTop: 4, color: colors.muted, fontSize: 12 },
-  rentStatus: { flexShrink: 0, maxWidth: 76, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, backgroundColor: colors.successSoft },
-  rentStatusText: { color: colors.success, fontSize: 11, fontWeight: "700" },
-  rentPartial: { backgroundColor: colors.warningSoft },
-  rentPartialText: { color: colors.warning },
-  canteenHistoryMeta: { marginTop: 8, color: colors.muted, fontSize: 11, fontWeight: "700", lineHeight: 16 },
-  transaction: { marginTop: 10, paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.surfaceSoft },
-  transactionMain: { alignItems: "flex-start", gap: 4 },
-  transactionActions: { width: "100%", marginTop: 9, flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  editPayment: { flex: 1, minWidth: 82, minHeight: 36, paddingHorizontal: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 6, backgroundColor: colors.primarySoft },
-  editPaymentTiny: { flexBasis: "31%" },
-  editPaymentText: { flexShrink: 1, color: colors.primary, fontSize: 10, fontWeight: "700", textAlign: "center" },
-  transactionAmount: { color: colors.muted, fontWeight: "700" },
-  transactionMeta: { color: colors.muted, fontSize: 11 },
-  transactionRef: { marginTop: 4, color: colors.primary, fontSize: 11 },
-  transactionNote: { marginTop: 4, color: colors.muted, fontSize: 11 },
-  noDocuments: { paddingVertical: 15, color: colors.muted, textAlign: "center" },
-  historyModalCard: { width: "100%", maxWidth: 520, maxHeight: "85%", padding: 18, borderRadius: 10, backgroundColor: colors.surface },
-  historyScroll: { maxHeight: 560 },
-  historyContent: { paddingBottom: 8 },
-  historySection: { marginTop: 14 },
-  historyTitle: { color: colors.text, fontSize: 16, fontWeight: "700", marginBottom: 10 },
-  historyTable: { overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface },
-  historyTableHeader: { minHeight: 42, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", backgroundColor: colors.primarySoft, borderBottomWidth: 1, borderBottomColor: colors.border },
-  historyHeaderCell: { color: colors.primary, fontSize: 11, fontWeight: "800" },
-  historyHeaderMonth: { flex: 1.05 },
-  historyHeaderDate: { flex: 1.05 },
-  historyHeaderMove: { flex: 1.4 },
-  historyHeaderAmount: { width: 96, textAlign: "right" },
-  historyTableRow: { paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft },
-  historyMonthCell: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 },
-  historyDateCell: { marginTop: 8 },
-  historyMoveCell: { marginTop: 8 },
-  historyAmountCell: { marginTop: 8, alignItems: "flex-end" },
-  historyCellPrimary: { color: colors.text, fontSize: 13, fontWeight: "700" },
-  historyCellSecondary: { marginTop: 3, color: colors.muted, fontSize: 11, fontWeight: "600" },
-  historyCellAmount: { color: colors.primary, fontSize: 13, fontWeight: "800" },
-  historyRowNote: { marginTop: 8, color: colors.muted, fontSize: 11, lineHeight: 16 },
-  historyEmpty: { color: colors.muted, fontSize: 13 },
-  documentSummary: { minHeight: 66, padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 14 },
-  documentSummaryComplete: { borderColor: colors.successSoft, backgroundColor: colors.successSoft },
-  documentSummaryMissing: { borderColor: colors.dangerSoft, backgroundColor: colors.dangerSoft },
-  documentSummaryTitle: { fontSize: 14, fontWeight: "800" },
-  documentSummaryTitleComplete: { color: colors.success },
-  documentSummaryTitleMissing: { color: colors.danger },
-  documentSummaryMeta: { marginTop: 4, color: colors.muted, fontSize: 11, fontWeight: "600" },
-  documentEditButton: { minHeight: 36, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: colors.primary },
-  documentEditText: { color: colors.surface, fontSize: 12, fontWeight: "800" },
-  requiredDocuments: { marginTop: 10, gap: 7 },
-  requiredDocumentRow: { minHeight: 34, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 7, backgroundColor: colors.surfaceSoft },
-  requiredDocumentText: { color: colors.muted, fontSize: 12, fontWeight: "700" },
-  requiredDocumentMissing: { color: colors.danger },
-  documentGrid: { marginTop: 8, flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  document: { flexGrow: 1, flexBasis: 150, minWidth: 140, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.surface },
-  documentImage: { width: "100%", aspectRatio: 1.45, backgroundColor: colors.surfaceSoft },
-  documentPlaceholder: { width: "100%", aspectRatio: 1.45, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSoft },
-  documentFooter: { minHeight: 52, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 7 },
-  documentText: { flex: 1, minWidth: 0 },
-  documentTitle: { color: colors.muted, fontSize: 12, fontWeight: "700" },
-  documentMeta: { marginTop: 3, color: colors.muted, fontSize: 10, fontWeight: "600" },
-  modalBackdrop: { flex: 1, padding: 22, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 23, 42, 0.45)" },
-  modalCard: { width: "100%", maxWidth: 420, padding: 18, borderRadius: 10, backgroundColor: colors.surface },
-  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "700" },
-  modalText: { marginTop: 8, color: colors.muted, fontSize: 13, lineHeight: 19 },
-  modalLabel: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 13, fontWeight: "700" },
-  passwordInput: { height: 48, paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
-  modalActions: { marginTop: 18, flexDirection: "row", justifyContent: "flex-end", gap: 10 },
-  cancelButton: { height: 44, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
-  cancelText: { color: colors.muted, fontWeight: "700" },
-  deleteButton: { height: 44, minWidth: 132, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.danger },
-  deleteText: { color: colors.surface, fontWeight: "700" },
-  error: { color: colors.danger, textAlign: "center" },
-  backText: { marginTop: 12, color: colors.primary, fontWeight: "700" },
+
+  screen: {
+    flex: 1,
+    backgroundColor: UI.screen,
+  },
+
+  content: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 760,
+    alignSelf: "center",
+    paddingHorizontal: 18,
+    paddingTop: 10,
+  },
+
+  /* ========================================================
+     LOADING
+  ======================================================== */
+
+  loading: {
+    flex: 1,
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: UI.screen,
+  },
+
+  loadingIcon: {
+    width: 58,
+    height: 58,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: UI.primarySoft,
+  },
+
+  loadingText: {
+    marginTop: 9,
+    color: UI.muted,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  error: {
+    color: UI.red,
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  backButtonLarge: {
+    marginTop: 14,
+    height: 42,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: UI.primaryDark,
+  },
+
+  backButtonLargeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  /* ========================================================
+     HEADER
+  ======================================================== */
+
+  header: {
+    minHeight: 58,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  headerButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: UI.border,
+    backgroundColor: UI.card,
+    ...lightShadow,
+  },
+
+  headerEditButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#C6D9E8",
+    backgroundColor: UI.primarySoft,
+  },
+
+  headerCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  headerTitle: {
+    color: UI.text,
+    fontSize: 26,
+    fontWeight: "900",
+  },
+
+  headerSubtitle: {
+    marginTop: 2,
+    color: UI.muted,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  scroll: {
+    flex: 1,
+  },
+
+  scrollContent: {
+    paddingBottom: 45,
+  },
+
+  /* ========================================================
+     PROFILE CARD
+  ======================================================== */
+
+  profileCard: {
+    overflow: "hidden",
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "#C9D9E6",
+    backgroundColor: UI.card,
+    ...mediumShadow,
+  },
+
+  profileTop: {
+    position: "relative",
+    minHeight: 112,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    overflow: "hidden",
+    backgroundColor: "#F0F6FA",
+  },
+
+  profileDecorCircleOne: {
+    position: "absolute",
+    width: 130,
+    height: 130,
+    top: -70,
+    right: -40,
+    borderRadius: 65,
+    backgroundColor: "#DFEDF6",
+  },
+
+  profileDecorCircleTwo: {
+    position: "absolute",
+    width: 80,
+    height: 80,
+    bottom: -55,
+    left: 85,
+    borderRadius: 40,
+    backgroundColor: "#E6F2F8",
+  },
+
+  avatar: {
+    width: 70,
+    height: 70,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 35,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    backgroundColor: "#DCEAF4",
+    ...mediumShadow,
+  },
+
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+
+  avatarText: {
+    color: UI.primaryDark,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+
+  profileCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 12,
+  },
+
+  profileName: {
+    color: UI.text,
+    fontSize: 19,
+    lineHeight: 23,
+    fontWeight: "900",
+  },
+
+  profilePhone: {
+    marginTop: 3,
+    color: UI.muted,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  badgeRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+
+  /* CANTEEN BADGE */
+
+  canteenBadge: {
+    minHeight: 27,
+    paddingHorizontal: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#F3C88E",
+    backgroundColor: "#FFF1DE",
+  },
+
+  canteenBadgeText: {
+    color: UI.orange,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  /* PAYMENT CYCLE */
+
+  cycleBadge: {
+    minHeight: 27,
+    paddingHorizontal: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#B7D0E2",
+    backgroundColor: "#E8F3FA",
+  },
+
+  cycleBadgeText: {
+    color: UI.primaryDark,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  /* ACTIVE */
+
+  activeBadge: {
+    alignSelf: "flex-start",
+    minHeight: 27,
+    paddingHorizontal: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#B9DFC9",
+    backgroundColor: "#EAF7F0",
+  },
+
+  activeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: UI.green,
+  },
+
+  activeText: {
+    color: UI.green,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  leavingBadge: {
+    borderColor: "#F1D0A2",
+    backgroundColor: UI.yellowSoft,
+  },
+
+  leavingDot: {
+    backgroundColor: UI.yellow,
+  },
+
+  leavingText: {
+    color: UI.yellow,
+  },
+
+  /* ========================================================
+     PROFILE STATS
+  ======================================================== */
+
+  quickStats: {
+    minHeight: 90,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+  },
+
+  quickStat: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+
+  quickStatIconBlue: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: UI.primarySoft,
+  },
+
+  quickStatIconOrange: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: UI.orangeSoft,
+  },
+
+  quickStatIconPurple: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: UI.purpleSoft,
+  },
+
+  quickStatLabel: {
+    marginTop: 5,
+    color: UI.muted,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+
+  quickStatValue: {
+    marginTop: 3,
+    width: "100%",
+    color: UI.text,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  quickDivider: {
+    width: 1,
+    marginVertical: 8,
+    backgroundColor: UI.border,
+  },
+
+  /* ========================================================
+     QUICK ACTIONS
+  ======================================================== */
+
+  quickActions: {
+    marginTop: 10,
+    flexDirection: "row",
+    gap: 7,
+  },
+
+  quickAction: {
+    flex: 1,
+    minWidth: 0,
+    height: 68,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    borderRadius: 11,
+    borderWidth: 1,
+    ...lightShadow,
+  },
+
+  quickActionCall: {
+    borderColor: "#CBE2D7",
+    backgroundColor: "#F2FAF6",
+  },
+
+  quickActionMessage: {
+    borderColor: "#C9DCEB",
+    backgroundColor: "#F3F8FC",
+  },
+
+  quickActionRent: {
+    borderColor: "#EFD5A8",
+    backgroundColor: "#FFF9EF",
+  },
+
+  quickActionShare: {
+    borderColor: "#DDD0EE",
+    backgroundColor: "#F8F5FC",
+  },
+
+  quickActionIconGreen: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: UI.greenSoft,
+  },
+
+  quickActionIconBlue: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: UI.primarySoft,
+  },
+
+  quickActionIconOrange: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: UI.orangeSoft,
+  },
+
+  quickActionIconPurple: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: UI.purpleSoft,
+  },
+
+  quickActionText: {
+    color: UI.text,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  disabled: {
+    opacity: 0.35,
+  },
+
+  /* ========================================================
+     TABS
+  ======================================================== */
+
+  tabs: {
+    minHeight: 56,
+    marginTop: 11,
+    padding: 4,
+    flexDirection: "row",
+    alignItems: "stretch",
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: UI.border,
+    backgroundColor: "#ECEFF1",
+  },
+
+  tab: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    borderRadius: 8,
+  },
+
+  tabActive: {
+    borderWidth: 1,
+    borderColor: "#C8D8E5",
+    backgroundColor: "#FFFFFF",
+    ...lightShadow,
+  },
+
+  tabText: {
+    color: UI.muted,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+
+  tabTextActive: {
+    color: UI.primaryDark,
+    fontWeight: "900",
+  },
+
+  /* ========================================================
+     SECTION CARDS
+  ======================================================== */
+
+  sectionCard: {
+    marginTop: 11,
+    overflow: "hidden",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D4DEE5",
+    borderLeftWidth: 4,
+    backgroundColor: UI.card,
+    ...lightShadow,
+  },
+
+  sectionCardBlue: {
+    borderLeftColor: UI.primary,
+  },
+
+  sectionCardOrange: {
+    borderLeftColor: "#D99B46",
+  },
+
+  sectionCardGreen: {
+    borderLeftColor: UI.green,
+  },
+
+  sectionCardPurple: {
+    borderLeftColor: "#8B72B5",
+  },
+
+  sectionHeader: {
+    minHeight: 56,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E3E8EC",
+    backgroundColor: "#FAFCFD",
+  },
+
+  sectionTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  sectionIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+  },
+
+  sectionIconBlue: {
+    backgroundColor: UI.primarySoft,
+  },
+
+  sectionIconOrange: {
+    backgroundColor: UI.orangeSoft,
+  },
+
+  sectionIconGreen: {
+    backgroundColor: UI.greenSoft,
+  },
+
+  sectionIconPurple: {
+    backgroundColor: UI.purpleSoft,
+  },
+
+  sectionHeadingCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  sectionTitle: {
+    color: UI.text,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  sectionSubtitle: {
+    marginTop: 2,
+    color: UI.muted,
+    fontSize: 9,
+    fontWeight: "600",
+  },
+
+  sectionAction: {
+    height: 31,
+    paddingHorizontal: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 7,
+    backgroundColor: UI.primarySoft,
+  },
+
+  sectionActionText: {
+    color: UI.primaryDark,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  sectionBody: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+
+  /* ========================================================
+     INFO
+  ======================================================== */
+
+  infoRow: {
+    minHeight: 43,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E4E9ED",
+  },
+
+  infoRowLast: {
+    borderBottomWidth: 0,
+  },
+
+  infoLabel: {
+    width: "42%",
+    color: "#718096",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  infoValue: {
+    flex: 1,
+    color: UI.text,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "800",
+  },
+
+  /* ========================================================
+     CANTEEN SERVICE
+  ======================================================== */
+
+  serviceRow: {
+    minHeight: 74,
+    margin: 10,
+    padding: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+
+  serviceRowActive: {
+    borderColor: "#F0D6B0",
+    backgroundColor: "#FFF8EF",
+  },
+
+  serviceRowInactive: {
+    borderColor: UI.border,
+    backgroundColor: "#F8F9FA",
+  },
+
+  serviceIcon: {
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: "#FFE9CD",
+  },
+
+  serviceCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  serviceTitle: {
+    color: UI.text,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  serviceSubtitle: {
+    marginTop: 3,
+    color: UI.muted,
+    fontSize: 9,
+    fontWeight: "600",
+  },
+
+  serviceStatus: {
+    minHeight: 27,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    borderRadius: 999,
+  },
+
+  serviceEnabled: {
+    backgroundColor: UI.greenSoft,
+  },
+
+  serviceDisabled: {
+    backgroundColor: "#ECEFF1",
+  },
+
+  serviceStatusText: {
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  serviceEnabledText: {
+    color: UI.green,
+  },
+
+  serviceDisabledText: {
+    color: UI.muted,
+  },
+
+  /* ========================================================
+     VIEW ALL
+  ======================================================== */
+
+  viewAllButton: {
+    minHeight: 31,
+    paddingHorizontal: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+
+  viewAllText: {
+    color: UI.primary,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  /* ========================================================
+     PAYMENTS
+  ======================================================== */
+
+  simpleList: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  paymentCard: {
+    minHeight: 62,
+    marginVertical: 4,
+    padding: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#E2E7EB",
+    backgroundColor: "#FCFDFD",
+  },
+
+  paymentIcon: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: UI.greenSoft,
+  },
+
+  paymentMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  paymentMonth: {
+    color: UI.text,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  paymentDate: {
+    marginTop: 3,
+    color: UI.muted,
+    fontSize: 8,
+    fontWeight: "600",
+  },
+
+  paymentRight: {
+    alignItems: "flex-end",
+  },
+
+  paymentAmount: {
+    color: UI.text,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  paidBadge: {
+    minHeight: 23,
+    marginTop: 4,
+    paddingHorizontal: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderRadius: 999,
+    backgroundColor: UI.greenSoft,
+  },
+
+  paidBadgeText: {
+    color: UI.green,
+    fontSize: 8,
+    fontWeight: "900",
+  },
+
+  /* ========================================================
+     DOCUMENTS
+  ======================================================== */
+
+  documentCard: {
+    minHeight: 64,
+    marginVertical: 4,
+    paddingHorizontal: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#E1E8ED",
+    backgroundColor: "#FBFCFD",
+  },
+
+  documentIcon: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: UI.primarySoft,
+  },
+
+  documentCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  documentTitle: {
+    color: UI.text,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  documentMeta: {
+    marginTop: 3,
+    color: UI.muted,
+    fontSize: 8,
+    fontWeight: "600",
+  },
+
+  availableBadge: {
+    minHeight: 25,
+    paddingHorizontal: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderRadius: 999,
+    backgroundColor: UI.greenSoft,
+  },
+
+  availableText: {
+    color: UI.green,
+    fontSize: 8,
+    fontWeight: "900",
+  },
+
+  /* ========================================================
+     NOTES
+  ======================================================== */
+
+  noteCard: {
+    minHeight: 60,
+    marginVertical: 4,
+    padding: 10,
+    flexDirection: "row",
+    gap: 9,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#E3D9F0",
+    backgroundColor: "#FAF8FD",
+  },
+
+  noteIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: UI.purpleSoft,
+  },
+
+  noteCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  noteText: {
+    color: UI.text,
+    fontSize: 10,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+
+  noteDate: {
+    marginTop: 5,
+    color: UI.muted,
+    fontSize: 8,
+    fontWeight: "600",
+  },
+
+  /* ========================================================
+     EMPTY
+  ======================================================== */
+
+  emptyBox: {
+    minHeight: 115,
+    marginVertical: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    borderRadius: 9,
+    backgroundColor: "#F8FAFB",
+  },
+
+  emptyTitle: {
+    marginTop: 7,
+    color: UI.text,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  emptyText: {
+    marginTop: 4,
+    color: UI.muted,
+    fontSize: 9,
+    lineHeight: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  /* ========================================================
+     BOTTOM ACTIONS
+  ======================================================== */
+
+  bottomActions: {
+    marginTop: 14,
+    flexDirection: "row",
+    gap: 8,
+  },
+
+  leaveButton: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#E89A9A",
+    backgroundColor: "#FFF9F8",
+  },
+
+  leaveButtonIcon: {
+    width: 27,
+    height: 27,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 7,
+    backgroundColor: UI.redSoft,
+  },
+
+  leaveButtonText: {
+    color: UI.red,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  editButton: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    borderRadius: 10,
+    backgroundColor: UI.primaryDark,
+    ...mediumShadow,
+  },
+
+  editButtonText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
 });

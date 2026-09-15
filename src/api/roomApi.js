@@ -52,3 +52,18 @@ export async function deleteUnit(roomId) {
   const { data } = await api.delete(`/rooms/${roomId}`);
   return data;
 }
+
+
+export async function renameProperty({
+  propertyType,
+  oldName,
+  newName,
+}) {
+  const { data } = await api.put("/rooms/properties/rename", {
+    propertyType,
+    oldName,
+    newName,
+  });
+
+  return data;
+}

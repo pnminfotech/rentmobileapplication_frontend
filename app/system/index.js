@@ -7,21 +7,23 @@ import { useRouter } from "expo-router";
 import {
   AlertTriangle, ArrowRight, BarChart3, Bell, Building2, ChevronRight,
   CalendarRange, ChevronLeft, CirclePlus, DatabaseBackup, DoorOpen, Lightbulb,
-  MoreHorizontal, ReceiptText, Store, UserCircle, Users, Utensils,
+  LogOut, MoreHorizontal, ReceiptText, Store, UserCircle, Users, Utensils,
   WalletCards, X,
 } from "lucide-react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getSystemDashboard } from "../../src/api/saasApi";
+import { getCanteenSettings } from "../../src/api/canteenApi";
 import { getLightBills } from "../../src/api/lightBillApi";
 import { getRooms } from "../../src/api/roomApi";
 import { getRentSummary, getTenants } from "../../src/api/tenantApi";
 import { getUnreadNotificationCount } from "../../src/api/notificationApi";
+import { clearAuthSession } from "../../src/storage/authStorage";
 import { colors } from "../../src/theme/colors";
 import { normalizePropertyType, propertyTypeFromTenant } from "../../src/utils/unitLabels";
 import { allowedUnitTypes, isTypeAllowed } from "../../src/utils/subscriptionAccess";
-import { hasCanteenFeature } from "../../src/utils/featureAccess";
+import { hasCanteenFeature, needsCanteenAttendance } from "../../src/utils/featureAccess";
 import { useResponsive } from "../../src/utils/responsive";
 
 const UI = {
@@ -216,6 +218,8 @@ function DrawerItem({ Icon, title, subtitle, onPress, last = false, tone = "blue
       ? { backgroundColor: "#ECECFF", color: "#4653A3" }
       : tone === "slate"
         ? { backgroundColor: "#EEF2F6", color: "#53627A" }
+        : tone === "red"
+          ? { backgroundColor: "#FFE8E6", color: UI.danger }
         : { backgroundColor: UI.mint, color: UI.primaryDark };
 
   return (
@@ -237,6 +241,7 @@ export default function SystemAdminScreen() {
   const insets = useSafeAreaInsets();
   const responsive = useResponsive();
   const [dashboard, setDashboard] = useState(null);
+  const [canteenSettings, setCanteenSettings] = useState(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [rentRows, setRentRows] = useState([]);
   const [tenants, setTenants] = useState([]);
@@ -256,8 +261,8 @@ export default function SystemAdminScreen() {
       setRefreshing(true);
       setError("");
       const month = monthKey(selectedMonth);
-      const [dashboardData, rentData, tenantData, lightData, unitData] = await Promise.all([
-        getSystemDashboard(), getRentSummary(month), getTenants(), getLightBills(), getRooms(),
+      const [dashboardData, rentData, tenantData, lightData, unitData, canteenSettingsData] = await Promise.all([
+        getSystemDashboard(), getRentSummary(month), getTenants(), getLightBills(), getRooms(), getCanteenSettings().catch(() => null),
       ]);
       const loadedTenants = Array.isArray(tenantData) ? tenantData : [];
       const tenantMap = new Map(loadedTenants.map((tenant) => [String(tenant._id), tenant]));
@@ -278,6 +283,7 @@ export default function SystemAdminScreen() {
       setTenants(loadedTenants);
       setUnits(Array.isArray(unitData) ? unitData : []);
       setMonthLightBills(lights);
+      setCanteenSettings(canteenSettingsData);
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load dashboard.");
     } finally {
@@ -357,6 +363,7 @@ export default function SystemAdminScreen() {
   const dueCount = Number(accounting?.dueTenantCount || 0);
   const organization = dashboard?.organization?.name || "Property Dashboard";
   const canteenEnabled = hasCanteenFeature(dashboard);
+  const showCanteenAttendance = canteenEnabled && needsCanteenAttendance(canteenSettings);
   const selectedLabel = activeFilter === "bed" ? "Hostel beds" : activeFilter === "room" ? "Rooms" : activeFilter === "shop" ? "Shops" : "Total units";
   const shopCount = units.filter((unit) => normalizePropertyType(unit.propertyType) === "shop")
     .reduce((sum, unit) => sum + unitSlots(unit), 0);
@@ -364,6 +371,11 @@ export default function SystemAdminScreen() {
   const openDrawerRoute = (pathname) => {
     setDrawerOpen(false);
     requestAnimationFrame(() => router.push(pathname));
+  };
+  const logout = async () => {
+    setDrawerOpen(false);
+    await clearAuthSession();
+    router.replace("/login");
   };
   const openVacancies = () => {
     if (activeFilter !== "all") {
@@ -539,7 +551,7 @@ export default function SystemAdminScreen() {
             )}
           </View>
 
-          {canteenEnabled && (
+          {showCanteenAttendance && (
             <Pressable onPress={() => router.push("/system/canteen-attendance")} style={styles.canteenLink}>
               <Text style={styles.canteenText}>Open canteen attendance</Text><ChevronRight size={18} color={UI.primary} />
             </Pressable>
@@ -585,8 +597,10 @@ export default function SystemAdminScreen() {
                 <>
                   <Text style={styles.drawerSectionTitle}>Canteen</Text>
                   <View style={styles.drawerSectionCard}>
-                    <DrawerItem Icon={Utensils} title="Canteen settings" subtitle="Plans and meal prices" tone="amber" onPress={() => openDrawerRoute("/system/canteen-settings")} />
-                    <DrawerItem Icon={Users} title="Canteen attendance" subtitle="Mark hostel meals" tone="indigo" last onPress={() => openDrawerRoute("/system/canteen-attendance")} />
+                    <DrawerItem Icon={Utensils} title="Canteen settings" subtitle="Plans and meal prices" tone="amber" last={!showCanteenAttendance} onPress={() => openDrawerRoute("/system/canteen-settings")} />
+                    {showCanteenAttendance ? (
+                      <DrawerItem Icon={Users} title="Canteen attendance" subtitle="Mark hostel meals" tone="indigo" last onPress={() => openDrawerRoute("/system/canteen-attendance")} />
+                    ) : null}
                   </View>
                 </>
               ) : null}
@@ -597,6 +611,10 @@ export default function SystemAdminScreen() {
                 <DrawerItem Icon={WalletCards} title="Payments" subtitle="Rent collection status" onPress={() => openDrawerRoute("/system/payments")} />
                 <DrawerItem Icon={Users} title="Staff expenses" subtitle="Salary and staff payments" tone="indigo" onPress={() => openDrawerRoute("/system/staff-expenses")} />
                 <DrawerItem Icon={ReceiptText} title="Other expenses" subtitle="Repairs, supplies and general" tone="amber" last onPress={() => openDrawerRoute("/system/expenses")} />
+              </View>
+
+              <View style={styles.drawerFooter}>
+                <DrawerItem Icon={LogOut} title="Logout" subtitle="Sign out of this account" tone="red" last onPress={logout} />
               </View>
             </ScrollView>
           </View>
@@ -709,6 +727,7 @@ const styles = StyleSheet.create({
   drawerContent: { paddingBottom: 10 },
   drawerSectionTitle: { marginTop: 15, marginBottom: 6, paddingHorizontal: 2, color: UI.text, fontSize: 13, fontWeight: "900" },
   drawerSectionCard: { overflow: "hidden", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: UI.card },
+  drawerFooter: { marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: UI.border },
   drawerItem: { minHeight: 58, marginHorizontal: 10, paddingVertical: 7, flexDirection: "row", alignItems: "center" },
   drawerItemBorder: { borderBottomWidth: 1, borderBottomColor: UI.border },
   drawerItemIcon: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 8 },

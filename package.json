@@ -5,6 +5,8 @@
   "scripts": {
     "start": "expo start",
     "start:lan": "expo start --host lan --clear",
+    "start:tunnel": "expo start --tunnel --clear",
+    "start:localhost": "expo start --localhost --clear",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

@@ -1,16 +1,28 @@
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text,
-  TextInput, View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import {
   BedDouble, Building2, ChevronDown, ChevronRight,
-  DoorOpen, MapPin, Plus, Search, SlidersHorizontal, Store,
+  DoorOpen, MapPin, Plus, Search, SlidersHorizontal, Store,Check,
+Pencil,
+X,
 } from "lucide-react-native";
-
-import { getRooms, getUnitUsage } from "../../src/api/roomApi";
+import {
+  getRooms,
+  getUnitUsage,
+  renameProperty,
+} from "../../src/api/roomApi";
 import { getTenants } from "../../src/api/tenantApi";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { systemColors } from "../../src/theme/systemTheme";
@@ -158,14 +170,40 @@ function RoomRow({ room, type, onPress, last }) {
   );
 }
 
-function BuildingCard({ building, type, activeWing, onWingChange, onRoomPress }) {
+function BuildingCard({
+  building,
+  type,
+  activeWing,
+  onWingChange,
+  onRoomPress,
+  onRename,
+}) {
   const selectedWing = building.wings.find((wing) => wing.name === activeWing) || building.wings[0];
   return (
     <View style={styles.buildingCard}>
       <View style={styles.buildingHeader}>
         <View style={styles.buildingIcon}><Building2 size={19} color="#40566D" /></View>
         <View style={styles.buildingCopy}>
-          <Text style={styles.buildingName}>{building.name}</Text>
+     <View style={styles.buildingNameRow}>
+
+  <Text
+    style={styles.buildingName}
+    numberOfLines={1}
+  >
+    {building.name}
+  </Text>
+
+  <Pressable
+    onPress={() => onRename(building)}
+    style={styles.renamePropertyButton}
+  >
+    <Pencil
+      size={14}
+      color={UI.primaryDark}
+    />
+  </Pressable>
+
+</View>
           <View style={styles.locationRow}><MapPin size={11} color={UI.muted} /><Text style={styles.location} numberOfLines={1}>{building.location}</Text></View>
         </View>
         <View style={styles.activeStatus}><View style={styles.activeDot} /><Text style={styles.activeText}>Active</Text></View>
@@ -210,7 +248,9 @@ export default function UnitsModernScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-
+const [renameTarget, setRenameTarget] = useState(null);
+const [propertyName, setPropertyName] = useState("");
+const [renaming, setRenaming] = useState(false);
   const load = useCallback(async () => {
     try {
       setRefreshing(true);
@@ -232,7 +272,82 @@ export default function UnitsModernScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+function openRenameProperty(building) {
+  setRenameTarget(building);
+  setPropertyName(building?.name || "");
+}
 
+function closeRenameProperty() {
+  if (renaming) return;
+
+  setRenameTarget(null);
+  setPropertyName("");
+}
+
+async function savePropertyName() {
+  const nextName = String(propertyName || "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const oldName = String(renameTarget?.name || "").trim();
+
+  if (!nextName) {
+    Alert.alert(
+      "Property name required",
+      "Please enter a property name."
+    );
+    return;
+  }
+
+  if (!oldName || nextName === oldName) {
+    closeRenameProperty();
+    return;
+  }
+
+  try {
+    setRenaming(true);
+
+    await renameProperty({
+      propertyType: type,
+      oldName,
+      newName: nextName,
+    });
+
+    // Preserve selected wing after rename
+    setWingByBuilding((current) => {
+      const next = { ...current };
+
+      if (
+        Object.prototype.hasOwnProperty.call(next, oldName)
+      ) {
+        next[nextName] = next[oldName];
+        delete next[oldName];
+      }
+
+      return next;
+    });
+
+    setRenameTarget(null);
+    setPropertyName("");
+
+    // Reload all units
+    await load();
+
+    Alert.alert(
+      "Property updated",
+      `"${oldName}" has been renamed to "${nextName}".`
+    );
+  } catch (err) {
+    Alert.alert(
+      "Unable to rename property",
+      err.response?.data?.message ||
+        err.message ||
+        "Please try again."
+    );
+  } finally {
+    setRenaming(false);
+  }
+}
   const filteredUnits = useMemo(() => {
     const term = query.trim().toLowerCase();
     return units.filter((unit) => {
@@ -295,11 +410,28 @@ export default function UnitsModernScreen() {
 
       <View style={styles.list}>
         {buildings.map((building) => (
-          <BuildingCard key={building.name} building={building} type={type}
-            activeWing={wingByBuilding[building.name] || building.wings[0]?.name}
-            onWingChange={(wing) => setWingByBuilding((current) => ({ ...current, [building.name]: wing }))}
-            onRoomPress={(room) => router.push({ pathname: "/system/unit-details", params: { id: room._id } })}
-          />
+          <BuildingCard
+  key={building.name}
+  building={building}
+  type={type}
+  activeWing={
+    wingByBuilding[building.name] ||
+    building.wings[0]?.name
+  }
+  onWingChange={(wing) =>
+    setWingByBuilding((current) => ({
+      ...current,
+      [building.name]: wing,
+    }))
+  }
+  onRoomPress={(room) =>
+    router.push({
+      pathname: "/system/unit-details",
+      params: { id: room._id },
+    })
+  }
+  onRename={openRenameProperty}
+/>
         ))}
       </View>
 
@@ -309,6 +441,115 @@ export default function UnitsModernScreen() {
           : router.push({ pathname: "/system/unit-form", params: { type } })}>
         <Plus size={19} color="#FFF" /><Text style={styles.floatingText}>{limitReached ? "Limit reached" : "Add Unit"}</Text>
       </Pressable>
+
+
+      <Modal
+  visible={Boolean(renameTarget)}
+  transparent
+  animationType="fade"
+  onRequestClose={closeRenameProperty}
+>
+  <View style={styles.renameOverlay}>
+
+    <Pressable
+      style={StyleSheet.absoluteFill}
+      onPress={closeRenameProperty}
+    />
+
+    <View style={styles.renameModal}>
+
+      <View style={styles.renameHeader}>
+
+        <View style={styles.renameHeaderIcon}>
+          <Building2
+            size={19}
+            color={UI.primaryDark}
+          />
+        </View>
+
+        <View style={styles.renameHeaderCopy}>
+
+          <Text style={styles.renameTitle}>
+            Rename property
+          </Text>
+
+          <Text style={styles.renameSubtitle}>
+            This will update the property name for
+            all units and tenants inside it.
+          </Text>
+
+        </View>
+
+        <Pressable
+          onPress={closeRenameProperty}
+          style={styles.renameClose}
+        >
+          <X
+            size={18}
+            color={UI.primaryDark}
+          />
+        </Pressable>
+
+      </View>
+
+      <Text style={styles.renameLabel}>
+        Property name
+      </Text>
+
+      <TextInput
+        value={propertyName}
+        onChangeText={setPropertyName}
+        autoFocus
+        placeholder="Enter property name"
+        placeholderTextColor="#98A2B3"
+        style={styles.renameInput}
+        editable={!renaming}
+        returnKeyType="done"
+        onSubmitEditing={savePropertyName}
+      />
+
+      <View style={styles.renameActions}>
+
+        <Pressable
+          disabled={renaming}
+          onPress={closeRenameProperty}
+          style={styles.renameCancel}
+        >
+          <Text style={styles.renameCancelText}>
+            Cancel
+          </Text>
+        </Pressable>
+
+        <Pressable
+          disabled={renaming}
+          onPress={savePropertyName}
+          style={[
+            styles.renameSave,
+            renaming && styles.disabledAction,
+          ]}
+        >
+          {renaming ? (
+            <ActivityIndicator
+              size="small"
+              color="#FFF"
+            />
+          ) : (
+            <>
+              <Check size={16} color="#FFF" />
+
+              <Text style={styles.renameSaveText}>
+                Update name
+              </Text>
+            </>
+          )}
+        </Pressable>
+
+      </View>
+
+    </View>
+
+  </View>
+</Modal>
     </ScrollView>
   );
 }
@@ -355,7 +596,29 @@ const styles = StyleSheet.create({
   buildingHeader: { height: 58, paddingHorizontal: 10, flexDirection: "row", alignItems: "center" },
   buildingIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
   buildingCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
-  buildingName: { color: UI.text, fontSize: 16, fontWeight: "900" },
+ buildingNameRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 7,
+},
+
+buildingName: {
+  flexShrink: 1,
+  color: UI.text,
+  fontSize: 16,
+  fontWeight: "900",
+},
+
+renamePropertyButton: {
+  width: 28,
+  height: 28,
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 7,
+  borderWidth: 1,
+  borderColor: UI.border,
+  backgroundColor: UI.primarySoft,
+},
   locationRow: { marginTop: 2, flexDirection: "row", alignItems: "center", gap: 3 },
   location: { flex: 1, color: UI.muted, fontSize: 10, fontWeight: "600" },
   activeStatus: { marginRight: 4, flexDirection: "row", alignItems: "center", gap: 4 },
@@ -391,4 +654,129 @@ const styles = StyleSheet.create({
   emptyText: { marginTop: 4, color: UI.muted, fontSize: 11 },
   error: { marginBottom: 10, padding: 12, borderRadius: 12, color: systemColors.danger, backgroundColor: systemColors.dangerSoft },
   pressed: { opacity: 0.82 },
+  renameOverlay: {
+  flex: 1,
+  padding: 18,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "rgba(17, 27, 42, 0.52)",
+},
+
+renameModal: {
+  width: "100%",
+  maxWidth: 480,
+  padding: 15,
+  borderRadius: 10,
+  borderWidth: 1,
+  borderColor: UI.border,
+  backgroundColor: UI.card,
+},
+
+renameHeader: {
+  flexDirection: "row",
+  alignItems: "flex-start",
+  gap: 10,
+},
+
+renameHeaderIcon: {
+  width: 38,
+  height: 38,
+  borderRadius: 8,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: UI.primarySoft,
+},
+
+renameHeaderCopy: {
+  flex: 1,
+  minWidth: 0,
+},
+
+renameTitle: {
+  color: UI.text,
+  fontSize: 18,
+  fontWeight: "900",
+},
+
+renameSubtitle: {
+  marginTop: 3,
+  color: UI.muted,
+  fontSize: 11,
+  lineHeight: 16,
+  fontWeight: "600",
+},
+
+renameClose: {
+  width: 34,
+  height: 34,
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: UI.border,
+  backgroundColor: UI.card,
+},
+
+renameLabel: {
+  marginTop: 16,
+  marginBottom: 6,
+  color: UI.muted,
+  fontSize: 11,
+  fontWeight: "800",
+},
+
+renameInput: {
+  height: 44,
+  paddingHorizontal: 12,
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: UI.border,
+  backgroundColor: UI.card,
+  color: UI.text,
+  fontSize: 14,
+  fontWeight: "700",
+},
+
+renameActions: {
+  marginTop: 14,
+  flexDirection: "row",
+  justifyContent: "flex-end",
+  gap: 8,
+},
+
+renameCancel: {
+  minWidth: 86,
+  height: 40,
+  paddingHorizontal: 12,
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: UI.border,
+  backgroundColor: UI.card,
+},
+
+renameCancelText: {
+  color: UI.muted,
+  fontSize: 12,
+  fontWeight: "800",
+},
+
+renameSave: {
+  minWidth: 128,
+  height: 40,
+  paddingHorizontal: 12,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  borderRadius: 8,
+  backgroundColor: UI.primaryDark,
+},
+
+renameSaveText: {
+  color: "#FFF",
+  fontSize: 12,
+  fontWeight: "900",
+},
 });

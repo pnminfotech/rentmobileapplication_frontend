@@ -42,7 +42,7 @@ import {
   requestSubscriptionUpgrade,
 } from "../../src/api/saasApi";
 import { clearAuthSession } from "../../src/storage/authStorage";
-import { allowedUnitTypes } from "../../src/utils/subscriptionAccess";
+import { UNIT_TYPES, allowedUnitTypes } from "../../src/utils/subscriptionAccess";
 import { systemColors as S } from "../../src/theme/systemTheme";
 
 const PROFILE_BLUE = "#4F7FA6";
@@ -330,7 +330,7 @@ export default function SystemProfileScreen() {
             <Layers3 size={19} color={S.muted} />
             <View>
               <Text style={styles.sectionTitle}>Upgrade package</Text>
-              <Text style={styles.helperText}>Buy extra units for this account</Text>
+              <Text style={styles.helperText}>Buy extra beds, rooms, or shops for this account</Text>
             </View>
           </View>
           <Pressable onPress={() => setShowUpgrade((value) => !value)} style={styles.smallAction}>
@@ -349,36 +349,18 @@ export default function SystemProfileScreen() {
         {showUpgrade ? (
           <View style={styles.upgradeForm}>
             <View style={styles.upgradeInputs}>
-              {purchasedUnitTypes.some((type) => type.value === "bed") ? <View style={styles.inputWrap}>
-                <Text style={styles.inputLabel}>Extra beds</Text>
-                <TextInput
-                  value={upgradeUnits.beds}
-                  onChangeText={(value) => updateUpgradeUnit("beds", value)}
-                  keyboardType="number-pad"
-                  placeholder="0"
-                  style={styles.input}
-                />
-              </View> : null}
-              {purchasedUnitTypes.some((type) => type.value === "room") ? <View style={styles.inputWrap}>
-                <Text style={styles.inputLabel}>Extra rooms</Text>
-                <TextInput
-                  value={upgradeUnits.rooms}
-                  onChangeText={(value) => updateUpgradeUnit("rooms", value)}
-                  keyboardType="number-pad"
-                  placeholder="0"
-                  style={styles.input}
-                />
-              </View> : null}
-              {purchasedUnitTypes.some((type) => type.value === "shop") ? <View style={styles.inputWrap}>
-                <Text style={styles.inputLabel}>Extra shops</Text>
-                <TextInput
-                  value={upgradeUnits.shops}
-                  onChangeText={(value) => updateUpgradeUnit("shops", value)}
-                  keyboardType="number-pad"
-                  placeholder="0"
-                  style={styles.input}
-                />
-              </View> : null}
+              {UNIT_TYPES.map((type) => (
+                <View key={type.value} style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Extra {type.value === "bed" ? "beds" : type.value === "room" ? "rooms" : "shops"}</Text>
+                  <TextInput
+                    value={upgradeUnits[type.quotaKey]}
+                    onChangeText={(value) => updateUpgradeUnit(type.quotaKey, value)}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    style={styles.input}
+                  />
+                </View>
+              ))}
             </View>
             <Pressable
               onPress={() => walletBalance > 0 && setUseWalletForUpgrade((value) => !value)}
