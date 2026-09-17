@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -9,9 +9,9 @@ import FormDateField from "../../src/components/FormDateField";
 import WebImageCropper from "../../src/components/WebImageCropper";
 import { getSystemDashboard } from "../../src/api/saasApi";
 import { getCanteenSettings } from "../../src/api/canteenApi";
-import { getRooms } from "../../src/api/roomApi";
+import { getRooms, updateBed, updateUnit } from "../../src/api/roomApi";
 import { createTenantWithDocuments, getTenants } from "../../src/api/tenantApi";
-import { ASSIGNMENT_TYPES, filterVacanciesByType, formatVacancyMeta, formatVacancyTitle, groupVacanciesByProperty, stackedPropertyLabel, unitTypeLabel } from "../../src/utils/unitLabels";
+import { ASSIGNMENT_TYPES, filterVacanciesByType, formatVacancyMeta, formatVacancyTitle, groupVacanciesByProperty, stackedPropertyLabel } from "../../src/utils/unitLabels";
 import { allowedUnitTypes, firstAllowedType } from "../../src/utils/subscriptionAccess";
 import { hasCanteenFeature } from "../../src/utils/featureAccess";
 import { systemColors as colors } from "../../src/theme/systemTheme";
@@ -59,6 +59,49 @@ function blankForm() {
 
 function blankDocuments() {
   return { selfAadhar: null, parentAadhar: null, photo: null };
+}
+
+function normalizeIdentifier(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function blankUnitDraft(type = "bed") {
+  return {
+    category: "",
+    floorNo: "",
+    roomNo: "",
+    wingName: "",
+    flatType: "",
+    meterNo: "",
+    lastMeterReading: "",
+    monthlyPrice: "",
+    bedCategory: type === "bed" ? "Standard" : "",
+  };
+}
+
+function unitDetailLabels(type) {
+  if (type === "shop") {
+    return {
+      category: "Market or building",
+      number: "Shop number",
+      numberPlaceholder: "Example: S-12",
+      price: "Monthly shop rent",
+    };
+  }
+  if (type === "room") {
+    return {
+      category: "Property or building",
+      number: "Room or unit number",
+      numberPlaceholder: "Example: A-101",
+      price: "Monthly room rent",
+    };
+  }
+  return {
+    category: "Hostel or building",
+    number: "Room number",
+    numberPlaceholder: "Example: 101",
+    price: "Monthly price per bed",
+  };
 }
 
 function activeTenant(tenant) {
@@ -122,6 +165,9 @@ export default function TenantAdmissionScreen() {
   const [form, setForm] = useState(blankForm);
   const [documents, setDocuments] = useState(blankDocuments);
   const [cropRequest, setCropRequest] = useState(null);
+  const [unitDraft, setUnitDraft] = useState(() => blankUnitDraft(initialAssignmentType));
+  const [showUnitDetailsModal, setShowUnitDetailsModal] = useState(false);
+  const [savingUnitDetails, setSavingUnitDetails] = useState(false);
 
   useEffect(() => {
     preferredAssignmentType = assignmentType;
@@ -192,6 +238,8 @@ export default function TenantAdmissionScreen() {
   const selected = filteredVacancies[selectedIndex];
   const isResidentialRoom = assignmentType === "room";
   const isShop = assignmentType === "shop";
+  const needsUnitDetails = Boolean(selected?.unit?.isPlaceholder);
+  const detailLabels = useMemo(() => unitDetailLabels(assignmentType), [assignmentType]);
   const unitLabel = useMemo(() => selected ? `${formatVacancyTitle(selected.unit)} | ${formatVacancyMeta(selected.unit, selected.bed)}` : "No vacant unit available", [selected]);
   const canteenPlans = useMemo(() => (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal"), [canteenSettings]);
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
@@ -244,6 +292,7 @@ export default function TenantAdmissionScreen() {
 
   function validateStep() {
     if (step === 0 && (!form.name.trim() || !/^\d{10}$/.test(form.phoneNo) || !selected)) return "Enter name, a valid phone number and select a vacant unit.";
+    if (step === 0 && needsUnitDetails) return "This unit is already added, but room or unit details are not set yet. Save unit details first.";
     if (step === 0 && assignmentType === "bed" && canteenEnabled && form.hasCanteen && (!canteenSettings?.isConfigured || !selectedCanteenPlan)) return "Configure canteen settings and choose a canteen billing plan.";
     if (!isShop && step === 1 && (!/^\d{6}$/.test(form.pincode) || !form.city.trim() || !form.state.trim() || !form.address.trim())) return "Enter a 6-digit pincode, city, state and address.";
     if (isShop && step === 1 && form.pincode && !/^\d{6}$/.test(form.pincode)) return "Enter a valid 6-digit pincode.";
@@ -261,6 +310,102 @@ export default function TenantAdmissionScreen() {
     const message = validateStep();
     if (message) return setError(message);
     setError(""); setStep((current) => current + 1);
+  }
+
+  function updateUnitDraft(key, value) {
+    setUnitDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectAssignmentType(value) {
+    setAssignmentType(value);
+    setSelectedIndex(0);
+    setShowUnits(false);
+    setUnitDraft(blankUnitDraft(value));
+    setShowUnitDetailsModal(false);
+    setError("");
+  }
+
+  function selectVacancy(index) {
+    setSelectedIndex(index);
+    setShowUnits(false);
+    setUnitDraft(blankUnitDraft(assignmentType));
+    setShowUnitDetailsModal(false);
+    setError("");
+  }
+
+  async function saveSelectedUnitDetails() {
+    if (!selected?.unit?._id || !selected?.bed?.bedNo) return;
+    const monthlyPrice = Number(unitDraft.monthlyPrice);
+    const meterReading = unitDraft.lastMeterReading === "" ? null : Number(unitDraft.lastMeterReading);
+
+    if (!unitDraft.category.trim() || !unitDraft.floorNo.trim() || !unitDraft.roomNo.trim()) {
+      setError(`${detailLabels.category}, floor and ${detailLabels.number.toLowerCase()} are required.`);
+      return;
+    }
+    if (assignmentType === "room" && !unitDraft.flatType.trim()) {
+      setError("Enter the flat type.");
+      return;
+    }
+    if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
+      setError("Enter a valid monthly rent.");
+      return;
+    }
+    if (unitDraft.lastMeterReading !== "" && (!Number.isFinite(meterReading) || meterReading < 0)) {
+      setError("Enter a valid last meter reading.");
+      return;
+    }
+
+    try {
+      setSavingUnitDetails(true);
+      setError("");
+      await updateBed(selected.unit._id, selected.bed.bedNo, {
+        price: monthlyPrice,
+        bedCategory:
+          assignmentType === "shop"
+            ? "Shop"
+            : assignmentType === "room"
+              ? "Rental Room"
+              : unitDraft.bedCategory.trim() || "Standard",
+      });
+      const updatedUnit = await updateUnit(selected.unit._id, {
+        category: unitDraft.category.trim(),
+        floorNo: unitDraft.floorNo.trim(),
+        roomNo: normalizeIdentifier(unitDraft.roomNo),
+        hasWing: Boolean(unitDraft.wingName.trim()),
+        wingName: unitDraft.wingName.trim(),
+        flatType: assignmentType === "room" ? unitDraft.flatType.trim() : "",
+        meterNo: normalizeIdentifier(unitDraft.meterNo),
+        lastMeterReading: meterReading,
+      });
+
+      setVacancies((current) => current.map((vacancy) => {
+        if (
+          String(vacancy.unit?._id) !== String(selected.unit._id) ||
+          String(vacancy.bed?.bedNo || "") !== String(selected.bed.bedNo || "")
+        ) {
+          return vacancy;
+        }
+        return {
+          unit: updatedUnit,
+          bed: {
+            ...vacancy.bed,
+            price: monthlyPrice,
+            bedCategory:
+              assignmentType === "shop"
+                ? "Shop"
+                : assignmentType === "room"
+                  ? "Rental Room"
+                  : unitDraft.bedCategory.trim() || "Standard",
+          },
+        };
+      }));
+      setUnitDraft(blankUnitDraft(assignmentType));
+      setShowUnitDetailsModal(false);
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to save unit details.");
+    } finally {
+      setSavingUnitDetails(false);
+    }
   }
 
   async function submit() {
@@ -313,11 +458,22 @@ export default function TenantAdmissionScreen() {
           <View style={styles.typeSegment}>{assignmentTypes.map((type) => {
             const active = assignmentType === type.value;
             const count = filterVacanciesByType(vacancies, type.value).length;
-            return <Pressable key={type.value} onPress={() => { setAssignmentType(type.value); setSelectedIndex(0); setShowUnits(false); }} style={[styles.typeButton, active && styles.segmentActive]}><Text style={[styles.typeText, active && styles.segmentTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(type.label)}</Text><Text style={[styles.typeCount, active && styles.segmentTextActive]} numberOfLines={1}>{count} vacant</Text></Pressable>;
+            return <Pressable key={type.value} onPress={() => selectAssignmentType(type.value)} style={[styles.typeButton, active && styles.segmentActive]}><Text style={[styles.typeText, active && styles.segmentTextActive]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72}>{stackedPropertyLabel(type.label)}</Text><Text style={[styles.typeCount, active && styles.segmentTextActive]} numberOfLines={1}>{count} vacant</Text></Pressable>;
           })}</View>
           <Text style={styles.label}>Vacant unit</Text>
           <Pressable onPress={() => setShowUnits((current) => !current)} disabled={!filteredVacancies.length} style={[styles.select, !filteredVacancies.length && styles.disabled]}><Text style={styles.selectValue} numberOfLines={2}>{unitLabel}</Text><ChevronDown size={19} color={colors.muted} /></Pressable>
-          {showUnits ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => { setSelectedIndex(index); setShowUnits(false); }} style={[styles.option, index === selectedIndex && styles.optionSelected]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
+          {showUnits ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => selectVacancy(index)} style={[styles.option, index === selectedIndex && styles.optionSelected]}><View style={styles.optionText}><Text style={styles.optionTitle}>{formatVacancyTitle(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
+          {needsUnitDetails ? (
+            <View style={styles.unitSetupNotice}>
+              <View style={styles.unitSetupCopy}>
+                <Text style={styles.unitSetupTitle}>Unit details not set yet</Text>
+                <Text style={styles.unitSetupHint}>Set property, floor, unit number and rent before continuing.</Text>
+              </View>
+              <Pressable onPress={() => { setError(""); setShowUnitDetailsModal(true); }} style={styles.setUnitButton}>
+                <Text style={styles.setUnitButtonText}>Set unit now</Text>
+              </Pressable>
+            </View>
+          ) : null}
           <Field label="Full name" value={form.name} onChangeText={(value) => setValue("name", value)} placeholder="Tenant name" />
           {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(value) => setValue("shopName", value)} placeholder="Enter shop name" /> : null}
           <Field label="Phone number" value={form.phoneNo} onChangeText={(value) => setValue("phoneNo", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" placeholder="10-digit mobile number" />
@@ -428,6 +584,50 @@ export default function TenantAdmissionScreen() {
         {step < STEPS.length - 1 ? <Pressable onPress={nextStep} style={styles.nextButton}><Text style={styles.nextText}>Continue</Text><ChevronRight size={20} color={colors.surface} /></Pressable> : <Pressable onPress={submit} disabled={saving} style={[styles.nextButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.nextText}>Save tenant</Text>}</Pressable>}
       </View>
     </View>
+    <Modal
+      visible={showUnitDetailsModal && needsUnitDetails}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {
+        if (!savingUnitDetails) setShowUnitDetailsModal(false);
+      }}
+    >
+      <View style={styles.modalOverlay}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => {
+            if (!savingUnitDetails) setShowUnitDetailsModal(false);
+          }}
+        />
+        <View style={styles.unitModal}>
+          <View style={styles.unitModalHeader}>
+            <View style={styles.unitModalTitleWrap}>
+              <Text style={styles.unitModalTitle}>Set unit details</Text>
+              <Text style={styles.unitModalSubtitle}>This unit is already added. Complete these details once before tenant admission.</Text>
+            </View>
+            <Pressable disabled={savingUnitDetails} onPress={() => setShowUnitDetailsModal(false)} style={styles.modalCloseButton}>
+              <Text style={styles.modalCloseText}>Close</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.unitModalBody} keyboardShouldPersistTaps="handled">
+            <Field label={detailLabels.category} value={unitDraft.category} onChangeText={(value) => updateUnitDraft("category", value)} placeholder={`Enter ${detailLabels.category.toLowerCase()}`} />
+            <Field label="Floor" value={unitDraft.floorNo} onChangeText={(value) => updateUnitDraft("floorNo", value)} placeholder="Example: Ground or 1" />
+            <Field label="Wing or block (optional)" value={unitDraft.wingName} onChangeText={(value) => updateUnitDraft("wingName", value)} placeholder="Example: A" />
+            {assignmentType === "room" ? <Field label="Flat type" value={unitDraft.flatType} onChangeText={(value) => updateUnitDraft("flatType", value)} placeholder="Example: 1 RK or 1 BHK" /> : null}
+            <Field label={detailLabels.number} value={unitDraft.roomNo} onChangeText={(value) => updateUnitDraft("roomNo", value)} placeholder={detailLabels.numberPlaceholder} />
+            <Field label="Meter number (optional)" value={unitDraft.meterNo} onChangeText={(value) => updateUnitDraft("meterNo", value)} placeholder="Example: MTR-101" />
+            <Field label="Last meter reading (optional)" value={unitDraft.lastMeterReading} onChangeText={(value) => updateUnitDraft("lastMeterReading", value)} keyboardType="numeric" placeholder="Example: 250" />
+            {assignmentType === "bed" ? <Field label="Bed category" value={unitDraft.bedCategory} onChangeText={(value) => updateUnitDraft("bedCategory", value)} placeholder="Example: Standard" /> : null}
+            <Field label={detailLabels.price} value={unitDraft.monthlyPrice} onChangeText={(value) => updateUnitDraft("monthlyPrice", value)} keyboardType="numeric" placeholder="Example: 5000" />
+
+            <Pressable onPress={saveSelectedUnitDetails} disabled={savingUnitDetails} style={[styles.saveUnitButton, savingUnitDetails && styles.disabled]}>
+              {savingUnitDetails ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveUnitButtonText}>Save unit details</Text>}
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
     {cropRequest ? (
       <WebImageCropper
         sourceUri={cropRequest.uri}
@@ -480,6 +680,23 @@ const styles = StyleSheet.create({
   detailBoxFull: { flexBasis: "100%", minHeight: 58, padding: 10, borderRadius: 6, backgroundColor: colors.primarySoft },
   detailLabel: { color: colors.muted, fontSize: 11, fontWeight: "700" },
   detailValue: { marginTop: 4, color: colors.text, fontSize: 14, fontWeight: "700" },
+  unitSetupNotice: { marginTop: 14, padding: 13, flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: colors.primarySoft, borderRadius: 8, backgroundColor: colors.surface },
+  unitSetupCopy: { flex: 1, minWidth: 0 },
+  unitSetupTitle: { color: colors.text, fontSize: 15, fontWeight: "800" },
+  unitSetupHint: { marginTop: 5, color: colors.muted, fontSize: 12, lineHeight: 18 },
+  setUnitButton: { minHeight: 42, paddingHorizontal: 13, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary },
+  setUnitButtonText: { color: colors.surface, fontSize: 13, fontWeight: "800" },
+  modalOverlay: { flex: 1, padding: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(17, 27, 42, 0.42)" },
+  unitModal: { width: "100%", maxWidth: 620, maxHeight: "88%", overflow: "hidden", borderRadius: 10, backgroundColor: colors.surface },
+  unitModalHeader: { padding: 16, flexDirection: "row", alignItems: "flex-start", borderBottomWidth: 1, borderBottomColor: colors.border },
+  unitModalTitleWrap: { flex: 1, minWidth: 0, paddingRight: 10 },
+  unitModalTitle: { color: colors.text, fontSize: 18, fontWeight: "800" },
+  unitModalSubtitle: { marginTop: 4, color: colors.muted, fontSize: 12, lineHeight: 18 },
+  modalCloseButton: { minHeight: 36, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.surfaceSoft },
+  modalCloseText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
+  unitModalBody: { paddingHorizontal: 16, paddingBottom: 18 },
+  saveUnitButton: { height: 48, marginTop: 18, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary },
+  saveUnitButtonText: { color: colors.surface, fontWeight: "800" },
   summary: { height: 56, marginTop: 14, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 7, backgroundColor: colors.primarySoft },
   summaryLabel: { color: colors.muted, fontWeight: "600" },
   summaryValue: { color: colors.primaryDark, fontSize: 17, fontWeight: "700" },

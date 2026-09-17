@@ -17,10 +17,18 @@ import { colors } from "../src/theme/colors";
 export default function LoginScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (params.registered !== "trial") return;
+    Alert.alert(
+      "Trial account created",
+      "Login with your Login ID and password to set up your property units."
+    );
+  }, [params.registered]);
 
   useEffect(() => {
     if (params.payment !== "submitted") return;
@@ -39,8 +47,8 @@ export default function LoginScreen() {
   }, [params.subscription]);
 
   async function handleLogin() {
-    if (!email.trim() || !password) {
-      setError("Enter your email and password.");
+    if (!loginId.trim() || !password) {
+      setError("Enter your Login ID and password.");
       return;
     }
 
@@ -48,7 +56,7 @@ export default function LoginScreen() {
       setLoading(true);
       setError("");
 
-      const data = await loginSaas(email.trim(), password);
+      const data = await loginSaas(loginId.trim(), password);
 
       if (data.user.role === "superadmin") {
         router.replace("/superadmin");
@@ -58,7 +66,7 @@ export default function LoginScreen() {
     } catch (err) {
       setError(
         err.response?.data?.message ||
-          "Unable to login. Please check your connection."
+          "Unable to login. Please check your Login ID, password, or connection."
       );
     } finally {
       setLoading(false);
@@ -77,9 +85,9 @@ export default function LoginScreen() {
         </Text>
 
         <TextInput
-          value={email}
-          onChangeText={setEmail}
-          placeholder="owner@example.com"
+          value={loginId}
+          onChangeText={setLoginId}
+          placeholder="Login ID or email"
           autoCapitalize="none"
           keyboardType="email-address"
           style={styles.input}

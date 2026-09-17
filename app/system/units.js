@@ -22,6 +22,8 @@ import {
   getRooms,
   getUnitUsage,
   renameProperty,
+  updateBed,
+  updateUnit,
 } from "../../src/api/roomApi";
 import { getTenants } from "../../src/api/tenantApi";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
@@ -39,6 +41,73 @@ const TYPES = [
   { value: "room", label: "Residential" },
   { value: "shop", label: "Commercial" },
 ];
+
+function blankUnitDraft(unit, type) {
+  const bed = Array.isArray(unit?.beds) ? unit.beds[0] : null;
+  return {
+    category: unit?.isPlaceholder ? "" : String(unit?.category || ""),
+    floorNo: unit?.isPlaceholder ? "" : String(unit?.floorNo || ""),
+    wingName: unit?.isPlaceholder ? "" : String(unit?.wingName || ""),
+    flatType: unit?.isPlaceholder ? "" : String(unit?.flatType || ""),
+    roomNo: unit?.isPlaceholder ? "" : String(unit?.roomNo || ""),
+    meterNo: unit?.isPlaceholder ? "" : String(unit?.meterNo || ""),
+    lastMeterReading:
+      unit?.lastMeterReading === undefined || unit?.lastMeterReading === null
+        ? ""
+        : String(unit.lastMeterReading),
+    bedCategory:
+      type === "shop"
+        ? "Shop"
+        : type === "room"
+          ? "Rental Room"
+          : String(bed?.bedCategory || ""),
+    monthlyPrice: bed?.price === undefined || bed?.price === null ? "" : String(bed.price),
+  };
+}
+
+function unitDetailLabels(type) {
+  if (type === "shop") {
+    return {
+      category: "Property name",
+      number: "Shop number",
+      numberPlaceholder: "Example: S-01",
+      price: "Monthly shop rent",
+    };
+  }
+  if (type === "room") {
+    return {
+      category: "Building or property name",
+      number: "Room or flat number",
+      numberPlaceholder: "Example: 101 or A-101",
+      price: "Monthly room rent",
+    };
+  }
+  return {
+    category: "Building or hostel name",
+    number: "Room number",
+    numberPlaceholder: "Example: 101",
+    price: "Monthly bed rent",
+  };
+}
+
+function normalizeIdentifier(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function normalizeKey(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function uniqueValues(items, selector) {
+  const seen = new Set();
+  return items.reduce((list, item) => {
+    const value = String(selector(item) || "").trim();
+    const key = normalizeKey(value);
+    if (!value || seen.has(key)) return list;
+    seen.add(key);
+    return [...list, value];
+  }, []);
+}
 
 function activeTenant(tenant) {
   if (!tenant?.leaveDate) return true;
@@ -70,22 +139,34 @@ function unitOccupancy(unit, tenants) {
 function groupUnits(units, tenants) {
   const grouped = new Map();
   units.forEach((unit) => {
-    const building = String(unit.category || "Unassigned Property").trim();
-    const wing = String(unit.wingName || "Main").trim();
+    const building = unit.isPlaceholder
+      ? "Units to set up"
+      : String(unit.category || "Property not named").trim();
+    const wing = unit.isPlaceholder ? "Details pending" : String(unit.wingName || "Main").trim();
+    const floor = unit.isPlaceholder ? "Details pending" : String(unit.floorNo || "Floor not set").trim();
     if (!grouped.has(building)) grouped.set(building, new Map());
-    if (!grouped.get(building).has(wing)) grouped.get(building).set(wing, []);
-    grouped.get(building).get(wing).push({ ...unit, occupancy: unitOccupancy(unit, tenants) });
+    if (!grouped.get(building).has(wing)) grouped.get(building).set(wing, new Map());
+    if (!grouped.get(building).get(wing).has(floor)) grouped.get(building).get(wing).set(floor, []);
+    grouped.get(building).get(wing).get(floor).push({ ...unit, occupancy: unitOccupancy(unit, tenants) });
   });
   return Array.from(grouped, ([name, wings]) => ({
     name,
-    location: Array.from(wings.values()).flat()[0]?.address ||
-      Array.from(wings.values()).flat()[0]?.location || "Property",
-    wings: Array.from(wings, ([name, rooms]) => ({
-      name,
-      rooms: rooms.sort((a, b) =>
-        String(a.roomNo || "").localeCompare(String(b.roomNo || ""), undefined, { numeric: true })
-      ),
-    })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
+    isReserved: Array.from(wings.values()).flatMap((floors) => Array.from(floors.values()).flat()).every((unit) => unit.isPlaceholder),
+    location: Array.from(wings.values()).flatMap((floors) => Array.from(floors.values()).flat())[0]?.address ||
+      Array.from(wings.values()).flatMap((floors) => Array.from(floors.values()).flat())[0]?.location || (name === "Units to set up" ? "Tap a unit to add its details" : "Property"),
+    wings: Array.from(wings, ([name, floors]) => {
+      const floorList = Array.from(floors, ([floorName, rooms]) => ({
+        name: floorName,
+        rooms: rooms.sort((a, b) =>
+          String(a.roomNo || "").localeCompare(String(b.roomNo || ""), undefined, { numeric: true })
+        ),
+      })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      return {
+        name,
+        floors: floorList,
+        rooms: floorList.flatMap((floor) => floor.rooms),
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
   })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
@@ -143,18 +224,24 @@ function SummaryCard({ stats, type, quota }) {
   );
 }
 
-function RoomRow({ room, type, onPress, last }) {
+function RoomRow({ room, type, onPress, last, index }) {
   const { occupied, total, vacant } = room.occupancy;
   const rate = total ? Math.round((occupied / total) * 100) : 0;
   const label = type === "bed" ? "beds" : type === "room" ? "room" : "shop";
   const Icon = type === "shop" ? Store : DoorOpen;
+  const roomTitle = room.isPlaceholder
+    ? `Unit ${index + 1}`
+    : `${type === "shop" ? "Shop" : "Room"} ${room.roomNo}`;
+  const roomMeta = room.isPlaceholder
+    ? "Details pending"
+    : `${total} ${label}${total === 1 ? "" : "s"}`;
   return (
     <Pressable onPress={onPress}
       style={({ pressed }) => [styles.roomRow, !last && styles.rowBorder, pressed && styles.pressed]}>
       <View style={styles.roomIcon}><Icon size={18} color="#40566D" /></View>
       <View style={styles.roomNameWrap}>
-        <Text style={styles.roomName}>{type === "shop" ? "Shop" : "Room"} {room.roomNo}</Text>
-        <Text style={styles.roomMeta}>{total} {label}{total === 1 ? "" : "s"}</Text>
+        <Text style={styles.roomName}>{roomTitle}</Text>
+        <Text style={styles.roomMeta}>{roomMeta}</Text>
       </View>
       <View style={styles.occupancyWrap}>
         <Text style={styles.occupancyText}>{occupied}/{total} occupied</Text>
@@ -170,12 +257,42 @@ function RoomRow({ room, type, onPress, last }) {
   );
 }
 
+function SavedOptionChips({ options, selectedValue, onSelect, emptyText }) {
+  if (!options.length) {
+    return emptyText ? <Text style={styles.optionHelper}>{emptyText}</Text> : null;
+  }
+
+  return (
+    <View style={styles.optionWrap}>
+      {options.map((option) => {
+        const selected = normalizeKey(option) === normalizeKey(selectedValue);
+        return (
+          <Pressable
+            key={option}
+            onPress={() => onSelect(option)}
+            style={[styles.optionChip, selected && styles.optionChipActive]}
+          >
+            <Text
+              style={[styles.optionText, selected && styles.optionTextActive]}
+              numberOfLines={1}
+            >
+              {option}
+            </Text>
+            {selected ? <Check size={14} color={UI.primaryDark} /> : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function BuildingCard({
   building,
   type,
   activeWing,
   onWingChange,
   onRoomPress,
+  onPendingWingPress,
   onRename,
 }) {
   const selectedWing = building.wings.find((wing) => wing.name === activeWing) || building.wings[0];
@@ -193,38 +310,61 @@ function BuildingCard({
     {building.name}
   </Text>
 
-  <Pressable
-    onPress={() => onRename(building)}
-    style={styles.renamePropertyButton}
-  >
-    <Pencil
-      size={14}
-      color={UI.primaryDark}
-    />
-  </Pressable>
+  {!building.isReserved ? (
+    <Pressable
+      onPress={() => onRename(building)}
+      style={styles.renamePropertyButton}
+    >
+      <Pencil
+        size={14}
+        color={UI.primaryDark}
+      />
+    </Pressable>
+  ) : null}
 
 </View>
           <View style={styles.locationRow}><MapPin size={11} color={UI.muted} /><Text style={styles.location} numberOfLines={1}>{building.location}</Text></View>
         </View>
-        <View style={styles.activeStatus}><View style={styles.activeDot} /><Text style={styles.activeText}>Active</Text></View>
+        <View style={styles.activeStatus}><View style={styles.activeDot} /><Text style={styles.activeText}>{building.isReserved ? "Pending" : "Active"}</Text></View>
       </View>
 
       {building.wings.length > 1 || building.wings[0]?.name !== "Main" ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.wingTabs}>
           {building.wings.map((wing) => (
-            <Pressable key={wing.name} onPress={() => onWingChange(wing.name)}
+            <Pressable key={wing.name} onPress={() => {
+              onWingChange(wing.name);
+              if (wing.rooms.some((room) => room.isPlaceholder)) {
+                onPendingWingPress(wing.rooms.find((room) => room.isPlaceholder));
+              }
+            }}
               style={[styles.wingTab, selectedWing?.name === wing.name && styles.wingTabActive]}>
               <Text style={[styles.wingText, selectedWing?.name === wing.name && styles.wingTextActive]}>
-                {wing.name === "Main" ? "Main" : `Wing ${wing.name}`}
+                {wing.name === "Details pending" ? "Set details" : wing.name === "Main" ? "Main" : `Wing ${wing.name}`}
               </Text>
             </Pressable>
           ))}
         </ScrollView>
       ) : null}
       <View style={styles.rooms}>
-        {(selectedWing?.rooms || []).map((room, index, list) => (
-          <RoomRow key={room._id} room={room} type={type}
-            last={index === list.length - 1} onPress={() => onRoomPress(room)} />
+        {(selectedWing?.floors || []).map((floor, floorIndex) => (
+          <View key={floor.name} style={floorIndex > 0 && styles.floorSection}>
+            {!building.isReserved ? (
+              <View style={styles.floorHeader}>
+                <Text style={styles.floorText}>
+                  {floor.name === "Floor not set" ? "Floor not set" : `Floor ${floor.name}`}
+                </Text>
+                <Text style={styles.floorCount}>
+                  {floor.rooms.length} {floor.rooms.length === 1 ? "unit" : "units"}
+                </Text>
+              </View>
+            ) : null}
+            {floor.rooms.map((room, index, list) => (
+              <RoomRow key={room._id} room={room} type={type}
+                index={index}
+                last={index === list.length - 1 && floorIndex === (selectedWing?.floors || []).length - 1}
+                onPress={() => onRoomPress(room)} />
+            ))}
+          </View>
         ))}
       </View>
     </View>
@@ -251,6 +391,10 @@ export default function UnitsModernScreen() {
 const [renameTarget, setRenameTarget] = useState(null);
 const [propertyName, setPropertyName] = useState("");
 const [renaming, setRenaming] = useState(false);
+const [unitDetailsTarget, setUnitDetailsTarget] = useState(null);
+const [unitDetailsDraft, setUnitDetailsDraft] = useState(blankUnitDraft(null, type));
+const [savingUnitDetails, setSavingUnitDetails] = useState(false);
+const [unitDetailsError, setUnitDetailsError] = useState("");
   const load = useCallback(async () => {
     try {
       setRefreshing(true);
@@ -282,6 +426,101 @@ function closeRenameProperty() {
 
   setRenameTarget(null);
   setPropertyName("");
+}
+
+function openUnitDetails(unit) {
+  setUnitDetailsTarget(unit);
+  setUnitDetailsDraft(blankUnitDraft(unit, type));
+  setUnitDetailsError("");
+}
+
+function closeUnitDetails() {
+  if (savingUnitDetails) return;
+  setUnitDetailsTarget(null);
+  setUnitDetailsDraft(blankUnitDraft(null, type));
+  setUnitDetailsError("");
+}
+
+function updateUnitDetailsDraft(key, value) {
+  setUnitDetailsDraft((current) => ({ ...current, [key]: value }));
+}
+
+async function saveUnitDetails() {
+  if (!unitDetailsTarget?._id) return;
+  const firstBed = Array.isArray(unitDetailsTarget.beds) ? unitDetailsTarget.beds[0] : null;
+  const bedNo = firstBed?.bedNo || "1";
+  const labels = unitDetailLabels(type);
+  const monthlyPrice = Number(unitDetailsDraft.monthlyPrice);
+  const meterReading =
+    unitDetailsDraft.lastMeterReading === ""
+      ? null
+      : Number(unitDetailsDraft.lastMeterReading);
+
+  if (
+    !unitDetailsDraft.category.trim() ||
+    !unitDetailsDraft.floorNo.trim() ||
+    !unitDetailsDraft.roomNo.trim()
+  ) {
+    setUnitDetailsError(
+      `${labels.category}, floor and ${labels.number.toLowerCase()} are required.`
+    );
+    return;
+  }
+
+  if (type === "room" && !unitDetailsDraft.flatType.trim()) {
+    setUnitDetailsError("Enter the flat type.");
+    return;
+  }
+
+  if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
+    setUnitDetailsError("Enter a valid monthly rent.");
+    return;
+  }
+
+  if (
+    unitDetailsDraft.lastMeterReading !== "" &&
+    (!Number.isFinite(meterReading) || meterReading < 0)
+  ) {
+    setUnitDetailsError("Enter a valid last meter reading.");
+    return;
+  }
+
+  try {
+    setSavingUnitDetails(true);
+    setUnitDetailsError("");
+
+    await updateBed(unitDetailsTarget._id, bedNo, {
+      price: monthlyPrice,
+      bedCategory:
+        type === "shop"
+          ? "Shop"
+          : type === "room"
+            ? "Rental Room"
+            : unitDetailsDraft.bedCategory.trim() || "Standard",
+    });
+
+    await updateUnit(unitDetailsTarget._id, {
+      category: unitDetailsDraft.category.trim(),
+      floorNo: unitDetailsDraft.floorNo.trim(),
+      roomNo: normalizeIdentifier(unitDetailsDraft.roomNo),
+      hasWing: Boolean(unitDetailsDraft.wingName.trim()),
+      wingName: unitDetailsDraft.wingName.trim(),
+      flatType: type === "room" ? unitDetailsDraft.flatType.trim() : "",
+      meterNo: normalizeIdentifier(unitDetailsDraft.meterNo),
+      lastMeterReading: meterReading,
+    });
+
+    closeUnitDetails();
+    await load();
+  } catch (err) {
+    setUnitDetailsError(
+      err.response?.data?.message ||
+        err.message ||
+        "Unable to save unit details."
+    );
+  } finally {
+    setSavingUnitDetails(false);
+  }
 }
 
 async function savePropertyName() {
@@ -361,6 +600,45 @@ async function savePropertyName() {
   }, [units, type, query]);
 
   const buildings = useMemo(() => groupUnits(filteredUnits, tenants), [filteredUnits, tenants]);
+  const savedLocationUnits = useMemo(
+    () => units.filter((unit) => !unit.isPlaceholder),
+    [units]
+  );
+  const savedPropertyOptions = useMemo(
+    () => uniqueValues(savedLocationUnits, (unit) => unit.category),
+    [savedLocationUnits]
+  );
+  const savedFloorOptions = useMemo(() => {
+    const categoryKey = normalizeKey(unitDetailsDraft.category);
+    return uniqueValues(
+      savedLocationUnits.filter((unit) => !categoryKey || normalizeKey(unit.category) === categoryKey),
+      (unit) => unit.floorNo
+    );
+  }, [savedLocationUnits, unitDetailsDraft.category]);
+  const savedWingOptions = useMemo(() => {
+    const categoryKey = normalizeKey(unitDetailsDraft.category);
+    const floorKey = normalizeKey(unitDetailsDraft.floorNo);
+    return uniqueValues(
+      savedLocationUnits.filter((unit) => {
+        if (categoryKey && normalizeKey(unit.category) !== categoryKey) return false;
+        if (floorKey && normalizeKey(unit.floorNo) !== floorKey) return false;
+        return Boolean(unit.wingName);
+      }),
+      (unit) => unit.wingName
+    );
+  }, [savedLocationUnits, unitDetailsDraft.category, unitDetailsDraft.floorNo]);
+  const savedFlatTypeOptions = useMemo(() => {
+    const categoryKey = normalizeKey(unitDetailsDraft.category);
+    const floorKey = normalizeKey(unitDetailsDraft.floorNo);
+    return uniqueValues(
+      savedLocationUnits.filter((unit) => {
+        if (categoryKey && normalizeKey(unit.category) !== categoryKey) return false;
+        if (floorKey && normalizeKey(unit.floorNo) !== floorKey) return false;
+        return Boolean(unit.flatType);
+      }),
+      (unit) => unit.flatType
+    );
+  }, [savedLocationUnits, unitDetailsDraft.category, unitDetailsDraft.floorNo]);
   const stats = useMemo(() => filteredUnits.reduce((sum, unit) => {
     const value = unitOccupancy(unit, tenants);
     return { total: sum.total + value.total, occupied: sum.occupied + value.occupied, vacant: sum.vacant + value.vacant };
@@ -424,12 +702,17 @@ async function savePropertyName() {
       [building.name]: wing,
     }))
   }
-  onRoomPress={(room) =>
+  onRoomPress={(room) => {
+    if (room.isPlaceholder) {
+      openUnitDetails(room);
+      return;
+    }
     router.push({
       pathname: "/system/unit-details",
       params: { id: room._id },
-    })
-  }
+    });
+  }}
+  onPendingWingPress={openUnitDetails}
   onRename={openRenameProperty}
 />
         ))}
@@ -550,6 +833,211 @@ async function savePropertyName() {
 
   </View>
 </Modal>
+      <Modal
+        visible={Boolean(unitDetailsTarget)}
+        transparent
+        animationType="fade"
+        onRequestClose={closeUnitDetails}
+      >
+        <View style={styles.renameOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={closeUnitDetails}
+          />
+
+          <View style={styles.renameModal}>
+            <View style={styles.renameHeader}>
+              <View style={styles.renameHeaderIcon}>
+                <DoorOpen size={19} color={UI.primaryDark} />
+              </View>
+
+              <View style={styles.renameHeaderCopy}>
+                <Text style={styles.renameTitle}>Set unit details</Text>
+                <Text style={styles.renameSubtitle}>
+                  Add the property, floor and unit number before assigning tenants.
+                </Text>
+              </View>
+
+              <Pressable onPress={closeUnitDetails} style={styles.renameClose}>
+                <X size={18} color={UI.primaryDark} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              style={styles.unitDetailsScroll}
+            >
+              {(() => {
+                const labels = unitDetailLabels(type);
+                return (
+                  <>
+                    <Text style={styles.renameLabel}>{labels.category}</Text>
+                    <TextInput
+                      value={unitDetailsDraft.category}
+                      onChangeText={(value) => updateUnitDetailsDraft("category", value)}
+                      placeholder={`Enter ${labels.category.toLowerCase()}`}
+                      placeholderTextColor="#98A2B3"
+                      style={styles.renameInput}
+                      editable={!savingUnitDetails}
+                    />
+                    <SavedOptionChips
+                      options={savedPropertyOptions}
+                      selectedValue={unitDetailsDraft.category}
+                      onSelect={(value) => {
+                        updateUnitDetailsDraft("category", value);
+                        updateUnitDetailsDraft("floorNo", "");
+                        updateUnitDetailsDraft("wingName", "");
+                        updateUnitDetailsDraft("flatType", "");
+                      }}
+                    />
+
+                    <Text style={styles.renameLabel}>Floor</Text>
+                    <TextInput
+                      value={unitDetailsDraft.floorNo}
+                      onChangeText={(value) => updateUnitDetailsDraft("floorNo", value)}
+                      placeholder="Example: Ground or 1"
+                      placeholderTextColor="#98A2B3"
+                      style={styles.renameInput}
+                      editable={!savingUnitDetails}
+                    />
+                    <SavedOptionChips
+                      options={savedFloorOptions}
+                      selectedValue={unitDetailsDraft.floorNo}
+                      onSelect={(value) => {
+                        updateUnitDetailsDraft("floorNo", value);
+                        updateUnitDetailsDraft("wingName", "");
+                        updateUnitDetailsDraft("flatType", "");
+                      }}
+                    />
+
+                    <Text style={styles.renameLabel}>Wing or block</Text>
+                    <TextInput
+                      value={unitDetailsDraft.wingName}
+                      onChangeText={(value) => updateUnitDetailsDraft("wingName", value)}
+                      placeholder="Example: A"
+                      placeholderTextColor="#98A2B3"
+                      style={styles.renameInput}
+                      editable={!savingUnitDetails}
+                    />
+                    <SavedOptionChips
+                      options={savedWingOptions}
+                      selectedValue={unitDetailsDraft.wingName}
+                      onSelect={(value) => updateUnitDetailsDraft("wingName", value)}
+                    />
+
+                    {type === "room" ? (
+                      <>
+                        <Text style={styles.renameLabel}>Flat type</Text>
+                        <TextInput
+                          value={unitDetailsDraft.flatType}
+                          onChangeText={(value) => updateUnitDetailsDraft("flatType", value)}
+                          placeholder="Example: 1 RK or 1 BHK"
+                          placeholderTextColor="#98A2B3"
+                          style={styles.renameInput}
+                          editable={!savingUnitDetails}
+                        />
+                        <SavedOptionChips
+                          options={savedFlatTypeOptions}
+                          selectedValue={unitDetailsDraft.flatType}
+                          onSelect={(value) => updateUnitDetailsDraft("flatType", value)}
+                        />
+                      </>
+                    ) : null}
+
+                    <Text style={styles.renameLabel}>{labels.number}</Text>
+                    <TextInput
+                      value={unitDetailsDraft.roomNo}
+                      onChangeText={(value) => updateUnitDetailsDraft("roomNo", value)}
+                      placeholder={labels.numberPlaceholder}
+                      placeholderTextColor="#98A2B3"
+                      style={styles.renameInput}
+                      editable={!savingUnitDetails}
+                    />
+
+                    <Text style={styles.renameLabel}>Meter number</Text>
+                    <TextInput
+                      value={unitDetailsDraft.meterNo}
+                      onChangeText={(value) => updateUnitDetailsDraft("meterNo", value)}
+                      placeholder="Example: MTR-101"
+                      placeholderTextColor="#98A2B3"
+                      style={styles.renameInput}
+                      editable={!savingUnitDetails}
+                    />
+
+                    <Text style={styles.renameLabel}>Last meter reading</Text>
+                    <TextInput
+                      value={unitDetailsDraft.lastMeterReading}
+                      onChangeText={(value) =>
+                        updateUnitDetailsDraft("lastMeterReading", value.replace(/[^\d.]/g, ""))
+                      }
+                      keyboardType="numeric"
+                      placeholder="Example: 250"
+                      placeholderTextColor="#98A2B3"
+                      style={styles.renameInput}
+                      editable={!savingUnitDetails}
+                    />
+
+                    {type === "bed" ? (
+                      <>
+                        <Text style={styles.renameLabel}>Bed category</Text>
+                        <TextInput
+                          value={unitDetailsDraft.bedCategory}
+                          onChangeText={(value) => updateUnitDetailsDraft("bedCategory", value)}
+                          placeholder="Example: Standard"
+                          placeholderTextColor="#98A2B3"
+                          style={styles.renameInput}
+                          editable={!savingUnitDetails}
+                        />
+                      </>
+                    ) : null}
+
+                    <Text style={styles.renameLabel}>{labels.price}</Text>
+                    <TextInput
+                      value={unitDetailsDraft.monthlyPrice}
+                      onChangeText={(value) =>
+                        updateUnitDetailsDraft("monthlyPrice", value.replace(/[^\d.]/g, ""))
+                      }
+                      keyboardType="numeric"
+                      placeholder="Example: 5000"
+                      placeholderTextColor="#98A2B3"
+                      style={styles.renameInput}
+                      editable={!savingUnitDetails}
+                    />
+                  </>
+                );
+              })()}
+            </ScrollView>
+
+            {unitDetailsError ? <Text style={styles.unitDetailsError}>{unitDetailsError}</Text> : null}
+
+            <View style={styles.renameActions}>
+              <Pressable
+                disabled={savingUnitDetails}
+                onPress={closeUnitDetails}
+                style={styles.renameCancel}
+              >
+                <Text style={styles.renameCancelText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                disabled={savingUnitDetails}
+                onPress={saveUnitDetails}
+                style={[styles.renameSave, savingUnitDetails && styles.disabledAction]}
+              >
+                {savingUnitDetails ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <>
+                    <Check size={16} color="#FFF" />
+                    <Text style={styles.renameSaveText}>Save details</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -593,7 +1081,7 @@ const styles = StyleSheet.create({
   sortText: { color: UI.text, fontSize: 11, fontWeight: "700" },
   list: { gap: 8 },
   buildingCard: { overflow: "hidden", borderRadius: 9, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
-  buildingHeader: { height: 58, paddingHorizontal: 10, flexDirection: "row", alignItems: "center" },
+  buildingHeader: { minHeight: 58, paddingHorizontal: 10, paddingVertical: 10, flexDirection: "row", alignItems: "center" },
   buildingIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
   buildingCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
  buildingNameRow: {
@@ -630,12 +1118,16 @@ renamePropertyButton: {
   wingText: { color: UI.muted, fontSize: 11, fontWeight: "700" },
   wingTextActive: { color: UI.primaryDark, fontWeight: "900" },
   rooms: { marginHorizontal: 10, borderTopWidth: 1, borderTopColor: UI.border },
-  roomRow: { minHeight: 60, flexDirection: "row", alignItems: "center" },
+  floorSection: { borderTopWidth: 1, borderTopColor: UI.border },
+  floorHeader: { minHeight: 30, paddingTop: 9, paddingBottom: 4, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  floorText: { color: UI.primaryDark, fontSize: 12, fontWeight: "900" },
+  floorCount: { color: UI.muted, fontSize: 10, fontWeight: "800" },
+  roomRow: { minHeight: 56, flexDirection: "row", alignItems: "center" },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: UI.border },
   roomIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
-  roomNameWrap: { width: 72, marginLeft: 7 },
+  roomNameWrap: { width: 98, marginLeft: 7 },
   roomName: { color: UI.text, fontSize: 13, fontWeight: "900" },
-  roomMeta: { marginTop: 2, color: UI.muted, fontSize: 10, fontWeight: "600" },
+  roomMeta: { marginTop: 2, color: UI.muted, fontSize: 10, fontWeight: "700" },
   occupancyWrap: { flex: 1, minWidth: 68, marginRight: 6 },
   occupancyText: { color: UI.muted, fontSize: 10, fontWeight: "700" },
   roomTrack: { height: 5, marginTop: 4, overflow: "hidden", borderRadius: 3, backgroundColor: UI.track },
@@ -777,6 +1269,65 @@ renameSave: {
 renameSaveText: {
   color: "#FFF",
   fontSize: 12,
+  fontWeight: "900",
+},
+
+unitDetailsScroll: {
+  maxHeight: 420,
+  marginTop: 4,
+},
+
+unitDetailsError: {
+  marginTop: 10,
+  padding: 10,
+  borderRadius: 8,
+  color: systemColors.danger,
+  backgroundColor: systemColors.dangerSoft,
+  fontSize: 12,
+  fontWeight: "700",
+},
+
+optionHelper: {
+  marginTop: 7,
+  color: UI.muted,
+  fontSize: 11,
+  fontWeight: "700",
+},
+
+optionWrap: {
+  marginTop: 8,
+  flexDirection: "row",
+  flexWrap: "wrap",
+  gap: 7,
+},
+
+optionChip: {
+  minHeight: 30,
+  maxWidth: 170,
+  paddingHorizontal: 10,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 5,
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: UI.border,
+  backgroundColor: UI.card,
+},
+
+optionChipActive: {
+  borderColor: UI.primary,
+  backgroundColor: UI.primarySoft,
+},
+
+optionText: {
+  flexShrink: 1,
+  color: UI.muted,
+  fontSize: 11,
+  fontWeight: "800",
+},
+
+optionTextActive: {
+  color: UI.primaryDark,
   fontWeight: "900",
 },
 });

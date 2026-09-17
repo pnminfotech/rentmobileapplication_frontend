@@ -43,12 +43,16 @@ export function formatTenantUnit(tenant = {}) {
 }
 
 export function formatVacancyTitle(unit = {}) {
+  if (unit.isPlaceholder) return `${unitTypeLabel(unit)} | Details pending`;
   return `${unitTypeLabel(unit)} | ${unit.category || "-"}`;
 }
 
 export function formatVacancyMeta(unit = {}, bed = {}) {
   const type = normalizePropertyType(unit.propertyType);
   const rent = Number(bed?.price || 0).toLocaleString("en-IN");
+  if (unit.isPlaceholder) {
+    return `Room or unit number is not set yet | Rs. ${rent}`;
+  }
   const wing = String(unit.wingName || "").trim();
   const prefix = `${wing ? `Wing ${wing} | ` : ""}Floor ${unit.floorNo || "-"} | `;
   if (type === "shop") return `${prefix}Shop ${unit.roomNo || "-"} | Rs. ${rent}`;
@@ -68,7 +72,9 @@ export function filterVacanciesByType(vacancies = [], propertyType = "bed") {
 export function groupVacanciesByProperty(vacancies = []) {
   const groups = new Map();
   vacancies.forEach((vacancy) => {
-    const propertyName = String(vacancy?.unit?.category || "Unassigned property").trim() || "Unassigned property";
+    const propertyName = vacancy?.unit?.isPlaceholder
+      ? "Added units - details pending"
+      : String(vacancy?.unit?.category || "Unassigned property").trim() || "Unassigned property";
     if (!groups.has(propertyName)) groups.set(propertyName, []);
     groups.get(propertyName).push(vacancy);
   });

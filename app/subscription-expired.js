@@ -48,6 +48,27 @@ function isPendingPaymentStatus(value) {
   return String(value || "").toLowerCase() === "pending_payment";
 }
 
+function planDurationLabel(months) {
+  const totalMonths = Number(months || 0);
+  const years = totalMonths / 12;
+  if (Number.isInteger(years) && years > 0) return `${years} ${years === 1 ? "year" : "years"}`;
+  return `${totalMonths || 0} months`;
+}
+
+function calculatePlanAmount(plan, units = {}) {
+  if (!plan) return 0;
+  const months = Number(plan.durationMonths || 0);
+  const pricing = plan.unitPricing || {};
+  const subtotal =
+    Number(plan.baseAmount || 0) +
+    months *
+      (Number(units.beds || 0) * Number(pricing.bedMonthly || 0) +
+        Number(units.rooms || 0) * Number(pricing.roomMonthly || 0) +
+        Number(units.shops || 0) * Number(pricing.shopMonthly || 0));
+  const discount = Math.min(100, Math.max(0, Number(plan.discountPercent || 0)));
+  return Math.max(0, Math.round(subtotal - (subtotal * discount) / 100));
+}
+
 export default function SubscriptionExpiredScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -58,6 +79,7 @@ export default function SubscriptionExpiredScreen() {
   const [error, setError] = useState("");
   const [wallet, setWallet] = useState(null);
   const [useWallet, setUseWallet] = useState(true);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +120,8 @@ export default function SubscriptionExpiredScreen() {
         router.replace(data.user?.role === "superadmin" ? "/superadmin" : "/system");
         return;
       }
+      const activePlans = Array.isArray(data?.plans) ? data.plans.filter((plan) => plan.isActive !== false) : [];
+      if (!selectedPlanId && activePlans[0]?._id) setSelectedPlanId(String(activePlans[0]._id));
       setBootstrap(data);
       setWallet(walletData);
     } catch (err) {
@@ -105,7 +129,7 @@ export default function SubscriptionExpiredScreen() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, selectedPlanId]);
 
   useEffect(() => {
     const subscription = Linking.addEventListener("url", ({ url }) => {
@@ -146,7 +170,8 @@ export default function SubscriptionExpiredScreen() {
 
       if (!transactionId) {
         const renewal = await requestSubscriptionRenewal({
-          durationMonths: bootstrap?.subscription?.durationMonths || 12,
+          planId: selectedPlan?._id || selectedPlanId || undefined,
+          durationMonths: selectedPlan?.durationMonths || bootstrap?.subscription?.durationMonths || 12,
           useWallet,
         });
         transactionId = renewal?.transaction?._id;
@@ -214,7 +239,9 @@ export default function SubscriptionExpiredScreen() {
   const subscription = bootstrap?.subscription || {};
   const units = subscription.units || {};
   const pendingPayment = isPendingPaymentStatus(subscription.status) || isPendingPaymentStatus(organization.status);
-  const renewalAmount = Number(subscription.amount || 0);
+  const plans = Array.isArray(bootstrap?.plans) ? bootstrap.plans.filter((plan) => plan.isActive !== false) : [];
+  const selectedPlan = plans.find((plan) => String(plan._id) === String(selectedPlanId)) || plans[0] || null;
+  const renewalAmount = pendingPayment ? Number(subscription.amount || 0) : calculatePlanAmount(selectedPlan, units);
   const walletBalance = pendingPayment ? 0 : Number(wallet?.balance || 0);
   const walletCoinsUsed = useWallet ? Math.min(walletBalance, renewalAmount) : 0;
   const payableAmount = Math.max(0, renewalAmount - walletCoinsUsed);
@@ -274,8 +301,31 @@ export default function SubscriptionExpiredScreen() {
         <View style={styles.summary}>
           <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Current status</Text><Text style={styles.summaryValue}>{subscription.status || organization.status || "-"}</Text></View>
           <View style={styles.summaryItem}><Text style={styles.summaryLabel}>{pageCopy.amountLabel}</Text><Text style={styles.summaryValue}>{money(renewalAmount)}</Text></View>
-          <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Duration</Text><Text style={styles.summaryValue}>{subscription.durationMonths || 12} months</Text></View>
+          <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Duration</Text><Text style={styles.summaryValue}>{pendingPayment ? subscription.durationMonths || 12 : selectedPlan?.durationMonths || 0} months</Text></View>
         </View>
+
+        {!pendingPayment ? (
+          <>
+            <Text style={styles.planTitle}>Choose plan</Text>
+            {!plans.length ? <Text style={styles.error}>No active plans available. Please contact superadmin.</Text> : null}
+            <View style={styles.planList}>
+              {plans.map((plan) => {
+                const active = String(selectedPlan?._id) === String(plan._id);
+                return (
+                  <Pressable key={plan._id} onPress={() => setSelectedPlanId(String(plan._id))} style={[styles.planCard, active && styles.planActive]}>
+                    <View style={styles.planHeader}>
+                      <Text style={[styles.planName, active && styles.planTextActive]}>{plan.name || planDurationLabel(plan.durationMonths)}</Text>
+                      <Text style={[styles.planAmount, active && styles.planTextActive]}>{money(calculatePlanAmount(plan, units))}</Text>
+                    </View>
+                    <Text style={[styles.planMeta, active && styles.planTextActive]}>
+                      {planDurationLabel(plan.durationMonths)} | Bed {money(plan.unitPricing?.bedMonthly)}/mo | Room {money(plan.unitPricing?.roomMonthly)}/mo | Shop {money(plan.unitPricing?.shopMonthly)}/mo
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
 
         {!pendingPayment ? (
           <Pressable
@@ -310,7 +360,7 @@ export default function SubscriptionExpiredScreen() {
           <UnitBox label="Shops" value={units.shops} style={{ width: responsive.isTiny ? "100%" : "31.5%" }} />
         </View>
 
-        <Pressable onPress={renewNow} disabled={renewing} style={[styles.primaryButton, renewing && styles.disabled]}>
+        <Pressable onPress={renewNow} disabled={renewing || (!pendingPayment && !selectedPlan)} style={[styles.primaryButton, (renewing || (!pendingPayment && !selectedPlan)) && styles.disabled]}>
           {renewing ? <ActivityIndicator color={colors.surface} /> : <><RefreshCw size={18} color={colors.surface} /><Text style={styles.primaryText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{pageCopy.buttonText}</Text></>}
         </Pressable>
         {/* The payment confirmation check has been intentionally removed because the screen only needs the payment action. */}
@@ -337,6 +387,15 @@ const styles = StyleSheet.create({
   summaryItem: { minWidth: 0 },
   summaryLabel: { color: colors.muted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
   summaryValue: { marginTop: 4, color: colors.text, fontSize: 15, fontWeight: "800", textTransform: "capitalize" },
+  planTitle: { marginTop: 18, marginBottom: 8, color: colors.text, fontSize: 15, fontWeight: "900" },
+  planList: { gap: 8 },
+  planCard: { minHeight: 72, padding: 11, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
+  planActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  planHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  planName: { flex: 1, minWidth: 0, color: colors.text, fontSize: 14, fontWeight: "900" },
+  planAmount: { color: colors.text, fontSize: 14, fontWeight: "900" },
+  planMeta: { marginTop: 6, color: colors.muted, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  planTextActive: { color: colors.primary },
   unitGrid: { marginTop: 16, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 9 },
   unitBox: { minHeight: 72, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: colors.surfaceSoft },
   unitValue: { color: colors.primary, fontSize: 22, fontWeight: "800" },

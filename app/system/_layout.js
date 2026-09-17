@@ -117,6 +117,16 @@ export default function SystemTabsLayout() {
           /* SUBSCRIPTION / ACCESS */
 
           if (
+            data.access?.needsUnitSetup
+          ) {
+            router.replace(
+              "/trial-unit-setup"
+            );
+
+            return;
+          }
+
+          if (
             data.access?.expired ||
             data.access?.needsPayment ||
             !data.access?.canUseSystem

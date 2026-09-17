@@ -134,6 +134,14 @@ function statusTone(value) {
   return "pending";
 }
 
+function isTrialOrganization(org = {}) {
+  const subscription = org.subscription || {};
+  return (
+    Number(subscription.amount || 0) === 0 &&
+    !subscription.planId
+  );
+}
+
 function getWalletPricing(transaction) {
   const pricing = transaction?.pricing || {};
   const walletCoinsUsed = Number(pricing.walletCoinsUsed || pricing.walletDiscountAmount || 0);
@@ -533,6 +541,7 @@ function OrganizationCard({ org, actionId, onOpen, onRenew, onToggleStatus }) {
   const tone = org.status === "active" ? "active" : org.status === "suspended" ? "suspended" : isExpired ? "expired" : "pending";
   const color = tone === "suspended" ? COLORS.red : COLORS.blue;
   const bg = tone === "suspended" ? COLORS.redSoft : COLORS.blueSoft;
+  const isTrial = isTrialOrganization(org);
 
   return (
     <Pressable onPress={onOpen} style={styles.orgCard}>
@@ -549,6 +558,11 @@ function OrganizationCard({ org, actionId, onOpen, onRenew, onToggleStatus }) {
           </View>
         </View>
         <View style={styles.orgRight}>
+          <View style={[styles.planTypeBadge, isTrial ? styles.planTypeTrial : styles.planTypePaid]}>
+            <Text style={[styles.planTypeText, isTrial ? styles.planTypeTrialText : styles.planTypePaidText]}>
+              {isTrial ? "Trial" : "Paid"}
+            </Text>
+          </View>
           <StatusBadge status={isExpired ? "expired" : org.status} />
           <MoreVertical size={18} color={COLORS.muted} />
         </View>
@@ -693,6 +707,21 @@ export default function SuperAdminScreen() {
       .filter((org) => !needle || [org.name, org.ownerName, org.email, org.phone, org.businessType]
         .some((value) => String(value || "").toLowerCase().includes(needle)));
   }, [filter, organizations, query]);
+
+  const organizationSections = useMemo(() => ([
+    {
+      key: "trial",
+      title: "Trial accounts",
+      subtitle: "Free trial users who have not purchased a plan yet",
+      rows: filteredOrganizations.filter(isTrialOrganization),
+    },
+    {
+      key: "paid",
+      title: "Renewed / paid accounts",
+      subtitle: "Organizations with an active paid plan or payment history",
+      rows: filteredOrganizations.filter((org) => !isTrialOrganization(org)),
+    },
+  ]), [filteredOrganizations]);
 
   const counts = useMemo(() => FILTERS.reduce((acc, item) => {
     acc[item.value] = item.value === "all"
@@ -1230,16 +1259,29 @@ export default function SuperAdminScreen() {
             </View>
             <View style={styles.orgList}>
               {!filteredOrganizations.length ? <Text style={styles.empty}>No organizations found.</Text> : null}
-              {filteredOrganizations.map((org) => (
-                <OrganizationCard
-                  key={org._id}
-                  org={org}
-                  actionId={actionId}
-                  onOpen={() => router.push({ pathname: "/superadmin/organization-detail", params: { id: org._id } })}
-                  onRenew={() => renewOrg(org)}
-                  onToggleStatus={() => changeStatus(org)}
-                />
-              ))}
+              {organizationSections.map((section) => section.rows.length ? (
+                <View key={section.key} style={styles.orgSection}>
+                  <View style={styles.orgSectionHeader}>
+                    <View style={styles.orgSectionCopy}>
+                      <Text style={styles.orgSectionTitle}>{section.title}</Text>
+                      <Text style={styles.orgSectionSubtitle}>{section.subtitle}</Text>
+                    </View>
+                    <View style={styles.orgSectionCount}>
+                      <Text style={styles.orgSectionCountText}>{section.rows.length}</Text>
+                    </View>
+                  </View>
+                  {section.rows.map((org) => (
+                    <OrganizationCard
+                      key={org._id}
+                      org={org}
+                      actionId={actionId}
+                      onOpen={() => router.push({ pathname: "/superadmin/organization-detail", params: { id: org._id } })}
+                      onRenew={() => renewOrg(org)}
+                      onToggleStatus={() => changeStatus(org)}
+                    />
+                  ))}
+                </View>
+              ) : null)}
             </View>
           </>
         ) : null}
@@ -2869,6 +2911,56 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
+  orgSection: {
+    gap: 8,
+  },
+
+  orgSectionHeader: {
+    minHeight: 52,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  orgSectionCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  orgSectionTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  orgSectionSubtitle: {
+    marginTop: 2,
+    color: COLORS.muted,
+    fontSize: 10.5,
+    fontWeight: "700",
+  },
+
+  orgSectionCount: {
+    minWidth: 34,
+    height: 30,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: COLORS.card,
+  },
+
+  orgSectionCountText: {
+    color: COLORS.blue,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
   orgCard: {
     padding: 10,
 
@@ -2949,6 +3041,35 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
 
     gap: 6,
+  },
+
+  planTypeBadge: {
+    minHeight: 22,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+  },
+
+  planTypeTrial: {
+    backgroundColor: COLORS.orangeSoft,
+  },
+
+  planTypePaid: {
+    backgroundColor: COLORS.greenSoft,
+  },
+
+  planTypeText: {
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  planTypeTrialText: {
+    color: COLORS.orange,
+  },
+
+  planTypePaidText: {
+    color: COLORS.green,
   },
 
   statusBadge: {

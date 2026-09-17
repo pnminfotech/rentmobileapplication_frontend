@@ -560,14 +560,24 @@ export default function TenantDetailsScreen() {
   const params =
     useLocalSearchParams();
 
-  const id = Array.isArray(params.id)
-    ? params.id[0]
-    : params.id;
+  const idParam =
+    params.id ??
+    params.tenantId;
 
-  const returnTo = Array.isArray(params.returnTo)
+  const id = Array.isArray(idParam)
+    ? idParam[0]
+    : idParam;
+
+  const returnToParam = Array.isArray(params.returnTo)
     ? params.returnTo[0]
     : params.returnTo ||
       "/system/tenants";
+
+  const returnTo =
+    returnToParam ===
+    "/system/tenant-details"
+      ? "/system/tenants"
+      : returnToParam;
 
   const [tenant, setTenant] =
     useState(null);
@@ -666,8 +676,7 @@ export default function TenantDetailsScreen() {
 
       params: {
         id,
-        returnTo:
-          "/system/tenant-details",
+        returnTo,
       },
     });
   }
@@ -679,8 +688,7 @@ export default function TenantDetailsScreen() {
 
       params: {
         id,
-        returnTo:
-          "/system/tenant-details",
+        returnTo,
       },
     });
   }

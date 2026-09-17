@@ -25,6 +25,8 @@ export default function Index() {
 
         if (data.user.role === "superadmin") {
           router.replace("/superadmin");
+        } else if (data.access?.needsUnitSetup) {
+          router.replace("/trial-unit-setup");
         } else if (data.access?.expired || data.access?.needsPayment || !data.access?.canUseSystem) {
           router.replace("/subscription-expired");
         } else {

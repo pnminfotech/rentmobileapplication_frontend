@@ -27,12 +27,6 @@ export async function resetPassword(token, password) {
 
 export async function registerBusiness(payload) {
   const { data } = await api.post("/saas/register", payload);
-  if (data?.token && data?.user) {
-    await saveAuthSession({
-      token: data.token,
-      user: data.user,
-    });
-  }
   return data;
 }
 
@@ -53,6 +47,11 @@ export async function requestSubscriptionRenewal(payload = {}) {
 
 export async function requestSubscriptionUpgrade(payload = {}) {
   const { data } = await api.post("/saas/subscription/upgrade-request", payload);
+  return data;
+}
+
+export async function saveOnboardingUnits(payload = {}) {
+  const { data } = await api.post("/saas/onboarding/units", payload);
   return data;
 }
 
