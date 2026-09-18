@@ -110,11 +110,16 @@ export default function TrialUnitSetupScreen() {
       ]);
     } catch (err) {
       const status = err.response?.status;
+      const message = err.response?.data?.message || "";
       if (status === 402) {
         router.replace("/subscription-expired");
         return;
       }
-      setError(err.response?.data?.message || "Unable to save units.");
+      if (/already configured/i.test(message)) {
+        router.replace("/system");
+        return;
+      }
+      setError(message || "Unable to save units.");
     } finally {
       setSaving(false);
     }

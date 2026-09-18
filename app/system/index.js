@@ -25,6 +25,7 @@ import { normalizePropertyType, propertyTypeFromTenant } from "../../src/utils/u
 import { allowedUnitTypes, isTypeAllowed } from "../../src/utils/subscriptionAccess";
 import { hasCanteenFeature, needsCanteenAttendance } from "../../src/utils/featureAccess";
 import { useResponsive } from "../../src/utils/responsive";
+import AssistantChat from "../../src/components/AssistantChat";
 
 const UI = {
   screen: "#F6F8F7", card: "#FFFFFF", primary: "#4F7FA6",
@@ -423,13 +424,13 @@ export default function SystemAdminScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding }]}
-      showsVerticalScrollIndicator={false}
-      refreshing={refreshing}
-      onRefresh={loadDashboard}
-    >
+    <View style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding }]}
+        showsVerticalScrollIndicator={false}
+        refreshing={refreshing}
+        onRefresh={loadDashboard}
+      >
       <View style={styles.header}>
         <Pressable
           onPress={() => setDrawerOpen(true)}
@@ -620,7 +621,9 @@ export default function SystemAdminScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+      </ScrollView>
+      <AssistantChat />
+    </View>
   );
 }
 

@@ -56,6 +56,7 @@ import { getUnreadNotificationCount } from "../../src/api/notificationApi";
 import { clearAuthSession } from "../../src/storage/authStorage";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/utils/responsive";
+import AssistantChat from "../../src/components/AssistantChat";
 
 const COLORS = {
   // Base — matching System Admin
@@ -629,6 +630,7 @@ export default function SuperAdminScreen() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [organizationView, setOrganizationView] = useState("trial");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState("");
@@ -708,20 +710,31 @@ export default function SuperAdminScreen() {
         .some((value) => String(value || "").toLowerCase().includes(needle)));
   }, [filter, organizations, query]);
 
-  const organizationSections = useMemo(() => ([
-    {
-      key: "trial",
-      title: "Trial accounts",
-      subtitle: "Free trial users who have not purchased a plan yet",
-      rows: filteredOrganizations.filter(isTrialOrganization),
-    },
-    {
-      key: "paid",
-      title: "Renewed / paid accounts",
-      subtitle: "Organizations with an active paid plan or payment history",
-      rows: filteredOrganizations.filter((org) => !isTrialOrganization(org)),
-    },
-  ]), [filteredOrganizations]);
+  const organizationTypeCounts = useMemo(() => organizations.reduce((acc, org) => {
+    const key = isTrialOrganization(org) ? "trial" : "paid";
+    acc[key] += 1;
+    return acc;
+  }, { trial: 0, paid: 0 }), [organizations]);
+
+  const visibleOrganizations = useMemo(() => (
+    filteredOrganizations.filter((org) => (
+      organizationView === "trial"
+        ? isTrialOrganization(org)
+        : !isTrialOrganization(org)
+    ))
+  ), [filteredOrganizations, organizationView]);
+
+  const organizationViewMeta = organizationView === "trial"
+    ? {
+        title: "Trial accounts",
+        subtitle: "Free trial users who have not purchased a plan yet",
+        empty: "No trial organizations found.",
+      }
+    : {
+        title: "Paid accounts",
+        subtitle: "Organizations with an active paid plan or payment history",
+        empty: "No paid organizations found.",
+      };
 
   const counts = useMemo(() => FILTERS.reduce((acc, item) => {
     acc[item.value] = item.value === "all"
@@ -1257,31 +1270,57 @@ export default function SuperAdminScreen() {
                 <SlidersHorizontal size={19} color={COLORS.muted} />
               </Pressable>
             </View>
-            <View style={styles.orgList}>
-              {!filteredOrganizations.length ? <Text style={styles.empty}>No organizations found.</Text> : null}
-              {organizationSections.map((section) => section.rows.length ? (
-                <View key={section.key} style={styles.orgSection}>
-                  <View style={styles.orgSectionHeader}>
-                    <View style={styles.orgSectionCopy}>
-                      <Text style={styles.orgSectionTitle}>{section.title}</Text>
-                      <Text style={styles.orgSectionSubtitle}>{section.subtitle}</Text>
-                    </View>
-                    <View style={styles.orgSectionCount}>
-                      <Text style={styles.orgSectionCountText}>{section.rows.length}</Text>
-                    </View>
-                  </View>
-                  {section.rows.map((org) => (
-                    <OrganizationCard
-                      key={org._id}
-                      org={org}
-                      actionId={actionId}
-                      onOpen={() => router.push({ pathname: "/superadmin/organization-detail", params: { id: org._id } })}
-                      onRenew={() => renewOrg(org)}
-                      onToggleStatus={() => changeStatus(org)}
-                    />
-                  ))}
+            <View style={styles.orgTypeTabs}>
+              <Pressable
+                onPress={() => setOrganizationView("trial")}
+                style={[styles.orgTypeTab, organizationView === "trial" && styles.orgTypeTabActive]}
+              >
+                <Clock3 size={16} color={organizationView === "trial" ? COLORS.blue : COLORS.muted} />
+                <Text style={[styles.orgTypeTabText, organizationView === "trial" && styles.orgTypeTabTextActive]}>
+                  Trial
+                </Text>
+                <View style={[styles.orgTypeCount, organizationView === "trial" && styles.orgTypeCountActive]}>
+                  <Text style={[styles.orgTypeCountText, organizationView === "trial" && styles.orgTypeCountTextActive]}>
+                    {organizationTypeCounts.trial}
+                  </Text>
                 </View>
-              ) : null)}
+              </Pressable>
+              <Pressable
+                onPress={() => setOrganizationView("paid")}
+                style={[styles.orgTypeTab, organizationView === "paid" && styles.orgTypeTabActive]}
+              >
+                <BadgeIndianRupee size={16} color={organizationView === "paid" ? COLORS.blue : COLORS.muted} />
+                <Text style={[styles.orgTypeTabText, organizationView === "paid" && styles.orgTypeTabTextActive]}>
+                  Paid
+                </Text>
+                <View style={[styles.orgTypeCount, organizationView === "paid" && styles.orgTypeCountActive]}>
+                  <Text style={[styles.orgTypeCountText, organizationView === "paid" && styles.orgTypeCountTextActive]}>
+                    {organizationTypeCounts.paid}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+            <View style={styles.orgList}>
+              <View style={styles.orgSectionHeader}>
+                <View style={styles.orgSectionCopy}>
+                  <Text style={styles.orgSectionTitle}>{organizationViewMeta.title}</Text>
+                  <Text style={styles.orgSectionSubtitle}>{organizationViewMeta.subtitle}</Text>
+                </View>
+                <View style={styles.orgSectionCount}>
+                  <Text style={styles.orgSectionCountText}>{visibleOrganizations.length}</Text>
+                </View>
+              </View>
+              {!visibleOrganizations.length ? <Text style={styles.empty}>{organizationViewMeta.empty}</Text> : null}
+              {visibleOrganizations.map((org) => (
+                <OrganizationCard
+                  key={org._id}
+                  org={org}
+                  actionId={actionId}
+                  onOpen={() => router.push({ pathname: "/superadmin/organization-detail", params: { id: org._id } })}
+                  onRenew={() => renewOrg(org)}
+                  onToggleStatus={() => changeStatus(org)}
+                />
+              ))}
             </View>
           </>
         ) : null}
@@ -1430,6 +1469,7 @@ export default function SuperAdminScreen() {
           <Pressable style={styles.sidebarScrim} onPress={() => setSidebarOpen(false)} />
         </View>
       </Modal>
+      <AssistantChat />
     </View>
   );
 }
@@ -2901,6 +2941,69 @@ const styles = StyleSheet.create({
     borderRadius: 10,
 
     backgroundColor: COLORS.soft,
+  },
+
+  orgTypeTabs: {
+    minHeight: 48,
+    marginBottom: 8,
+    padding: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    backgroundColor: COLORS.card,
+  },
+
+  orgTypeTab: {
+    flex: 1,
+    minWidth: 0,
+    height: 38,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    borderRadius: 9,
+  },
+
+  orgTypeTabActive: {
+    backgroundColor: COLORS.blueSoft,
+  },
+
+  orgTypeTabText: {
+    color: COLORS.muted,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  orgTypeTabTextActive: {
+    color: COLORS.blue,
+  },
+
+  orgTypeCount: {
+    minWidth: 24,
+    height: 22,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: COLORS.soft,
+  },
+
+  orgTypeCountActive: {
+    backgroundColor: COLORS.card,
+  },
+
+  orgTypeCountText: {
+    color: COLORS.muted,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  orgTypeCountTextActive: {
+    color: COLORS.blue,
   },
 
   /* ==========================================================

@@ -79,6 +79,13 @@ export default function TenantEditScreen() {
         familyMembers: tenant.familyMembers != null ? String(tenant.familyMembers) : "",
         hasCanteen: Boolean(tenant.hasCanteen),
         canteenPlanType: tenant.canteenPlanType || "",
+        canteenMonthlyAmount: tenant.canteenMonthlyAmount ? String(tenant.canteenMonthlyAmount) : "",
+        canteenMealPrices: {
+          breakfast: tenant.canteenMealPrices?.breakfast ? String(tenant.canteenMealPrices.breakfast) : "",
+          lunch: tenant.canteenMealPrices?.lunch ? String(tenant.canteenMealPrices.lunch) : "",
+          dinner: tenant.canteenMealPrices?.dinner ? String(tenant.canteenMealPrices.dinner) : "",
+        },
+        canteenStatusEffectiveFrom: new Date(),
         shopName: tenant.shopName || "",
         shopBusiness: tenant.shopBusiness || "",
         companyAddress: tenant.companyAddress || "", dateOfJoiningCollege: toDateValue(tenant.dateOfJoiningCollege || new Date()),
@@ -140,8 +147,14 @@ export default function TenantEditScreen() {
         familyMembers: form.familyMembers ? Number(form.familyMembers) : 0,
         hasCanteen: type === "bed" && canteenEnabled ? Boolean(form.hasCanteen) : false,
         canteenPlanType: type === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenPlan : "",
+        canteenStatusEffectiveFrom: form.canteenStatusEffectiveFrom,
         canteenStartDate: type === "bed" && canteenEnabled && form.hasCanteen ? form.joiningDate : undefined,
-        canteenMonthlyAmount: type === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenMeta.amount : 0,
+        canteenMonthlyAmount: type === "bed" && canteenEnabled && form.hasCanteen ? Number(form.canteenMonthlyAmount || selectedCanteenMeta.amount || 0) : 0,
+        canteenMealPrices: type === "bed" && canteenEnabled && form.hasCanteen ? {
+          breakfast: Number(form.canteenMealPrices.breakfast || 0),
+          lunch: Number(form.canteenMealPrices.lunch || 0),
+          dinner: Number(form.canteenMealPrices.dinner || 0),
+        } : { breakfast: 0, lunch: 0, dinner: 0 },
         canteenIncludedMeals: type === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenMeta.meals : [],
       });
       if (Object.values(documentUpdates).some(Boolean)) await updateTenantDocuments(id, documentUpdates);
@@ -157,6 +170,11 @@ export default function TenantEditScreen() {
   const documentList = isShop ? SHOP_DOCUMENTS : isResidentialRoom ? RESIDENTIAL_DOCUMENTS : DOCUMENTS;
   const canteenPlans = (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal");
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
+  const selectedCanteenMeta = selectedCanteenPlan === "full_package"
+    ? { amount: Number(canteenSettings?.fullPackage?.monthlyAmount || 0) }
+    : selectedCanteenPlan === "meal_package"
+      ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0) }
+      : { amount: 0 };
 
   return (
     <>
@@ -182,6 +200,7 @@ export default function TenantEditScreen() {
             </Pressable>
           ))}
         </View>
+        <FormDateField label="Canteen status effective from" value={form.canteenStatusEffectiveFrom} onChange={(value) => setValue("canteenStatusEffectiveFrom", value)} />
         {form.hasCanteen ? (
           <>
             {!canteenSettings?.isConfigured ? <Text style={styles.error}>Canteen settings are not configured yet. Open More {">"} Canteen settings first.</Text> : null}
@@ -193,6 +212,17 @@ export default function TenantEditScreen() {
                 </Pressable>
               ))}
             </View>
+            {selectedCanteenPlan === "per_meal" ? (
+              <>
+                <Text style={styles.label}>Individual meal prices (optional)</Text>
+                <Text style={styles.helperText}>Leave blank to use common canteen prices.</Text>
+                {[["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"]].map(([key, label]) => (
+                  <Field key={key} label={`${label} price`} value={form.canteenMealPrices[key]} onChangeText={(value) => setValue("canteenMealPrices", { ...form.canteenMealPrices, [key]: value.replace(/[^\d.]/g, "") })} keyboardType="decimal-pad" placeholder={`Common ${label.toLowerCase()} price`} />
+                ))}
+              </>
+            ) : (
+              <Field label="Individual monthly canteen amount (optional)" value={form.canteenMonthlyAmount} onChangeText={(value) => setValue("canteenMonthlyAmount", value.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" placeholder={`Common amount: ${selectedCanteenMeta.amount || 0}`} />
+            )}
           </>
         ) : null}
       </> : null}
@@ -277,4 +307,5 @@ const styles = StyleSheet.create({
   documentRow: { minHeight: 66, marginTop: 10, padding: 11, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentText: { flex: 1 }, documentTitle: { color: colors.text, fontWeight: "700" }, documentMeta: { marginTop: 4, color: colors.muted, fontSize: 12 }, documentButton: { minWidth: 92, height: 40, paddingHorizontal: 10, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primarySoft }, documentButtonText: { color: colors.primary, fontWeight: "700" },
   error: { marginTop: 14, color: colors.danger }, saveButton: { height: 50, marginTop: 24, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, saveText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.5 },
   documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
+  helperText: { marginTop: -4, marginBottom: 8, color: colors.muted, fontSize: 11 },
 });

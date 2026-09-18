@@ -65,6 +65,7 @@ export function formatVacancyLabel(unit = {}, bed = {}) {
 }
 
 export function filterVacanciesByType(vacancies = [], propertyType = "bed") {
+  if (propertyType === "all") return vacancies;
   const type = normalizePropertyType(propertyType);
   return vacancies.filter(({ unit }) => normalizePropertyType(unit?.propertyType) === type);
 }

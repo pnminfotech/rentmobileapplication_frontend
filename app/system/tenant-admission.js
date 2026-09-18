@@ -53,7 +53,8 @@ function blankForm() {
     relative1Relation: "Father", relative1Name: "", relative1Phone: "",
     relative2Relation: "Mother", relative2Name: "", relative2Phone: "",
     familyMembers: "", shopName: "", shopBusiness: "", companyAddress: "", dateOfJoiningCollege: localDateValue(), depositAmount: "",
-    firstRentStatus: "NOT_PAID", paymentMode: "Cash", hasCanteen: false, canteenPlanType: "",
+    firstRentStatus: "NOT_PAID", paymentMode: "Cash", hasCanteen: false, canteenPlanType: "", canteenMonthlyAmount: "",
+    canteenMealPrices: { breakfast: "", lunch: "", dinner: "" },
   };
 }
 
@@ -421,7 +422,12 @@ export default function TenantAdmissionScreen() {
         hasCanteen: assignmentType === "bed" && canteenEnabled ? Boolean(form.hasCanteen) : false,
         canteenPlanType: assignmentType === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenPlan : "",
         canteenStartDate: assignmentType === "bed" && canteenEnabled && form.hasCanteen ? form.joiningDate : undefined,
-        canteenMonthlyAmount: assignmentType === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenMeta.amount : 0,
+        canteenMonthlyAmount: assignmentType === "bed" && canteenEnabled && form.hasCanteen ? Number(form.canteenMonthlyAmount || selectedCanteenMeta.amount || 0) : 0,
+        canteenMealPrices: assignmentType === "bed" && canteenEnabled && form.hasCanteen ? {
+          breakfast: Number(form.canteenMealPrices.breakfast || 0),
+          lunch: Number(form.canteenMealPrices.lunch || 0),
+          dinner: Number(form.canteenMealPrices.dinner || 0),
+        } : { breakfast: 0, lunch: 0, dinner: 0 },
         canteenIncludedMeals: assignmentType === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenMeta.meals : [],
         shopName: form.shopName.trim(),
         shopBusiness: form.shopBusiness.trim(),
@@ -506,6 +512,17 @@ export default function TenantAdmissionScreen() {
                     </Pressable>
                   ))}
                 </View>
+                {selectedCanteenPlan === "per_meal" ? (
+                  <>
+                    <Text style={styles.label}>Individual meal prices (optional)</Text>
+                    <Text style={styles.helperText}>Leave blank to use common canteen prices.</Text>
+                    {[["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"]].map(([key, label]) => (
+                      <Field key={key} label={`${label} price`} value={form.canteenMealPrices[key]} onChangeText={(value) => setValue("canteenMealPrices", { ...form.canteenMealPrices, [key]: value.replace(/[^\d.]/g, "") })} keyboardType="decimal-pad" placeholder={`Common ${label.toLowerCase()} price`} />
+                    ))}
+                  </>
+                ) : (
+                  <Field label="Individual monthly canteen amount (optional)" value={form.canteenMonthlyAmount} onChangeText={(value) => setValue("canteenMonthlyAmount", value.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" placeholder={`Common amount: ${selectedCanteenMeta.amount || 0}`} />
+                )}
               </>
             ) : null}
           </> : null}

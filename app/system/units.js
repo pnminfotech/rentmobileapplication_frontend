@@ -37,10 +37,17 @@ const UI = {
 };
 
 const TYPES = [
+  { value: "all", label: "All" },
   { value: "bed", label: "Hostel" },
   { value: "room", label: "Residential" },
   { value: "shop", label: "Commercial" },
 ];
+
+const TYPE_LABELS = {
+  bed: "Hostel",
+  room: "Residential",
+  shop: "Commercial",
+};
 
 function blankUnitDraft(unit, type) {
   const bed = Array.isArray(unit?.beds) ? unit.beds[0] : null;
@@ -187,6 +194,45 @@ function TypeTabs({ value, onChange, types }) {
 }
 
 function SummaryCard({ stats, type, quota }) {
+  if (type === "all") {
+    const rate = stats.total ? Math.round((stats.occupied / stats.total) * 100) : 0;
+    const limits = quota?.limits || {};
+    const usage = quota?.usage || {};
+    const remaining = quota?.remaining || {};
+    const totalLimit = ["beds", "rooms", "shops"].reduce((sum, key) => sum + Number(limits[key] || 0), 0);
+    const totalUsed = ["beds", "rooms", "shops"].reduce((sum, key) => sum + Number(usage[key] || 0), 0) || stats.total;
+    const totalRemaining = ["beds", "rooms", "shops"].reduce((sum, key) => sum + Number(remaining[key] || 0), 0);
+    return (
+      <View style={styles.summary}>
+        <View style={styles.summaryTop}>
+          <Text style={styles.summaryTitle}>
+            {totalLimit ? `${totalUsed} of ${totalLimit} units added` : `${totalUsed} units added`}
+          </Text>
+          <Text style={styles.summaryRate}>{rate}% <Text style={styles.summaryRateLabel}>occupancy</Text></Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${rate}%` }]} />
+        </View>
+        <View style={styles.summaryBottom}>
+          <View style={styles.summaryMetric}>
+            <View style={styles.neutralIcon}><BedDouble size={16} color="#40566D" /></View>
+            <View><Text style={styles.summaryValue}>{stats.occupied}</Text><Text style={styles.summaryLabel}>occupied</Text></View>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryMetric}>
+            <View style={styles.neutralIcon}><Building2 size={16} color="#40566D" /></View>
+            <View><Text style={styles.summaryValue}>{stats.vacant}</Text><Text style={styles.summaryLabel}>vacant</Text></View>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryMetric}>
+            <View style={styles.neutralIcon}><Plus size={16} color="#40566D" /></View>
+            <View><Text style={styles.summaryValue}>{totalLimit ? totalRemaining : "-"}</Text><Text style={styles.summaryLabel}>can add</Text></View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   const noun = type === "bed" ? "beds" : type === "room" ? "rooms" : "shops";
   const rate = stats.total ? Math.round((stats.occupied / stats.total) * 100) : 0;
   const quotaKey = type === "bed" ? "beds" : type === "room" ? "rooms" : "shops";
@@ -227,11 +273,12 @@ function SummaryCard({ stats, type, quota }) {
 function RoomRow({ room, type, onPress, last, index }) {
   const { occupied, total, vacant } = room.occupancy;
   const rate = total ? Math.round((occupied / total) * 100) : 0;
-  const label = type === "bed" ? "beds" : type === "room" ? "room" : "shop";
-  const Icon = type === "shop" ? Store : DoorOpen;
+  const rowType = type === "all" ? room.propertyType || "bed" : type;
+  const label = rowType === "bed" ? "beds" : rowType === "room" ? "room" : "shop";
+  const Icon = rowType === "bed" ? BedDouble : rowType === "shop" ? Store : DoorOpen;
   const roomTitle = room.isPlaceholder
     ? `Unit ${index + 1}`
-    : `${type === "shop" ? "Shop" : "Room"} ${room.roomNo}`;
+    : `${rowType === "shop" ? "Shop" : "Room"} ${room.roomNo}`;
   const roomMeta = room.isPlaceholder
     ? "Details pending"
     : `${total} ${label}${total === 1 ? "" : "s"}`;
@@ -310,7 +357,7 @@ function BuildingCard({
     {building.name}
   </Text>
 
-  {!building.isReserved ? (
+  {!building.isReserved && type !== "all" ? (
     <Pressable
       onPress={() => onRename(building)}
       style={styles.renamePropertyButton}
@@ -376,13 +423,16 @@ export default function UnitsModernScreen() {
   const responsive = useResponsive();
   const { unitTypes, firstUnitType } = useSystemAccess();
   const visibleTypes = useMemo(
-    () => TYPES.filter((type) => unitTypes.some((allowed) => allowed.value === type.value)),
+    () => {
+      const allowed = TYPES.filter((type) => type.value !== "all" && unitTypes.some((item) => item.value === type.value));
+      return allowed.length > 1 ? [TYPES[0], ...allowed] : allowed;
+    },
     [unitTypes]
   );
   const [units, setUnits] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [quota, setQuota] = useState(null);
-  const [type, setType] = useState(firstUnitType);
+  const [type, setType] = useState(() => unitTypes.length > 1 ? "all" : firstUnitType);
   const [query, setQuery] = useState("");
   const [wingByBuilding, setWingByBuilding] = useState({});
   const [loading, setLoading] = useState(true);
@@ -430,7 +480,7 @@ function closeRenameProperty() {
 
 function openUnitDetails(unit) {
   setUnitDetailsTarget(unit);
-  setUnitDetailsDraft(blankUnitDraft(unit, type));
+  setUnitDetailsDraft(blankUnitDraft(unit, unit.propertyType || type));
   setUnitDetailsError("");
 }
 
@@ -447,9 +497,10 @@ function updateUnitDetailsDraft(key, value) {
 
 async function saveUnitDetails() {
   if (!unitDetailsTarget?._id) return;
+  const targetType = unitDetailsTarget.propertyType || type;
   const firstBed = Array.isArray(unitDetailsTarget.beds) ? unitDetailsTarget.beds[0] : null;
   const bedNo = firstBed?.bedNo || "1";
-  const labels = unitDetailLabels(type);
+  const labels = unitDetailLabels(targetType);
   const monthlyPrice = Number(unitDetailsDraft.monthlyPrice);
   const meterReading =
     unitDetailsDraft.lastMeterReading === ""
@@ -467,7 +518,7 @@ async function saveUnitDetails() {
     return;
   }
 
-  if (type === "room" && !unitDetailsDraft.flatType.trim()) {
+  if (targetType === "room" && !unitDetailsDraft.flatType.trim()) {
     setUnitDetailsError("Enter the flat type.");
     return;
   }
@@ -492,9 +543,9 @@ async function saveUnitDetails() {
     await updateBed(unitDetailsTarget._id, bedNo, {
       price: monthlyPrice,
       bedCategory:
-        type === "shop"
+        targetType === "shop"
           ? "Shop"
-          : type === "room"
+          : targetType === "room"
             ? "Rental Room"
             : unitDetailsDraft.bedCategory.trim() || "Standard",
     });
@@ -505,7 +556,7 @@ async function saveUnitDetails() {
       roomNo: normalizeIdentifier(unitDetailsDraft.roomNo),
       hasWing: Boolean(unitDetailsDraft.wingName.trim()),
       wingName: unitDetailsDraft.wingName.trim(),
-      flatType: type === "room" ? unitDetailsDraft.flatType.trim() : "",
+      flatType: targetType === "room" ? unitDetailsDraft.flatType.trim() : "",
       meterNo: normalizeIdentifier(unitDetailsDraft.meterNo),
       lastMeterReading: meterReading,
     });
@@ -591,7 +642,7 @@ async function savePropertyName() {
     const term = query.trim().toLowerCase();
     return units.filter((unit) => {
       const unitType = unit.propertyType || "bed";
-      if (unitType !== type) return false;
+      if (type !== "all" && unitType !== type) return false;
       if (!term) return true;
       return [unit.category, unit.wingName, unit.roomNo, unit.floorNo]
         .some((value) => String(value || "").toLowerCase().includes(term)) ||
@@ -600,6 +651,21 @@ async function savePropertyName() {
   }, [units, type, query]);
 
   const buildings = useMemo(() => groupUnits(filteredUnits, tenants), [filteredUnits, tenants]);
+  const propertySections = useMemo(() => {
+    if (type !== "all") return [];
+    return visibleTypes
+      .filter((item) => item.value !== "all")
+      .map((item) => {
+        const sectionUnits = filteredUnits.filter((unit) => (unit.propertyType || "bed") === item.value);
+        return {
+          key: item.value,
+          title: TYPE_LABELS[item.value] || item.label,
+          buildings: groupUnits(sectionUnits, tenants),
+          unitCount: sectionUnits.length,
+        };
+      })
+      .filter((section) => section.buildings.length);
+  }, [filteredUnits, tenants, type, visibleTypes]);
   const savedLocationUnits = useMemo(
     () => units.filter((unit) => !unit.isPlaceholder),
     [units]
@@ -643,8 +709,9 @@ async function savePropertyName() {
     const value = unitOccupancy(unit, tenants);
     return { total: sum.total + value.total, occupied: sum.occupied + value.occupied, vacant: sum.vacant + value.vacant };
   }, { total: 0, occupied: 0, vacant: 0 }), [filteredUnits, tenants]);
-  const quotaKey = type === "bed" ? "beds" : type === "room" ? "rooms" : "shops";
-  const limitReached = quota?.remaining?.[quotaKey] === 0;
+  const quotaKey = type === "bed" ? "beds" : type === "room" ? "rooms" : type === "shop" ? "shops" : null;
+  const limitReached = quotaKey ? quota?.remaining?.[quotaKey] === 0 : false;
+  const addType = type === "all" ? firstUnitType : type;
 
   if (loading) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={UI.primary} /></View>;
@@ -660,7 +727,7 @@ async function savePropertyName() {
           <Text style={styles.subtitle}>Manage buildings, rooms & beds</Text>
         </View>
         <Pressable style={styles.circleButton} onPress={() => setQuery("")}><Search size={19} color={UI.text} /></Pressable>
-        <Pressable disabled={limitReached} style={[styles.addCircle, limitReached && styles.disabledAction]} onPress={() => router.push({ pathname: "/system/unit-form", params: { type } })}><Plus size={20} color={UI.primary} /></Pressable>
+        <Pressable disabled={limitReached} style={[styles.addCircle, limitReached && styles.disabledAction]} onPress={() => router.push({ pathname: "/system/unit-form", params: { type: addType } })}><Plus size={20} color={UI.primary} /></Pressable>
       </View>
 
       <TypeTabs value={type} onChange={setType} types={visibleTypes} />
@@ -687,41 +754,81 @@ async function savePropertyName() {
       ) : null}
 
       <View style={styles.list}>
-        {buildings.map((building) => (
-          <BuildingCard
-  key={building.name}
-  building={building}
-  type={type}
-  activeWing={
-    wingByBuilding[building.name] ||
-    building.wings[0]?.name
-  }
-  onWingChange={(wing) =>
-    setWingByBuilding((current) => ({
-      ...current,
-      [building.name]: wing,
-    }))
-  }
-  onRoomPress={(room) => {
-    if (room.isPlaceholder) {
-      openUnitDetails(room);
-      return;
-    }
-    router.push({
-      pathname: "/system/unit-details",
-      params: { id: room._id },
-    });
-  }}
-  onPendingWingPress={openUnitDetails}
-  onRename={openRenameProperty}
-/>
-        ))}
+        {type === "all" ? (
+          propertySections.map((section) => (
+            <View key={section.key} style={styles.propertyTypeSection}>
+              <View style={styles.propertyTypeHeader}>
+                <Text style={styles.propertyTypeTitle}>{section.title}</Text>
+                <Text style={styles.propertyTypeCount}>{section.unitCount} {section.unitCount === 1 ? "unit" : "units"}</Text>
+              </View>
+              {section.buildings.map((building) => (
+                <BuildingCard
+                  key={`${section.key}-${building.name}`}
+                  building={building}
+                  type={section.key}
+                  activeWing={
+                    wingByBuilding[`${section.key}-${building.name}`] ||
+                    building.wings[0]?.name
+                  }
+                  onWingChange={(wing) =>
+                    setWingByBuilding((current) => ({
+                      ...current,
+                      [`${section.key}-${building.name}`]: wing,
+                    }))
+                  }
+                  onRoomPress={(room) => {
+                    if (room.isPlaceholder) {
+                      openUnitDetails(room);
+                      return;
+                    }
+                    router.push({
+                      pathname: "/system/unit-details",
+                      params: { id: room._id },
+                    });
+                  }}
+                  onPendingWingPress={openUnitDetails}
+                  onRename={openRenameProperty}
+                />
+              ))}
+            </View>
+          ))
+        ) : (
+          buildings.map((building) => (
+            <BuildingCard
+              key={building.name}
+              building={building}
+              type={type}
+              activeWing={
+                wingByBuilding[building.name] ||
+                building.wings[0]?.name
+              }
+              onWingChange={(wing) =>
+                setWingByBuilding((current) => ({
+                  ...current,
+                  [building.name]: wing,
+                }))
+              }
+              onRoomPress={(room) => {
+                if (room.isPlaceholder) {
+                  openUnitDetails(room);
+                  return;
+                }
+                router.push({
+                  pathname: "/system/unit-details",
+                  params: { id: room._id },
+                });
+              }}
+              onPendingWingPress={openUnitDetails}
+              onRename={openRenameProperty}
+            />
+          ))
+        )}
       </View>
 
       <Pressable disabled={limitReached} style={[styles.floatingButton, limitReached && styles.disabledAction]}
-        onPress={() => type === "bed"
+        onPress={() => addType === "bed"
           ? router.push("/system/beds-manage")
-          : router.push({ pathname: "/system/unit-form", params: { type } })}>
+          : router.push({ pathname: "/system/unit-form", params: { type: addType } })}>
         <Plus size={19} color="#FFF" /><Text style={styles.floatingText}>{limitReached ? "Limit reached" : "Add Unit"}</Text>
       </Pressable>
 
@@ -869,7 +976,8 @@ async function savePropertyName() {
               style={styles.unitDetailsScroll}
             >
               {(() => {
-                const labels = unitDetailLabels(type);
+                const targetType = unitDetailsTarget?.propertyType || type;
+                const labels = unitDetailLabels(targetType);
                 return (
                   <>
                     <Text style={styles.renameLabel}>{labels.category}</Text>
@@ -926,7 +1034,7 @@ async function savePropertyName() {
                       onSelect={(value) => updateUnitDetailsDraft("wingName", value)}
                     />
 
-                    {type === "room" ? (
+                    {targetType === "room" ? (
                       <>
                         <Text style={styles.renameLabel}>Flat type</Text>
                         <TextInput
@@ -978,7 +1086,7 @@ async function savePropertyName() {
                       editable={!savingUnitDetails}
                     />
 
-                    {type === "bed" ? (
+                    {targetType === "bed" ? (
                       <>
                         <Text style={styles.renameLabel}>Bed category</Text>
                         <TextInput
@@ -1080,6 +1188,10 @@ const styles = StyleSheet.create({
   sortButton: { height: 32, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 8, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
   sortText: { color: UI.text, fontSize: 11, fontWeight: "700" },
   list: { gap: 8 },
+  propertyTypeSection: { gap: 9 },
+  propertyTypeHeader: { minHeight: 38, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 8, backgroundColor: UI.primarySoft },
+  propertyTypeTitle: { color: UI.primaryDark, fontSize: 13, fontWeight: "900", textTransform: "uppercase" },
+  propertyTypeCount: { color: UI.muted, fontSize: 11, fontWeight: "900" },
   buildingCard: { overflow: "hidden", borderRadius: 9, borderWidth: 1, borderColor: UI.border, backgroundColor: UI.card },
   buildingHeader: { minHeight: 58, paddingHorizontal: 10, paddingVertical: 10, flexDirection: "row", alignItems: "center" },
   buildingIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
@@ -1126,6 +1238,7 @@ renamePropertyButton: {
   rowBorder: { borderBottomWidth: 1, borderBottomColor: UI.border },
   roomIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: UI.primarySoft },
   roomNameWrap: { width: 98, marginLeft: 7 },
+  roomTypeLabel: { marginBottom: 1, color: UI.primaryDark, fontSize: 9, fontWeight: "900", textTransform: "uppercase" },
   roomName: { color: UI.text, fontSize: 13, fontWeight: "900" },
   roomMeta: { marginTop: 2, color: UI.muted, fontSize: 10, fontWeight: "700" },
   occupancyWrap: { flex: 1, minWidth: 68, marginRight: 6 },

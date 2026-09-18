@@ -117,7 +117,7 @@ function rentHistoryEntries(tenant) {
 export default function FormerTenantsScreen() {
   const router = useRouter();
   const [tenants, setTenants] = useState([]);
-  const [activeType, setActiveType] = useState("bed");
+  const [activeType, setActiveType] = useState("all");
   const [unitAccess, setUnitAccess] = useState(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -134,7 +134,10 @@ export default function FormerTenantsScreen() {
       const [archived, dashboard] = await Promise.all([getArchivedTenants(), getSystemDashboard()]);
       setTenants(Array.isArray(archived) ? archived : []);
       setUnitAccess(dashboard?.units || dashboard);
-      if (!isTypeAllowed(activeType, dashboard?.units || dashboard)) setActiveType(firstAllowedType(dashboard?.units || dashboard));
+      if (activeType !== "all" && !isTypeAllowed(activeType, dashboard?.units || dashboard)) {
+        const allowedTypes = allowedUnitTypes(dashboard?.units || dashboard);
+        setActiveType(allowedTypes.length > 1 ? "all" : firstAllowedType(dashboard?.units || dashboard));
+      }
       setError("");
     }
     catch (err) { setError(err.response?.data?.message || "Unable to load former tenants."); }
@@ -143,22 +146,25 @@ export default function FormerTenantsScreen() {
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   const tenantTypes = useMemo(() => {
-    return allowedUnitTypes(unitAccess).map((item) => ({
+    const allowed = allowedUnitTypes(unitAccess).map((item) => ({
       ...item,
       label: TENANT_TYPE_LABELS[item.value] || item.label,
     }));
+    return allowed.length > 1 ? [{ value: "all", label: "All" }, ...allowed] : allowed;
   }, [unitAccess]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return tenants
-      .filter((tenant) => propertyTypeFromTenant(tenant) === activeType)
+      .filter((tenant) => activeType === "all" || propertyTypeFromTenant(tenant) === activeType)
       .filter((tenant) => !needle || [tenant.name, tenant.phoneNo, tenant.roomNo, tenant.bedNo, tenant.shopName].some((value) => String(value || "").toLowerCase().includes(needle)));
   }, [activeType, query, tenants]);
 
   const typeCounts = useMemo(() => {
     return tenantTypes.reduce((counts, item) => {
-      counts[item.value] = tenants.filter((tenant) => propertyTypeFromTenant(tenant) === item.value).length;
+      counts[item.value] = item.value === "all"
+        ? tenants.length
+        : tenants.filter((tenant) => propertyTypeFromTenant(tenant) === item.value).length;
       return counts;
     }, {});
   }, [tenantTypes, tenants]);

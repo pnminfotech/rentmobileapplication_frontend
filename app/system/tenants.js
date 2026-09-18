@@ -388,7 +388,7 @@ export default function TenantsScreen() {
   const [vacancies, setVacancies] = useState([]);
   const [dues, setDues] = useState({ totalDue: 0, tenants: [] });
   const [unitAccess, setUnitAccess] = useState(null);
-  const [activeType, setActiveType] = useState(["bed", "room", "shop"].includes(initialType) ? initialType : "bed");
+  const [activeType, setActiveType] = useState(["bed", "room", "shop"].includes(initialType) ? initialType : "all");
   const [activeTab, setActiveTab] = useState(initialView === "vacant" ? "vacant" : "tenants");
   const [tenantStatus, setTenantStatus] = useState("active");
   const [filter, setFilter] = useState("All");
@@ -465,8 +465,11 @@ export default function TenantsScreen() {
       setUnitAccess(dashboardData?.units || dashboardData);
       setActiveTab(initialView === "vacant" ? "vacant" : "tenants");
       setActiveType((current) => {
+        const allowedTypes = allowedUnitTypes(dashboardData?.units || dashboardData);
+        const hasMultipleTypes = allowedTypes.length > 1;
         const requested = ["bed", "room", "shop"].includes(initialType) ? initialType : current;
-        return allowedUnitTypes(dashboardData?.units || dashboardData).some((type) => type.value === requested) ? requested : firstAllowedType(dashboardData?.units || dashboardData);
+        if (allowedTypes.some((type) => type.value === requested)) return requested;
+        return hasMultipleTypes ? "all" : firstAllowedType(dashboardData?.units || dashboardData);
       });
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load tenants.");
@@ -513,9 +516,14 @@ export default function TenantsScreen() {
     });
   }, [dues.tenants, key, rentSummary, tenants]);
 
-  const tenantTypes = useMemo(() => allowedUnitTypes(unitAccess).map((type) => ({ ...type })), [unitAccess]);
+  const tenantTypes = useMemo(() => {
+    const allowed = allowedUnitTypes(unitAccess).map((type) => ({ ...type }));
+    return allowed.length > 1 ? [{ value: "all", label: "All" }, ...allowed] : allowed;
+  }, [unitAccess]);
   const typeRows = useMemo(() => {
-    const rows = tenantRows.filter(({ tenant }) => propertyTypeFromTenant(tenant) === activeType);
+    const rows = activeType === "all"
+      ? tenantRows
+      : tenantRows.filter(({ tenant }) => propertyTypeFromTenant(tenant) === activeType);
     return rows.filter(({ tenant }) => tenantStatus === "leaving" ? isLeavingTenant(tenant) : !isLeavingTenant(tenant));
   }, [activeType, tenantRows, tenantStatus]);
   const vacantRows = useMemo(() => filterVacanciesByType(vacancies, activeType), [activeType, vacancies]);
@@ -592,6 +600,9 @@ export default function TenantsScreen() {
   const thisMonthPending = typeRows.reduce((sum, row) => sum + row.totalDue, 0);
   const typeOverdue = typeRows.reduce((sum, row) => sum + row.overdue, 0);
   const activeTypeLabel = tenantTypes.find((item) => item.value === activeType)?.label || "Tenants";
+  const actionType = activeType === "all"
+    ? tenantTypes.find((item) => item.value !== "all")?.value || firstAllowedType(unitAccess)
+    : activeType;
   const selectedDueItems = useMemo(() => {
     if (!selectedDueRow) return [];
     const items = (selectedDueRow.dueMonths || []).map((month) => ({
@@ -803,8 +814,6 @@ export default function TenantsScreen() {
     }
   }
 
-  const actionType = activeType;
-
   return (
     <View style={styles.screen} >
       <View style={[styles.content, { padding: responsive.pagePadding }]}>
@@ -875,7 +884,7 @@ export default function TenantsScreen() {
               const active = item.value === activeType;
               return (
                 <Pressable key={item.value} onPress={() => { setActiveType(item.value); setFilter("All"); setVisibleTenantCount(INITIAL_TENANT_RENDER_COUNT); setVisibleVacancyCount(INITIAL_VACANCY_RENDER_COUNT); }} style={[styles.typeTab, active && styles.typeTabActive]}>
-                  <Text style={[styles.typeTabText, active && styles.typeTabTextActive]} numberOfLines={1}>{item.value === "bed" ? "Hostel" : item.value === "room" ? "Residential" : "Commercial"}</Text>
+                  <Text style={[styles.typeTabText, active && styles.typeTabTextActive]} numberOfLines={1}>{item.value === "all" ? "All" : item.value === "bed" ? "Hostel" : item.value === "room" ? "Residential" : "Commercial"}</Text>
                   {active ? <View style={styles.typeTabActiveLine} /> : null}
                 </Pressable>
               );

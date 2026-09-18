@@ -45,7 +45,7 @@ export default function PaymentsScreen() {
   const [dues, setDues] = useState({ totalDue: 0, tenantCount: 0, tenants: [] });
   const [unitAccess, setUnitAccess] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [activeType, setActiveType] = useState(["bed", "room", "shop"].includes(initialType) ? initialType : "bed");
+  const [activeType, setActiveType] = useState(["bed", "room", "shop"].includes(initialType) ? initialType : "all");
   const [filter, setFilter] = useState(() => FILTERS.includes(initialFilter) ? initialFilter : "All");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -62,8 +62,11 @@ export default function PaymentsScreen() {
       setRentSummary(new Map((summaryData.rows || []).map((row) => [String(row.tenantId), row])));
       setUnitAccess(dashboardData?.units || dashboardData);
       setActiveType((current) => {
+        const allowedTypes = allowedUnitTypes(dashboardData?.units || dashboardData);
+        const hasMultipleTypes = allowedTypes.length > 1;
         const requested = ["bed", "room", "shop"].includes(initialType) ? initialType : current;
-        return allowedUnitTypes(dashboardData?.units || dashboardData).some((type) => type.value === requested) ? requested : firstAllowedType(dashboardData?.units || dashboardData);
+        if (allowedTypes.some((type) => type.value === requested)) return requested;
+        return hasMultipleTypes ? "all" : firstAllowedType(dashboardData?.units || dashboardData);
       });
     }
     catch (err) { setError(err.response?.data?.message || "Unable to load payments."); }
@@ -72,9 +75,10 @@ export default function PaymentsScreen() {
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   const dueMap = useMemo(() => new Map((dues.tenants || []).map((tenant) => [String(tenant.tenantId), tenant])), [dues.tenants]);
-  const tenantTypes = useMemo(() => allowedUnitTypes(unitAccess).map((type) => ({
-    ...type,
-  })), [unitAccess]);
+  const tenantTypes = useMemo(() => {
+    const allowed = allowedUnitTypes(unitAccess).map((type) => ({ ...type }));
+    return allowed.length > 1 ? [{ value: "all", label: "All" }, ...allowed] : allowed;
+  }, [unitAccess]);
   const allRows = useMemo(() => tenants.map((tenant) => {
     if (tenant.intakeStatus === "pending_tenant") {
       return { tenant, included: false, expected: 0, paid: 0, balance: 0, totalDue: 0, status: "Pending", overdue: 0, dueMonths: [] };
@@ -91,11 +95,17 @@ export default function PaymentsScreen() {
     const status = totalDue <= 0 ? "Paid" : paid > 0 ? "Partial" : "Pending";
     return { tenant, included, expected, paid, balance, totalDue, status, overdue: overdueAmount, dueMonths: overdue?.dueMonths || [] };
   }), [dueMap, key, rentSummary, selectedMonth, tenants]);
-  const typeAllRows = useMemo(() => allRows.filter((row) => propertyTypeFromTenant(row.tenant) === activeType), [activeType, allRows]);
+  const typeAllRows = useMemo(() => (
+    activeType === "all"
+      ? allRows
+      : allRows.filter((row) => propertyTypeFromTenant(row.tenant) === activeType)
+  ), [activeType, allRows]);
   const rows = useMemo(() => typeAllRows.filter((row) => row.included), [typeAllRows]);
   const typeCounts = useMemo(() => {
     return tenantTypes.reduce((counts, item) => {
-      counts[item.value] = allRows.filter((row) => propertyTypeFromTenant(row.tenant) === item.value).length;
+      counts[item.value] = item.value === "all"
+        ? allRows.length
+        : allRows.filter((row) => propertyTypeFromTenant(row.tenant) === item.value).length;
       return counts;
     }, {});
   }, [allRows, tenantTypes]);
