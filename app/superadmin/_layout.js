@@ -10,6 +10,8 @@ export default function SuperAdminLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: {
+          // Keep headings clear of the status bar while the background fills
+          // the complete screen.
           paddingTop: Math.max(insets.top, 20),
           paddingBottom: Math.max(insets.bottom, 12),
           backgroundColor: colors.background,

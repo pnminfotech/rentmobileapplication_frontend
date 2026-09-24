@@ -28,26 +28,26 @@ import {
   getAdminSubscriptionPlans,
   updateSubscriptionPlan,
 } from "../../src/api/saasApi";
-import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/utils/responsive";
 
 const COLORS = {
-  bg: "#FFF8F1",
-  card: "#FFFDF9",
-  soft: "#F8EFE6",
-  text: colors.text,
-  muted: colors.muted,
-  subtle: colors.subtle,
-  border: "#EFE0D3",
-  burgundy: "#7A365D",
-  burgundyDark: "#4A2138",
-  burgundySoft: "#F5E6EE",
-  green: "#496E3F",
-  greenSoft: "#EEF3E8",
-  orange: "#D9742F",
-  orangeSoft: "#FFF0E4",
-  red: colors.danger,
-  redSoft: colors.dangerSoft,
+  // Kept in sync with the Super Admin dashboard.
+  bg: "#F6F8F8",
+  card: "#FFFFFF",
+  soft: "#F0F3F4",
+  text: "#101828",
+  muted: "#667085",
+  subtle: "#98A2B3",
+  border: "#D9E1E5",
+  burgundy: "#006D9E",
+  burgundyDark: "#004B76",
+  burgundySoft: "#E3F4FA",
+  green: "#27845C",
+  greenSoft: "#E7F5ED",
+  orange: "#C98216",
+  orangeSoft: "#FFF3DE",
+  red: "#D14343",
+  redSoft: "#FDEAEA",
 };
 
 const DURATIONS = [

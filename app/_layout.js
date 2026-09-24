@@ -4,7 +4,6 @@ import * as WebBrowser from "expo-web-browser";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { colors } from "../src/theme/colors";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -34,7 +33,9 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" backgroundColor={colors.background} />
+      {/* Match the system canvas behind the status icons. This removes the
+          visible cream strip without placing page content under the status bar. */}
+      <StatusBar style="dark" backgroundColor="#F6F8F7" />
 
 
 
@@ -44,7 +45,6 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
-
 
 
 

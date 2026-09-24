@@ -588,7 +588,8 @@ export default function TenantAdmissionScreen() {
           <View style={styles.summary}><Text style={styles.summaryLabel}>Monthly rent</Text><Text style={styles.summaryValue}>Rs. {selected?.bed?.price || 0}</Text></View>
           <Field label="Deposit amount" value={form.depositAmount} onChangeText={(value) => setValue("depositAmount", value)} keyboardType="numeric" placeholder="Example: 10000" />
           <Text style={styles.label}>Payment cycle</Text>
-          <View style={styles.segment}>{[["NOT_PAID", "Normal cycle - payable after month completes"], ["ADVANCE_PAID", "Advance paid - joining cycle paid"]].map(([value, label]) => <Pressable key={value} onPress={() => setValue("firstRentStatus", value)} style={[styles.segmentButton, form.firstRentStatus === value && styles.segmentActive]}><Text style={[styles.segmentText, form.firstRentStatus === value && styles.segmentTextActive]}>{label}</Text></Pressable>)}</View>
+          <View style={styles.segment}>{[["NOT_PAID", "Normal cycle"], ["ADVANCE_PAID", "Advance cycle"]].map(([value, label]) => <Pressable key={value} onPress={() => setValue("firstRentStatus", value)} style={[styles.segmentButton, form.firstRentStatus === value && styles.segmentActive]}><Text style={[styles.segmentText, form.firstRentStatus === value && styles.segmentTextActive]}>{label}</Text></Pressable>)}</View>
+          <View style={styles.cycleHelp}><Text style={styles.cycleHelpText}>• Normal cycle: rent becomes payable after the month completes.</Text><Text style={styles.cycleHelpText}>• Advance cycle: the joining month rent is paid at joining.</Text></View>
           {form.firstRentStatus === "ADVANCE_PAID" ? <><Text style={styles.label}>Payment mode</Text><View style={styles.segment}>{["Cash", "Online"].map((value) => <Pressable key={value} onPress={() => setValue("paymentMode", value)} style={[styles.segmentButton, form.paymentMode === value && styles.segmentActive]}><Text style={[styles.segmentText, form.paymentMode === value && styles.segmentTextActive]}>{value}</Text></Pressable>)}</View></> : null}
           {(isShop ? [["selfAadhar", "Self Aadhaar Card"], ["photo", "Tenant Photograph (Selfie)"]] : isResidentialRoom ? [["selfAadhar", "Self Aadhaar Card"], ["parentAadhar", "Partner Aadhaar Card"], ["photo", "Tenant Photograph (Selfie)"]] : [["selfAadhar", "Tenant Aadhaar"], ["parentAadhar", "Parent/relative Aadhaar"], ["photo", "Tenant photograph"]]).map(([key, label]) => <View key={key}><Text style={styles.label}>{label}</Text><Pressable onPress={() => chooseImage(key)} style={[styles.documentButton, documents[key] && styles.documentReady]}>{documents[key] ? <Check size={19} color={colors.success} /> : <Camera size={19} color={colors.primary} />}<Text style={[styles.documentText, documents[key] && styles.documentReadyText]}>{documents[key] ? "Image selected" : "Choose image"}</Text></Pressable></View>)}
         </> : null}
@@ -718,6 +719,8 @@ const styles = StyleSheet.create({
   summaryLabel: { color: colors.muted, fontWeight: "600" },
   summaryValue: { color: colors.primaryDark, fontSize: 17, fontWeight: "700" },
   helperText: { marginTop: 10, color: colors.muted, fontSize: 13, lineHeight: 19 },
+  cycleHelp: { marginTop: 8, padding: 10, borderRadius: 7, backgroundColor: colors.primarySoft },
+  cycleHelpText: { color: colors.muted, fontSize: 11, lineHeight: 17 },
   configWarning: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.warningSoft, borderRadius: 8, backgroundColor: colors.peach },
   configWarningText: { color: colors.text, fontSize: 13, fontWeight: "700", lineHeight: 18 },
   configButton: { height: 42, marginTop: 10, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary },

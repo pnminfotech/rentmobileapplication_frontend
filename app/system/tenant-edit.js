@@ -45,7 +45,7 @@ function RelationPicker({ label, value, onChange }) {
 }
 
 function Toggle({ value, onChange }) {
-  return <View style={styles.toggle}>{[["ADVANCE_PAID", "Advance paid"], ["NOT_PAID", "Normal cycle"]].map(([key, label]) => <Pressable key={key} onPress={() => onChange(key)} style={[styles.toggleOption, value === key && styles.toggleSelected]}><Text style={[styles.toggleText, value === key && styles.toggleTextSelected]}>{label}</Text></Pressable>)}</View>;
+  return <View style={styles.toggle}>{[["NOT_PAID", "Normal cycle"], ["ADVANCE_PAID", "Advance cycle"]].map(([key, label]) => <Pressable key={key} onPress={() => onChange(key)} style={[styles.toggleOption, value === key && styles.toggleSelected]}><Text style={[styles.toggleText, value === key && styles.toggleTextSelected]}>{label}</Text></Pressable>)}</View>;
 }
 
 export default function TenantEditScreen() {
@@ -228,6 +228,7 @@ export default function TenantEditScreen() {
       </> : null}
       <Text style={styles.label}>Payment cycle</Text>
       <Toggle value={form.firstRentStatus} onChange={(value) => setValue("firstRentStatus", value)} />
+      <View style={styles.cycleHelp}><Text style={styles.cycleHelpText}>• Normal cycle: rent becomes payable after the month completes.</Text><Text style={styles.cycleHelpText}>• Advance cycle: the joining month rent is paid at joining.</Text></View>
       <Field label="First rent month" value={form.firstRentMonth} onChangeText={(value) => setValue("firstRentMonth", value)} placeholder="Example: Jun-26" autoCapitalize="words" />
 
       <Text style={styles.sectionTitle}>Address</Text>
@@ -308,4 +309,6 @@ const styles = StyleSheet.create({
   error: { marginTop: 14, color: colors.danger }, saveButton: { height: 50, marginTop: 24, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, saveText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.5 },
   documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
   helperText: { marginTop: -4, marginBottom: 8, color: colors.muted, fontSize: 11 },
+  cycleHelp: { marginTop: 8, padding: 10, borderRadius: 7, backgroundColor: colors.primarySoft },
+  cycleHelpText: { color: colors.muted, fontSize: 11, lineHeight: 17 },
 });

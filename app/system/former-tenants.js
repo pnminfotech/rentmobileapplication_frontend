@@ -13,6 +13,7 @@ import { getArchivedTenants, getTenants, restoreTenant } from "../../src/api/ten
 import { formatTenantUnit, formatVacancyMeta, formatVacancyTitle, normalizePropertyType, propertyTypeFromTenant, stackedPropertyLabel, unitTypeLabel } from "../../src/utils/unitLabels";
 import { allowedUnitTypes, firstAllowedType, isTypeAllowed } from "../../src/utils/subscriptionAccess";
 import { systemColors as colors } from "../../src/theme/systemTheme";
+import { shareHtmlAsPdf } from "../../src/utils/sharePdf";
 
 const TENANT_TYPE_LABELS = { bed: "Hostel Beds", room: "Residential Rooms", shop: "Commercial Shop" };
 
@@ -352,9 +353,7 @@ export default function FormerTenantsScreen() {
         await Print.printAsync({ html });
         return;
       }
-      const { uri } = await Print.printToFileAsync({ html });
-      if (!(await Sharing.isAvailableAsync())) return Alert.alert("Sharing unavailable", "Sharing is not available on this device.");
-      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `${tenant.name || "Tenant"} full report`, UTI: "com.adobe.pdf" });
+      await shareHtmlAsPdf(html, { fileName: `${tenant.name || "tenant"}-full-report.pdf`, dialogTitle: `${tenant.name || "Tenant"} full report` });
     } catch (err) {
       Alert.alert("Unable to generate report", err.message || "Please try again.");
     } finally {
@@ -518,7 +517,7 @@ export default function FormerTenantsScreen() {
                 <>
                   {!historyOpen ? <Pressable onPress={() => setHistoryOpen(true)} style={styles.historyButton}><Text style={styles.historyButtonText}>View full rent history</Text></Pressable> : null}
                   <DetailRow label="Phone" value={detailsTenant.phoneNo ? String(detailsTenant.phoneNo) : ""} />
-                  <DetailRow label="Payment cycle" value={detailsTenant.firstRentStatus === "ADVANCE_PAID" ? "Advance paid" : "Normal cycle"} />
+                  <DetailRow label="Payment cycle" value={detailsTenant.firstRentStatus === "ADVANCE_PAID" ? "Advance cycle · paid at joining" : "Normal cycle · payable after month"} />
                   <DetailRow label="Deposit" value={money(detailsTenant.depositAmount)} />
                   <DetailRow label="Monthly rent" value={money(detailsTenant.baseRent || detailsTenant.rentAmount)} />
                   <DetailRow label="Joining date" value={formatDate(detailsTenant.joiningDate)} />

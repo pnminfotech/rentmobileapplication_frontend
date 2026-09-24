@@ -1,13 +1,16 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -25,17 +28,18 @@ import {
   FileText,
   Home,
   MessageCircle,
+  MoveRight,
   Pencil,
   Phone,
   ReceiptText,
   Share2,
   ShieldCheck,
-  StickyNote,
+  Trash2,
   Utensils,
   UserRound,
 } from "lucide-react-native";
 
-import { getTenant } from "../../src/api/tenantApi";
+import { deleteTenant, getTenant } from "../../src/api/tenantApi";
 
 /* ============================================================
    THEME
@@ -137,11 +141,6 @@ const TABS = [
     key: "documents",
     label: "Documents",
     icon: FileText,
-  },
-  {
-    key: "notes",
-    label: "Notes",
-    icon: StickyNote,
   },
 ];
 
@@ -399,53 +398,6 @@ function flattenPayments(tenant) {
 }
 
 /* ============================================================
-   NOTES
-============================================================ */
-
-function getTenantNotes(tenant) {
-  if (Array.isArray(tenant?.notes)) {
-    return tenant.notes
-      .map((note, index) => ({
-        key:
-          note?._id ||
-          note?.id ||
-          String(index),
-
-        text:
-          typeof note === "string"
-            ? note
-            : note?.text ||
-              note?.note ||
-              note?.message ||
-              "",
-
-        date:
-          typeof note === "object"
-            ? note?.createdAt ||
-              note?.date
-            : null,
-      }))
-      .filter((note) => note.text);
-  }
-
-  const text =
-    tenant?.note ||
-    tenant?.remarks ||
-    tenant?.remark ||
-    "";
-
-  if (!text) return [];
-
-  return [
-    {
-      key: "note",
-      text,
-      date: null,
-    },
-  ];
-}
-
-/* ============================================================
    REUSABLE COMPONENTS
 ============================================================ */
 
@@ -590,6 +542,9 @@ export default function TenantDetailsScreen() {
 
   const [error, setError] =
     useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   /* ========================================================
      LOAD
@@ -644,11 +599,6 @@ export default function TenantDetailsScreen() {
     [tenant]
   );
 
-  const notes = useMemo(
-    () => getTenantNotes(tenant),
-    [tenant]
-  );
-
   const canteen =
     hasCanteenEnabled(tenant);
 
@@ -679,6 +629,34 @@ export default function TenantDetailsScreen() {
         returnTo,
       },
     });
+  }
+
+  function shiftTenant() {
+    router.push({
+      pathname: "/system/tenant-shift",
+      params: { id, returnTo: `/system/tenant-details?id=${id}&returnTo=${encodeURIComponent(returnTo)}` },
+    });
+  }
+
+  function requestDelete() {
+    Alert.alert("Delete tenant", "This permanently deletes the tenant and their payment records. Continue?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Continue", style: "destructive", onPress: () => setShowDeleteModal(true) },
+    ]);
+  }
+
+  async function confirmDelete() {
+    if (!deletePassword.trim()) return Alert.alert("Password required", "Enter your password to delete this tenant.");
+    try {
+      setDeleting(true);
+      await deleteTenant(id, deletePassword);
+      setShowDeleteModal(false);
+      Alert.alert("Tenant deleted", "The tenant has been deleted successfully.", [{ text: "OK", onPress: () => router.replace(returnTo) }]);
+    } catch (err) {
+      Alert.alert("Unable to delete tenant", err.response?.data?.message || err.message || "Please check the password and try again.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function markLeaving() {
@@ -926,8 +904,8 @@ export default function TenantDetailsScreen() {
                       style={styles.cycleBadgeText}
                     >
                       {advance
-                        ? "Advance paid"
-                        : "Normal cycle"}
+                        ? "Advance cycle · paid at joining"
+                        : "Normal cycle · payable after month"}
                     </Text>
                   </View>
 
@@ -1107,6 +1085,25 @@ export default function TenantDetailsScreen() {
 
               <Text style={styles.quickActionText}>
                 Rent
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={shiftTenant}
+              style={[
+                styles.quickAction,
+                styles.quickActionShift,
+              ]}
+            >
+              <View style={styles.quickActionIconPurple}>
+                <MoveRight
+                  size={18}
+                  color={UI.purple}
+                />
+              </View>
+
+              <Text style={styles.quickActionText}>
+                {tenant?.bedNo ? "Shift bed" : "Shift room"}
               </Text>
             </Pressable>
 
@@ -1744,75 +1741,6 @@ export default function TenantDetailsScreen() {
           ) : null}
 
           {/* =============================================
-              NOTES
-          ============================================= */}
-
-          {activeTab === "notes" ? (
-            <View
-              style={[
-                styles.sectionCard,
-                styles.sectionCardPurple,
-              ]}
-            >
-              <SectionHeader
-                icon={StickyNote}
-                title="Notes"
-                subtitle="Internal remarks and tenant information"
-                tone="purple"
-              />
-
-              <View style={styles.simpleList}>
-
-                {notes.map((note) => (
-                  <View
-                    key={note.key}
-                    style={styles.noteCard}
-                  >
-                    <View style={styles.noteIcon}>
-                      <StickyNote
-                        size={16}
-                        color={UI.purple}
-                      />
-                    </View>
-
-                    <View style={styles.noteCopy}>
-                      <Text style={styles.noteText}>
-                        {note.text}
-                      </Text>
-
-                      {note.date ? (
-                        <Text style={styles.noteDate}>
-                          {formatDate(
-                            note.date
-                          )}
-                        </Text>
-                      ) : null}
-                    </View>
-                  </View>
-                ))}
-
-                {!notes.length ? (
-                  <View style={styles.emptyBox}>
-                    <StickyNote
-                      size={24}
-                      color={UI.subtle}
-                    />
-
-                    <Text style={styles.emptyTitle}>
-                      No notes added
-                    </Text>
-
-                    <Text style={styles.emptyText}>
-                      Tenant remarks or notes will appear here.
-                    </Text>
-                  </View>
-                ) : null}
-
-              </View>
-            </View>
-          ) : null}
-
-          {/* =============================================
               BOTTOM ACTIONS
           ============================================= */}
 
@@ -1848,11 +1776,32 @@ export default function TenantDetailsScreen() {
               </Text>
             </Pressable>
 
+            <Pressable
+              onPress={requestDelete}
+              style={styles.deleteButton}
+            >
+              <Trash2 size={16} color={UI.red} />
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </Pressable>
+
           </View>
 
         </ScrollView>
 
       </View>
+      <Modal visible={showDeleteModal} transparent animationType="fade" onRequestClose={() => setShowDeleteModal(false)}>
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteModal}>
+            <Text style={styles.deleteTitle}>Confirm deletion</Text>
+            <Text style={styles.deleteHint}>Enter your password to permanently delete {tenant.name}.</Text>
+            <TextInput value={deletePassword} onChangeText={setDeletePassword} secureTextEntry placeholder="Password" style={styles.deleteInput} />
+            <View style={styles.deleteActions}>
+              <Pressable onPress={() => { setShowDeleteModal(false); setDeletePassword(""); }} style={styles.deleteCancel}><Text style={styles.deleteCancelText}>Cancel</Text></Pressable>
+              <Pressable onPress={confirmDelete} disabled={deleting} style={styles.deleteConfirm}>{deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.deleteConfirmText}>Delete tenant</Text>}</Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2273,6 +2222,11 @@ const styles = StyleSheet.create({
   },
 
   quickActionShare: {
+    borderColor: "#DDD0EE",
+    backgroundColor: "#F8F5FC",
+  },
+
+  quickActionShift: {
     borderColor: "#DDD0EE",
     backgroundColor: "#F8F5FC",
   },
@@ -2879,5 +2833,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900",
   },
+
+  deleteButton: { flex: 0.8, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 10, borderWidth: 1.5, borderColor: "#E89A9A", backgroundColor: "#FFF1F1" },
+  deleteButtonText: { color: UI.red, fontSize: 10, fontWeight: "900" },
+  deleteOverlay: { flex: 1, alignItems: "center", justifyContent: "center", padding: 22, backgroundColor: "rgba(16,31,43,.45)" },
+  deleteModal: { width: "100%", maxWidth: 380, padding: 20, borderRadius: 14, backgroundColor: "#FFFFFF" },
+  deleteTitle: { color: UI.text, fontSize: 19, fontWeight: "800" },
+  deleteHint: { marginTop: 8, color: UI.muted, fontSize: 13, lineHeight: 19 },
+  deleteInput: { height: 48, marginTop: 16, paddingHorizontal: 13, borderWidth: 1, borderColor: UI.border, borderRadius: 8, color: UI.text },
+  deleteActions: { marginTop: 16, flexDirection: "row", justifyContent: "flex-end", gap: 9 },
+  deleteCancel: { minHeight: 42, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: UI.primarySoft },
+  deleteCancelText: { color: UI.primaryDark, fontWeight: "800" },
+  deleteConfirm: { minWidth: 118, minHeight: 42, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: UI.red },
+  deleteConfirmText: { color: "#FFFFFF", fontWeight: "800" },
 
 });

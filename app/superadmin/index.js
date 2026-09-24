@@ -56,7 +56,6 @@ import { getUnreadNotificationCount } from "../../src/api/notificationApi";
 import { clearAuthSession } from "../../src/storage/authStorage";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/utils/responsive";
-import AssistantChat from "../../src/components/AssistantChat";
 
 const COLORS = {
   // Base — matching System Admin
@@ -70,9 +69,9 @@ const COLORS = {
   border: "#D9E1E5",
 
   // Super Admin identity
-  blue: "#147D76",
-  blueDark: "#0D625D",
-  blueSoft: "#E4F3F1",
+  blue: "#006D9E",
+  blueDark: "#004B76",
+  blueSoft: "#E3F4FA",
 
   // Status
   green: "#27845C",
@@ -87,8 +86,8 @@ const COLORS = {
   purple: "#6857C7",
   purpleSoft: "#EFEDFF",
 
-  teal: "#147D76",
-  tealSoft: "#E4F3F1",
+  teal: "#00A7C9",
+  tealSoft: "#E1F7FB",
 };
 const FILTERS = [
   { value: "all", label: "All", Icon: LayoutGrid, color: COLORS.blue, bg: COLORS.blueSoft },
@@ -121,6 +120,30 @@ function formatDateTime(value) {
         hour: "2-digit",
         minute: "2-digit",
       });
+}
+
+function buildRevenueTrendFromTransactions(items) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(1);
+  start.setMonth(start.getMonth() - 5);
+  const totals = new Map();
+
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    if (String(item?.status || "").toLowerCase() !== "success") return;
+    const date = new Date(item.paidAt || item.createdAt);
+    if (Number.isNaN(date.getTime()) || date < start) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const current = totals.get(key) || { amount: 0, count: 0 };
+    totals.set(key, { amount: current.amount + Number(item.amount || 0), count: current.count + 1 });
+  });
+
+  return Array.from({ length: 6 }, (_, offset) => {
+    const date = new Date(start.getFullYear(), start.getMonth() + offset, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const value = totals.get(key) || { amount: 0, count: 0 };
+    return { key, label: date.toLocaleString("en-US", { month: "short" }), ...value };
+  });
 }
 
 function statusLabel(value) {
@@ -642,7 +665,7 @@ export default function SuperAdminScreen() {
       const [dashboardData, orgData, transactionData] = await Promise.all([
         getSuperAdminDashboard(),
         getOrganizations(),
-        getBillingTransactions({ limit: 12 }),
+        getBillingTransactions({ limit: 100 }),
       ]);
       const notificationData = await getUnreadNotificationCount().catch(() => ({ count: 0 }));
       setDashboard(dashboardData);
@@ -750,6 +773,32 @@ export default function SuperAdminScreen() {
   const totalRevenue = successRevenue + pendingRevenue;
   const successPercent = totalRevenue ? Math.round((successRevenue / totalRevenue) * 100) : 0;
   const pendingPercent = totalRevenue ? Math.round((pendingRevenue / totalRevenue) * 100) : 0;
+  const apiRevenueTrend = Array.isArray(dashboard?.revenue?.trend) ? dashboard.revenue.trend : [];
+  const revenueTrend = apiRevenueTrend.length === 6 ? apiRevenueTrend : buildRevenueTrendFromTransactions(transactions);
+  const highestTrendAmount = Math.max(0, ...revenueTrend.map((item) => Number(item.amount || 0)));
+  const currentTrend = revenueTrend[revenueTrend.length - 1] || { amount: 0, label: "This month" };
+  const previousTrend = revenueTrend[revenueTrend.length - 2] || { amount: 0, label: "last month" };
+  const trendDifference = Number(currentTrend.amount || 0) - Number(previousTrend.amount || 0);
+  const trendPercent = previousTrend.amount ? Math.round((Math.abs(trendDifference) / Number(previousTrend.amount)) * 100) : 0;
+  const chartWidth = 300;
+  const chartHeight = 102;
+  const chartInsetX = 16;
+  const chartInsetY = 10;
+  const chartPlotHeight = 68;
+  const revenueChartPoints = revenueTrend.map((point, index) => ({
+    x: chartInsetX + ((chartWidth - chartInsetX * 2) * index) / Math.max(revenueTrend.length - 1, 1),
+    y: chartInsetY + chartPlotHeight - (highestTrendAmount ? (Number(point.amount || 0) / highestTrendAmount) * chartPlotHeight : 0),
+  }));
+  const revenueLinePath = revenueChartPoints.map((point, index) => `${index ? "L" : "M"}${point.x} ${point.y}`).join(" ");
+  const revenueAreaPath = revenueChartPoints.length
+    ? `${revenueLinePath} L${revenueChartPoints[revenueChartPoints.length - 1].x} ${chartInsetY + chartPlotHeight} L${revenueChartPoints[0].x} ${chartInsetY + chartPlotHeight} Z`
+    : "";
+  const organizationStatusChart = [
+    { label: "Active", value: Number(dashboard?.organizations?.active || 0), color: COLORS.green },
+    { label: "Pending", value: Number(dashboard?.organizations?.pendingPayment || 0), color: COLORS.orange },
+    { label: "Suspended", value: Number(dashboard?.organizations?.suspended || 0), color: COLORS.red },
+  ];
+  const organizationStatusTotal = Math.max(1, Number(dashboard?.organizations?.total || 0));
 
   if (loading) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.blue} /></View>;
@@ -858,6 +907,19 @@ export default function SuperAdminScreen() {
     ============================ */}
 
     <View style={styles.dashboardHeader}>
+      <Pressable
+        onPress={() => setSidebarOpen(true)}
+        style={styles.dashboardLogoWrap}
+        accessibilityRole="button"
+        accessibilityLabel="Open Super Admin menu"
+      >
+        <Image
+          source={require("../../assets/images/superadmin-logo.png")}
+          style={styles.dashboardLogo}
+          resizeMode="contain"
+          accessibilityLabel="Rent Management logo"
+        />
+      </Pressable>
       <View style={styles.dashboardHeaderCopy}>
         <Text style={styles.dashboardEyebrow}>
           SUPER ADMIN
@@ -891,11 +953,6 @@ export default function SuperAdminScreen() {
           ) : null}
         </Pressable>
 
-        <View style={styles.dashboardAvatar}>
-          <Text style={styles.dashboardAvatarText}>
-            SA
-          </Text>
-        </View>
       </View>
     </View>
 
@@ -999,6 +1056,25 @@ export default function SuperAdminScreen() {
   />
 </View>
 
+    <View style={styles.organizationChartCard}>
+      <View style={styles.organizationChartHeader}>
+        <View>
+          <Text style={styles.organizationChartTitle}>Organization status</Text>
+          <Text style={styles.organizationChartSubtitle}>Current portfolio distribution</Text>
+        </View>
+        <Text style={styles.organizationChartTotal}>{dashboard?.organizations?.total || 0} total</Text>
+      </View>
+      {organizationStatusChart.map((item) => (
+        <View key={item.label} style={styles.organizationChartRow}>
+          <Text style={styles.organizationChartLabel}>{item.label}</Text>
+          <View style={styles.organizationChartTrack}>
+            <View style={[styles.organizationChartFill, { width: `${Math.round((item.value / organizationStatusTotal) * 100)}%`, backgroundColor: item.color }]} />
+          </View>
+          <Text style={styles.organizationChartValue}>{item.value}</Text>
+        </View>
+      ))}
+    </View>
+
     {/* ===========================
         REVENUE TREND
     ============================ */}
@@ -1011,7 +1087,7 @@ export default function SuperAdminScreen() {
           </Text>
 
           <Text style={styles.revenueTrendSubtitle}>
-            Monthly revenue from all organizations
+            {money(currentTrend.amount)} recorded in {currentTrend.label}
           </Text>
         </View>
 
@@ -1028,46 +1104,33 @@ export default function SuperAdminScreen() {
       </View>
 
    <View style={styles.revenueChartWrap}>
-  <View style={styles.revenueChartGrid}>
-    <View style={styles.revenueGridLine} />
-    <View style={styles.revenueGridLine} />
-    <View style={styles.revenueGridLine} />
-    <View style={styles.revenueGridLine} />
-
-    <View style={styles.revenueBarsArea}>
-      {[34, 44, 53, 65, 77, 90].map(
-        (height, index) => (
-          <View
-            key={index}
-            style={styles.revenueChartColumn}
-          >
-            <View
-              style={[
-                styles.revenueChartBar,
-                {
-                  height: `${height}%`,
-                },
-              ]}
-            />
-          </View>
-        )
-      )}
-    </View>
-  </View>
+  <Svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} accessibilityLabel="Monthly revenue trend chart">
+    <Defs>
+      <LinearGradient id="superAdminRevenueArea" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0" stopColor={COLORS.blue} stopOpacity="0.30" />
+        <Stop offset="1" stopColor={COLORS.blue} stopOpacity="0.02" />
+      </LinearGradient>
+    </Defs>
+    {[10, 33, 56, 78].map((y) => <Path key={y} d={`M ${chartInsetX} ${y} H ${chartWidth - chartInsetX}`} stroke={COLORS.border} strokeWidth="1" strokeDasharray="3 4" />)}
+    {revenueAreaPath ? <Path d={revenueAreaPath} fill="url(#superAdminRevenueArea)" /> : null}
+    {revenueLinePath ? <Path d={revenueLinePath} fill="none" stroke={COLORS.blue} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
+    {revenueChartPoints.map((point, index) => <Circle key={revenueTrend[index].key} cx={point.x} cy={point.y} r="4" fill={COLORS.card} stroke={COLORS.blue} strokeWidth="2.5" />)}
+  </Svg>
 
   <View style={styles.revenueMonthsRow}>
-    {["Apr", "May", "Jun", "Jul", "Aug", "Sep"].map(
-      (month) => (
+    {revenueTrend.map(
+      (point) => (
         <Text
-          key={month}
+          key={point.key}
           style={styles.revenueChartMonth}
         >
-          {month}
+          {point.label}
         </Text>
       )
     )}
   </View>
 </View>
+      {!highestTrendAmount ? <Text style={styles.revenueEmptyText}>No successful subscription payments recorded in the last 6 months.</Text> : null}
       <View style={styles.revenueGrowthBox}>
         <View style={styles.revenueGrowthIcon}>
           <BadgeIndianRupee
@@ -1078,12 +1141,13 @@ export default function SuperAdminScreen() {
 
         <View style={styles.revenueGrowthCopy}>
           <Text style={styles.revenueGrowthTitle}>
-            +18% Revenue Growth
+            {previousTrend.amount ? `${trendDifference >= 0 ? "+" : "-"}${trendPercent}% ${trendDifference >= 0 ? "growth" : "change"}` : "Monthly revenue"}
           </Text>
 
           <Text style={styles.revenueGrowthText}>
-            Your platform revenue has increased compared
-            to last month.
+            {previousTrend.amount
+              ? `${trendDifference >= 0 ? "Higher" : "Lower"} than ${previousTrend.label}: ${money(Math.abs(trendDifference))}.`
+              : "Revenue trend will appear after the first successful payment."}
           </Text>
         </View>
 
@@ -1177,12 +1241,6 @@ export default function SuperAdminScreen() {
     {/* ===========================
         QUICK ACTIONS
     ============================ */}
-
-    <View style={styles.dashboardSectionHeader}>
-      <Text style={styles.dashboardSectionTitle}>
-        Quick Actions
-      </Text>
-    </View>
 
  <View style={styles.dashboardSectionHeader}>
   <Text style={styles.dashboardSectionTitle}>
@@ -1469,7 +1527,6 @@ export default function SuperAdminScreen() {
           <Pressable style={styles.sidebarScrim} onPress={() => setSidebarOpen(false)} />
         </View>
       </Modal>
-      <AssistantChat />
     </View>
   );
 }
@@ -1676,6 +1733,21 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  dashboardLogoWrap: {
+    width: 42,
+    height: 42,
+    marginRight: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 21,
+    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+  },
+  dashboardLogo: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
 
   dashboardEyebrow: {
     color: COLORS.blue,
@@ -1782,7 +1854,7 @@ const styles = StyleSheet.create({
 
     borderRadius: 14,
 
-    backgroundColor: "#EAF4F3",
+    backgroundColor: "#5FB7CB40",
   },
 
   dashboardHeroContent: {
@@ -2143,6 +2215,31 @@ const styles = StyleSheet.create({
      REVENUE TREND
   ========================================================== */
 
+  organizationChartCard: {
+    marginTop: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 13,
+    backgroundColor: COLORS.card,
+  },
+
+  organizationChartHeader: {
+    marginBottom: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  organizationChartTitle: { color: COLORS.text, fontSize: 15, fontWeight: "900" },
+  organizationChartSubtitle: { marginTop: 2, color: COLORS.muted, fontSize: 9, fontWeight: "600" },
+  organizationChartTotal: { color: COLORS.blue, fontSize: 11, fontWeight: "900" },
+  organizationChartRow: { minHeight: 28, flexDirection: "row", alignItems: "center", gap: 8 },
+  organizationChartLabel: { width: 62, color: COLORS.muted, fontSize: 10, fontWeight: "800" },
+  organizationChartTrack: { flex: 1, height: 8, overflow: "hidden", borderRadius: 999, backgroundColor: COLORS.soft },
+  organizationChartFill: { height: "100%", minWidth: 0, borderRadius: 999 },
+  organizationChartValue: { width: 20, color: COLORS.text, fontSize: 11, fontWeight: "900", textAlign: "right" },
+
   revenueTrendCard: {
     marginTop: 8,
 
@@ -2257,11 +2354,23 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.blue,
   },
 
+  revenueChartBarEmpty: {
+    backgroundColor: COLORS.border,
+  },
+
   revenueMonthsRow: {
     marginTop: 4,
 
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+
+  revenueEmptyText: {
+    marginTop: 8,
+    color: COLORS.muted,
+    fontSize: 10,
+    fontWeight: "600",
+    textAlign: "center",
   },
 
   revenueChartMonth: {
@@ -2641,7 +2750,7 @@ const styles = StyleSheet.create({
 
     borderRadius: 12,
 
-    backgroundColor: "#EEF7F5",
+    backgroundColor: "#d0e8ed",
   },
 
   trackImage: {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, BackHandler, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus } from "lucide-react-native";
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Plus } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { addTenantRent, getTenant, getTenantRentDue, getTenantRentQuote } from "../../src/api/tenantApi";
@@ -60,6 +60,7 @@ export default function RentFormScreen() {
   const [utr, setUtr] = useState("");
   const [note, setNote] = useState("");
   const [receiptUrl, setReceiptUrl] = useState("");
+  const [monthlyDiscount, setMonthlyDiscount] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -100,7 +101,10 @@ export default function RentFormScreen() {
   const key = monthKey(selectedMonth);
   const selectedDue = useMemo(() => (due.dueMonths || []).find((month) => month.month === key), [due.dueMonths, key]);
   const existingPaid = useMemo(() => Number(selectedDue?.paid ?? (tenant?.rents || []).find((rent) => rent.month === key)?.rentAmount ?? 0), [key, selectedDue?.paid, tenant]);
-  const expected = Number(selectedDue?.expected ?? quote?.expected ?? tenant?.baseRent ?? 0);
+  const savedDiscount = Number(quote?.discount ?? (tenant?.rents || []).find((rent) => rent.month === key)?.discountAmount ?? 0);
+  const appliedDiscount = Math.max(0, Number(monthlyDiscount || savedDiscount || 0));
+  const actualRent = Number(quote?.expected ?? selectedDue?.expected ?? tenant?.baseRent ?? 0) + savedDiscount;
+  const expected = Math.max(0, actualRent - appliedDiscount);
   const balance = Math.max(expected - existingPaid, 0);
   const canteenExpected = Number(quote?.canteen?.expected || 0);
   const canteenPaid = Number(quote?.canteen?.paid || 0);
@@ -108,9 +112,15 @@ export default function RentFormScreen() {
   const lightBillExpected = Number(quote?.lightBill?.expected || 0);
   const lightBillPaid = Number(quote?.lightBill?.paid || 0);
   const lightBillBalance = Math.max(lightBillExpected - lightBillPaid, 0);
-  const totalExpected = Number(quote?.totalExpected ?? expected + canteenExpected + lightBillExpected);
+  const totalExpected = expected + canteenExpected + lightBillExpected;
   const totalPaid = Number(quote?.totalPaid ?? existingPaid + canteenPaid + lightBillPaid);
-  const totalBalance = Math.max(Number(quote?.totalBalance ?? balance + canteenBalance + lightBillBalance), 0);
+  const totalBalance = Math.max(balance + canteenBalance + lightBillBalance, 0);
+  const selectedRentEntry = useMemo(() => (tenant?.rents || []).find((rent) => rent.month === key), [key, tenant]);
+  const previousPayments = useMemo(() => {
+    if (!selectedRentEntry) return [];
+    if (Array.isArray(selectedRentEntry.payments) && selectedRentEntry.payments.length) return selectedRentEntry.payments;
+    return selectedRentEntry.rentAmount > 0 ? [{ amount: selectedRentEntry.rentAmount, date: selectedRentEntry.date, paymentMode: selectedRentEntry.paymentMode }] : [];
+  }, [selectedRentEntry]);
 
   useEffect(() => {
     if (!id || !tenant) return;
@@ -122,6 +132,11 @@ export default function RentFormScreen() {
     }).catch(() => { if (active) setQuote(null); });
     return () => { active = false; };
   }, [existingPaid, id, key, selectedDue, tenant]);
+
+  useEffect(() => {
+    const rentEntry = (tenant?.rents || []).find((rent) => rent.month === key);
+    setMonthlyDiscount(String(Math.max(0, Number(rentEntry?.discountAmount || 0)) || ""));
+  }, [key, tenant]);
 
   function changeMonth(amountToShift) {
     const next = shiftMonth(selectedMonth, amountToShift);
@@ -136,6 +151,14 @@ export default function RentFormScreen() {
     setSelectedMonth(date);
     setAmount(String(dueMonth.outstanding || ""));
     setError("");
+  }
+
+  function updateMonthlyDiscount(value) {
+    setMonthlyDiscount(value);
+    const nextDiscount = Math.max(0, Number(value || 0));
+    const nextRentBalance = Math.max(0, actualRent - nextDiscount - existingPaid);
+    const nextTotalBalance = nextRentBalance + canteenBalance + lightBillBalance;
+    setAmount(nextTotalBalance > 0 ? String(nextTotalBalance) : "");
   }
 
   function addLightBillForTenant() {
@@ -188,6 +211,7 @@ export default function RentFormScreen() {
         date: paymentDate,
         paymentMode,
         rentUpdateMode: "add",
+        discountAmount: appliedDiscount,
         utr: paymentMode === "Online" ? utr.trim() : "",
         note: note.trim(),
         receiptUrl: safeReceiptUrl,
@@ -245,6 +269,9 @@ export default function RentFormScreen() {
         ) : null}
         <View style={styles.splitRow}>
           <Text style={styles.splitLabel}>Rent</Text>
+          <Text style={styles.discountMeta}>Actual rent: Rs. {Number(actualRent).toLocaleString("en-IN")}</Text>
+          {appliedDiscount > 0 ? <Text style={styles.discountMeta}>Monthly discount applied: - Rs. {Number(appliedDiscount).toLocaleString("en-IN")}</Text> : null}
+          <Text style={styles.discountMeta}>Current rent payable: Rs. {Number(expected).toLocaleString("en-IN")}</Text>
           <Text style={styles.splitValue}>Rs. {Number(expected).toLocaleString("en-IN")}</Text>
           <Text style={styles.splitMeta}>Paid Rs. {Number(existingPaid).toLocaleString("en-IN")} | Due Rs. {Number(balance).toLocaleString("en-IN")}</Text>
         </View>
@@ -294,6 +321,9 @@ export default function RentFormScreen() {
         </View>
       </View>
 
+      <Text style={styles.label}>Monthly discount (optional)</Text>
+      <TextInput value={monthlyDiscount} onChangeText={updateMonthlyDiscount} keyboardType="numeric" placeholder="Enter discount amount" style={styles.input} />
+
       <Text style={styles.label}>Payment amount</Text>
       <TextInput value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder={totalBalance ? String(totalBalance) : "Enter amount"} style={styles.input} />
 
@@ -307,6 +337,8 @@ export default function RentFormScreen() {
       <TextInput value={note} onChangeText={setNote} placeholder="Payment note" multiline style={[styles.input, styles.multiline]} />
       <Text style={styles.label}>Receipt URL (optional)</Text>
       <TextInput value={receiptUrl} onChangeText={setReceiptUrl} autoCapitalize="none" keyboardType="url" placeholder="https://..." style={styles.input} />
+
+      {previousPayments.length ? <View style={styles.previousReceipts}><Text style={styles.previousReceiptsTitle}>Previous receipts for {key}</Text>{previousPayments.map((payment, index) => <Pressable key={payment._id || `${payment.date}-${index}`} onPress={() => router.push({ pathname: "/system/payment-receipt", params: { id, rentId: selectedRentEntry._id, paymentIndex: index, returnTo: "/system/rent-form" } })} style={styles.previousReceiptButton}><FileText size={18} color={colors.primary} /><Text style={styles.previousReceiptText}>Receipt {index + 1} · Rs. {Number(payment.amount ?? payment.rentAmount ?? 0).toLocaleString("en-IN")}</Text></Pressable>)}</View> : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable onPress={saveRent} disabled={saving} style={[styles.saveButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveText}>Record payment</Text>}</Pressable>
@@ -352,6 +384,11 @@ const styles = StyleSheet.create({
   splitLabel: { color: colors.text, fontSize: 13, fontWeight: "800" },
   splitValue: { marginTop: 3, color: colors.primaryDark, fontSize: 18, fontWeight: "900" },
   splitMeta: { marginTop: 3, color: colors.muted, fontSize: 11, fontWeight: "700" },
+  discountMeta: { marginTop: 3, color: colors.muted, fontSize: 11, fontWeight: "700" },
+  previousReceipts: { marginTop: 18, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
+  previousReceiptsTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  previousReceiptButton: { minHeight: 42, marginTop: 9, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 6, backgroundColor: colors.primarySoft },
+  previousReceiptText: { color: colors.primaryDark, fontSize: 12, fontWeight: "700" },
   addLightBillButton: { minHeight: 42, marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderColor: colors.primary, borderRadius: 7, backgroundColor: colors.surface },
   addLightBillText: { color: colors.primary, fontSize: 13, fontWeight: "800" },
   totalRow: { marginTop: 12, flexDirection: "row", justifyContent: "space-between", gap: 8 },

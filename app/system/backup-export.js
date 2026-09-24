@@ -16,6 +16,7 @@ import { getRentDues, getTenants } from "../../src/api/tenantApi";
 import { getCanteenAttendanceRange } from "../../src/api/canteenApi";
 import { formatTenantUnit } from "../../src/utils/unitLabels";
 import { hasCanteenFeature } from "../../src/utils/featureAccess";
+import { shareHtmlAsPdf } from "../../src/utils/sharePdf";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
 function money(value) {
@@ -349,8 +350,7 @@ export default function BackupExportScreen() {
         await Print.printAsync({ html });
         return;
       }
-      const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Full data backup", UTI: "com.adobe.pdf" });
+      await shareHtmlAsPdf(html, { fileName: `full-data-backup-${Date.now()}.pdf`, dialogTitle: "Full data backup" });
     } catch (err) {
       Alert.alert("Export failed", err.message || "Please try again.");
     } finally {

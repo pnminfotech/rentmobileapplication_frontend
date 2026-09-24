@@ -211,11 +211,9 @@ export default function SystemTabsLayout() {
           /* PAGE */
 
           sceneStyle: {
-            paddingTop:
-              Math.max(
-                insets.top,
-                12
-              ),
+            // Android reserves the status-bar area itself. Do not add a second
+            // navigator inset above every system page.
+            paddingTop: 0,
 
             backgroundColor:
               systemColors.screen,
@@ -803,6 +801,7 @@ export default function SystemTabsLayout() {
               display:
                 "none",
             },
+
           }}
         />
 

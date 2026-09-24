@@ -15,8 +15,8 @@ import { hasCanteenFeature } from "../../src/utils/featureAccess";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
 const FIRST_RENT_OPTIONS = [
-  { value: "NOT_PAID", label: "Normal cycle - payable after month completes" },
-  { value: "ADVANCE_PAID", label: "Advance paid - joining cycle paid" },
+  { value: "NOT_PAID", label: "Normal cycle" },
+  { value: "ADVANCE_PAID", label: "Advance cycle" },
 ];
 const CANTEEN_MODE_LABELS = {
   full_package: "Full food package",
@@ -371,6 +371,7 @@ export default function TenantInviteScreen() {
             </Pressable>
           ))}
         </View>
+        <View style={styles.cycleHelp}><Text style={styles.cycleHelpText}>• Normal cycle: rent becomes payable after the month completes.</Text><Text style={styles.cycleHelpText}>• Advance cycle: the joining month rent is paid at joining.</Text></View>
         {form.firstRentStatus === "ADVANCE_PAID" ? <>
           <Text style={styles.label}>Payment mode</Text>
           <View style={styles.segment}>
@@ -398,6 +399,8 @@ const styles = StyleSheet.create({
   content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 40 },
   label: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   helperText: { marginTop: 6, color: colors.muted, fontSize: 12 },
+  cycleHelp: { marginTop: 8, padding: 10, borderRadius: 7, backgroundColor: colors.primarySoft },
+  cycleHelpText: { color: colors.muted, fontSize: 11, lineHeight: 17 },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
   multiline: { height: 84, paddingTop: 13, textAlignVertical: "top" },
   select: { minHeight: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, selectText: { flex: 1, paddingRight: 8, color: colors.text, fontWeight: "600" },

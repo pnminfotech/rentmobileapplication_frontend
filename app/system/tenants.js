@@ -1012,7 +1012,7 @@ export default function TenantsScreen() {
         ]}
       >
         {tenant.firstRentStatus === "ADVANCE_PAID"
-          ? "Advance paid"
+          ? "Advance cycle"
           : "Normal cycle"}
       </Text>
  {/* Separate Canteen Status */}

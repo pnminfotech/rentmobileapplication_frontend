@@ -3,12 +3,12 @@ import { ActivityIndicator, Alert, BackHandler, Platform, Pressable, ScrollView,
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import { ArrowLeft, Printer, Share2 } from "lucide-react-native";
+import { ArrowLeft, Share2 } from "lucide-react-native";
 
 import { getTenant } from "../../src/api/tenantApi";
 import { formatTenantUnit } from "../../src/utils/unitLabels";
 import { systemColors as colors } from "../../src/theme/systemTheme";
+import { shareHtmlAsPdf } from "../../src/utils/sharePdf";
 
 function money(value) {
   return `Rs. ${Number(value || 0).toLocaleString("en-IN")}`;
@@ -73,17 +73,15 @@ export default function PaymentReceiptScreen() {
     try {
       setGenerating(true);
       if (Platform.OS === "web") return await Print.printAsync({ html });
-      const { uri } = await Print.printToFileAsync({ html });
-      if (!(await Sharing.isAvailableAsync())) return Alert.alert("Sharing unavailable", "Sharing is not available on this device.");
-      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Receipt ${receiptNumber}`, UTI: "com.adobe.pdf" });
-    } catch (err) { Alert.alert("Unable to share", err.message); }
+      await shareHtmlAsPdf(html, { fileName: `${receiptNumber}.pdf`, dialogTitle: `Receipt ${receiptNumber}` });
+    } catch (err) { Alert.alert("Unable to share PDF", err.message); }
     finally { setGenerating(false); }
   }
 
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!payment) return <View style={styles.loading}><Text style={styles.error}>{error}</Text></View>;
 
-  return <View style={styles.screen}><View style={styles.header}><Pressable onPress={goBack} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View style={styles.headerText}><Text style={styles.title}>Payment receipt</Text><Text style={styles.subtitle}>{receiptNumber}</Text></View></View><ScrollView contentContainerStyle={styles.content}><View style={styles.receipt}><View style={styles.receiptHead}><Text style={styles.brand}>{tenant.category || "Rent Management"}</Text><Text style={styles.receiptType}>Rent payment receipt</Text></View><View style={styles.receiptMeta}><Text style={styles.metaText}>Receipt: {receiptNumber}</Text><Text style={styles.metaText}>Date: {formatDate(payment.date)}</Text></View><Text style={styles.amount}>{money(payment.amount)}</Text><View style={styles.row}><Text style={styles.label}>Received from</Text><Text style={styles.value}>{tenant.name}</Text></View><View style={styles.row}><Text style={styles.label}>Rent month</Text><Text style={styles.value}>{rent.month}</Text></View><View style={styles.row}><Text style={styles.label}>Unit</Text><Text style={styles.value}>{formatTenantUnit(tenant)}</Text></View><View style={styles.row}><Text style={styles.label}>Payment mode</Text><Text style={styles.value}>{payment.paymentMode || "Cash"}</Text></View>{payment.utr ? <View style={styles.row}><Text style={styles.label}>Reference</Text><Text style={styles.value}>{payment.utr}</Text></View> : null}{payment.note ? <View style={styles.row}><Text style={styles.label}>Note</Text><Text style={styles.value}>{payment.note}</Text></View> : null}<Text style={styles.footer}>Computer-generated receipt. No signature is required.</Text></View><View style={styles.actions}><Pressable onPress={printReceipt} disabled={generating} style={styles.secondaryButton}><Printer size={19} color={colors.primary} /><Text style={styles.secondaryText}>Print</Text></Pressable><Pressable onPress={shareReceipt} disabled={generating} style={styles.primaryButton}>{generating ? <ActivityIndicator color={colors.surface} /> : <><Share2 size={19} color={colors.surface} /><Text style={styles.primaryText}>{Platform.OS === "web" ? "Print PDF" : "Share PDF"}</Text></>}</Pressable></View></ScrollView></View>;
+  return <View style={styles.screen}><View style={styles.header}><Pressable onPress={goBack} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View style={styles.headerText}><Text style={styles.title}>Payment receipt</Text><Text style={styles.subtitle}>{receiptNumber}</Text></View></View><ScrollView contentContainerStyle={styles.content}><View style={styles.receipt}><View style={styles.receiptHead}><Text style={styles.brand}>{tenant.category || "Rent Management"}</Text><Text style={styles.receiptType}>Rent payment receipt</Text></View><View style={styles.receiptMeta}><Text style={styles.metaText}>Receipt: {receiptNumber}</Text><Text style={styles.metaText}>Date: {formatDate(payment.date)}</Text></View><Text style={styles.amount}>{money(payment.amount)}</Text><View style={styles.row}><Text style={styles.label}>Received from</Text><Text style={styles.value}>{tenant.name}</Text></View><View style={styles.row}><Text style={styles.label}>Rent month</Text><Text style={styles.value}>{rent.month}</Text></View><View style={styles.row}><Text style={styles.label}>Unit</Text><Text style={styles.value}>{formatTenantUnit(tenant)}</Text></View><View style={styles.row}><Text style={styles.label}>Payment mode</Text><Text style={styles.value}>{payment.paymentMode || "Cash"}</Text></View>{payment.utr ? <View style={styles.row}><Text style={styles.label}>Reference</Text><Text style={styles.value}>{payment.utr}</Text></View> : null}{payment.note ? <View style={styles.row}><Text style={styles.label}>Note</Text><Text style={styles.value}>{payment.note}</Text></View> : null}<Text style={styles.footer}>Computer-generated receipt. No signature is required.</Text></View><View style={styles.actions}><Pressable onPress={Platform.OS === "web" ? printReceipt : shareReceipt} disabled={generating} style={styles.primaryButton}>{generating ? <ActivityIndicator color={colors.surface} /> : <><Share2 size={19} color={colors.surface} /><Text style={styles.primaryText}>PDF</Text></>}</Pressable></View></ScrollView></View>;
 }
 
 const styles = StyleSheet.create({

@@ -10,17 +10,17 @@ import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/utils/responsive";
 
 const COLORS = {
-  bg: "#FFF8F1",
-  card: "#FFFDF9",
+  bg: "#F6F8F8",
+  card: "#FFFFFF",
   text: colors.text,
   muted: colors.muted,
-  border: "#EFE0D3",
-  burgundy: "#7A365D",
-  burgundySoft: "#F5E6EE",
-  green: "#496E3F",
-  greenSoft: "#EEF3E8",
+  border: "#D9E8ED",
+  burgundy: "#006D9E",
+  burgundySoft: "#E3F4FA",
+  green: "#258467",
+  greenSoft: "#E8F6F1",
   red: colors.danger,
-  orange: "#D9742F",
+  orange: "#00A7C9",
 };
 
 function formatDate(value) {

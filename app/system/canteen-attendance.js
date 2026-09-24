@@ -17,7 +17,6 @@ import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router/react-navigation";
 
 import * as FileSystem from "expo-file-system/legacy";
-import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 
 import {
@@ -43,6 +42,7 @@ import {
   markAllCanteenAttendance,
   markCanteenAttendance,
 } from "../../src/api/canteenApi";
+import { createShareablePdf } from "../../src/utils/sharePdf";
 
 import { formatTenantUnit } from "../../src/utils/unitLabels";
 
@@ -1352,15 +1352,12 @@ export default function CanteenAttendanceScreen() {
         </html>
       `;
 
-      const { uri } =
-        await Print.printToFileAsync({
-          html,
-        });
-
       const label =
         `${date.getFullYear()}-${String(
           date.getMonth() + 1
         ).padStart(2, "0")}`;
+
+      const uri = await createShareablePdf(html, `canteen-attendance-${label}.pdf`);
 
       chooseShareOrDownload({
         uri,

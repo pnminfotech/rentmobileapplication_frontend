@@ -16,6 +16,7 @@ import { getStaffExpenses } from "../../src/api/staffExpenseApi";
 import { getExpenses } from "../../src/api/expenseApi";
 import { getCanteenAttendanceRange } from "../../src/api/canteenApi";
 import { formatTenantUnit, propertyTypeFromTenant, stackedPropertyLabel } from "../../src/utils/unitLabels";
+import { shareHtmlAsPdf } from "../../src/utils/sharePdf";
 import { allowedUnitTypes, firstAllowedType, isTypeAllowed } from "../../src/utils/subscriptionAccess";
 import { hasCanteenFeature } from "../../src/utils/featureAccess";
 import { systemColors as colors } from "../../src/theme/systemTheme";
@@ -236,8 +237,7 @@ export default function CustomReportsScreen() {
     try {
       setExporting(true); const html = buildHtml();
       if (Platform.OS === "web") return await Print.printAsync({ html });
-      const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Custom rent report", UTI: "com.adobe.pdf" });
+      await shareHtmlAsPdf(html, { fileName: `custom-rent-report-${label}.pdf`, dialogTitle: "Custom rent report" });
     } catch (err) { Alert.alert("Export failed", err.message); }
     finally { setExporting(false); }
   }

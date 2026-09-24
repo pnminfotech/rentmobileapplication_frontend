@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View,
 } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
@@ -438,7 +438,12 @@ export default function SystemAdminScreen() {
           accessibilityRole="button"
           accessibilityLabel="Open account menu"
         >
-          <Text style={styles.profileInitials}>{initials(organization)}</Text>
+          <Image
+            source={require("../../assets/images/rent-management-logo.png")}
+            style={styles.dashboardLogo}
+            resizeMode="contain"
+            accessibilityLabel="Rent Management logo"
+          />
         </Pressable>
         <View style={styles.headerCopy}>
           <Text style={styles.headerTitle} numberOfLines={1}>{organization}</Text>
@@ -634,6 +639,7 @@ const styles = StyleSheet.create({
   header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
   profileAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#DFEBF4" },
   profileInitials: { color: UI.primaryDark, fontSize: 13, fontWeight: "800" },
+  dashboardLogo: { width: 38, height: 38, borderRadius: 19 },
   headerCopy: { flex: 1, minWidth: 0, marginLeft: 11 },
   headerTitle: { color: UI.text, fontSize: 17, fontWeight: "900" },
   headerSubtitle: { marginTop: 1, color: UI.muted, fontSize: 11, fontWeight: "600" },
