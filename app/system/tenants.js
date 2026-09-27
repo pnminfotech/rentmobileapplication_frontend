@@ -1183,7 +1183,7 @@ export default function TenantsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
   content: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 18 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10, marginTop: 35 },
   headerTiny: { alignItems: "flex-start" },
   scroller: { flex: 1, minHeight: 0 },
   scrollContent: { flexGrow: 1, paddingBottom: 92 },

@@ -539,7 +539,7 @@ const stylesVars = {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: stylesVars.background },
   content: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 18 },
-  header: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  header: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10, marginTop: 35 },
   headerAvatar: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: stylesVars.primarySoft },
   headerAvatarText: { color: stylesVars.primary, fontSize: 17, fontWeight: "900" },
   headerText: { flex: 1, minWidth: 0 },

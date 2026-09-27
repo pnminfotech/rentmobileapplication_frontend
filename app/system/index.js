@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
   content: { paddingTop: 4, paddingBottom: 92 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: UI.screen },
-  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8, marginTop:35 },
   profileAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#DFEBF4" },
   profileInitials: { color: UI.primaryDark, fontSize: 13, fontWeight: "800" },
   dashboardLogo: { width: 38, height: 38, borderRadius: 19 },

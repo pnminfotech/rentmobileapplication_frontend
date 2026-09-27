@@ -210,7 +210,7 @@ export default function StaffExpensesScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 18 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 14, backgroundColor: colors.background },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 14, marginTop: 35, backgroundColor: colors.background },
   iconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   headerText: { flex: 1, minWidth: 0, marginLeft: 4 },
   title: { color: colors.text, fontSize: 24, fontWeight: "700" },

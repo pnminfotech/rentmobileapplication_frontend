@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F6F8F7" },
   content: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 20, paddingTop: 3, paddingBottom: 20 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F6F8F7" },
-  header: { minHeight: 52, flexDirection: "row", alignItems: "center", marginBottom: 7 },
+  header: { minHeight: 52, flexDirection: "row", alignItems: "center", marginBottom: 7, marginTop: 35 },
   backButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   headerText: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
   eyebrow: { color: S.muted, fontSize: 9, letterSpacing: 0, fontWeight: "800", textTransform: "uppercase" },

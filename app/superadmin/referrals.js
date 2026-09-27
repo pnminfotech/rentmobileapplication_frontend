@@ -103,13 +103,13 @@ export default function ReferralsScreen() {
         <Pressable onPress={() => router.back()} style={styles.topAction}><LogOut size={24} color={COLORS.red} /></Pressable>
       </View>
 
-      <View style={styles.infoCard}>
+      {/* <View style={styles.infoCard}>
         <View style={styles.infoIcon}><Tags size={24} color={COLORS.burgundy} /></View>
         <View style={styles.infoCopy}>
           <Text style={styles.infoTitle}>Auto-generated referrals</Text>
           <Text style={styles.infoText}>A code is created automatically when a system admin becomes active after payment. Earned referral coins can be used from wallet during renewal or package upgrade.</Text>
         </View>
-      </View>
+      </View> */}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.listHeader}>

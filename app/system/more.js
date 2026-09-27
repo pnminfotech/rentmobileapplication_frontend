@@ -126,7 +126,7 @@ export default function MoreScreen() {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>SYSTEM CONTROL CENTER</Text>
+          {/* <Text style={styles.eyebrow}>SYSTEM CONTROL CENTER</Text> */}
           <Text style={styles.title}>More</Text>
           <Text style={styles.subtitle}>Reports and management tools</Text>
         </View>
@@ -183,7 +183,7 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
   content: { width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 108 },
-  header: { paddingHorizontal: 2, paddingBottom: 14 },
+  header: { paddingHorizontal: 2, paddingBottom: 14, marginTop: 35 },
   eyebrow: { color: UI.subtle, fontSize: 10, fontWeight: "900", letterSpacing: 0, textTransform: "uppercase" },
   title: { marginTop: 3, color: UI.text, fontSize: 30, lineHeight: 34, fontWeight: "900" },
   subtitle: { marginTop: 2, color: UI.muted, fontSize: 14, fontWeight: "600" },

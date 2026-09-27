@@ -1154,7 +1154,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
   content: { paddingTop: 4, paddingBottom: 92 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: UI.screen },
-  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 ,marginTop:35},
   headerCopy: { flex: 1 },
   title: { color: UI.text, fontSize: 26, fontWeight: "900" },
   subtitle: { marginTop: 2, color: UI.muted, fontSize: 12, fontWeight: "600" },

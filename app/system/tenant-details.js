@@ -1884,6 +1884,7 @@ const styles = StyleSheet.create({
   header: {
     minHeight: 58,
     marginBottom: 8,
+    marginTop: 35,
     flexDirection: "row",
     alignItems: "center",
     gap: 9,

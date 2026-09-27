@@ -19,6 +19,7 @@ import {
   BadgeIndianRupee,
   Bell,
   Building2,
+  CalendarRange,
   ChevronRight,
   CheckCircle2,
   Clock3,
@@ -31,6 +32,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  ReceiptText,
   Search,
   ShieldOff,
   Shield,
@@ -488,7 +490,7 @@ function FilterTile({ item, count, selected, onPress, style }) {
   );
 }
 
-function TransactionRow({ transaction }) {
+function TransactionRow({ transaction, featured = false }) {
   const success = transaction.status === "success";
   const pending = transaction.status === "pending" || transaction.status === "created";
   const created = transaction.status === "created";
@@ -506,18 +508,19 @@ function TransactionRow({ transaction }) {
           Icon={Building2}
           color={COLORS.blue}
           bg={COLORS.blueSoft}
-          size={48}
+          size={featured ? 68 : 52}
         />
         <View style={styles.transactionInfo}>
-          <Text style={styles.transactionTitle} numberOfLines={1}>
+          <Text style={[styles.transactionTitle, featured && styles.transactionTitleFeatured]} numberOfLines={1}>
             {transaction.organizationId?.name || "Organization"}
           </Text>
-          <Text style={styles.transactionMeta} numberOfLines={1}>
-            {formatDate(transaction.createdAt)}
+          <Text style={[styles.transactionMeta, featured && styles.transactionMetaFeatured]} numberOfLines={1}>
+            From {customer}
           </Text>
+          <View style={styles.transactionTypePill}><Text style={styles.transactionTypeText}>Organization Payment</Text></View>
         </View>
         <View style={styles.transactionRight}>
-          <Text style={[styles.transactionAmount, success && styles.amountSuccess, failed && styles.amountFailed, pending && styles.amountPending]} numberOfLines={1}>
+          <Text style={[styles.transactionAmount, featured && styles.transactionAmountFeatured, success && styles.amountSuccess, failed && styles.amountFailed, pending && styles.amountPending]} numberOfLines={1}>
             {money(transaction.amount)}
           </Text>
           {wallet.hasWalletDiscount ? (
@@ -532,25 +535,14 @@ function TransactionRow({ transaction }) {
       </View>
 
       <View style={styles.transactionDetailsCard}>
-        <View style={styles.transactionDetailRow}>
-          <Text style={styles.transactionDetailLabel}>Status</Text>
-          <Text style={[styles.transactionDetailValue, failed && styles.detailDanger, success && styles.detailSuccess]}>{statusLabel(transaction.status)}</Text>
+        <View style={styles.transactionDetailsColumn}>
+          <View style={styles.transactionDetailItem}><CalendarRange size={18} color={COLORS.blue} /><View style={styles.transactionDetailCopy}><Text style={styles.transactionDetailLabel}>Date &amp; Time</Text><Text style={styles.transactionDetailValue}>{formatDateTime(transaction.paidAt || transaction.createdAt)}</Text></View></View>
+          <View style={styles.transactionDetailItem}><ReceiptText size={18} color={COLORS.blue} /><View style={styles.transactionDetailCopy}><Text style={styles.transactionDetailLabel}>Transaction ID</Text><Text style={styles.transactionDetailValue} numberOfLines={1}>{String(txnId)}</Text></View></View>
         </View>
-        <View style={styles.transactionDetailRow}>
-          <Text style={styles.transactionDetailLabel}>From</Text>
-          <Text style={styles.transactionDetailValue} numberOfLines={1}>{customer}</Text>
-        </View>
-        <View style={styles.transactionDetailRow}>
-          <Text style={styles.transactionDetailLabel}>Amount</Text>
-          <Text style={styles.transactionDetailValue}>{money(transaction.amount)}</Text>
-        </View>
-        <View style={styles.transactionDetailRow}>
-          <Text style={styles.transactionDetailLabel}>Time</Text>
-          <Text style={styles.transactionDetailValue}>{formatDateTime(transaction.paidAt || transaction.createdAt)}</Text>
-        </View>
-        <View style={styles.transactionDetailRow}>
-          <Text style={styles.transactionDetailLabel}>Txn ID</Text>
-          <Text style={styles.transactionDetailValue} numberOfLines={1}>{String(txnId)}</Text>
+        <View style={styles.transactionDetailsDivider} />
+        <View style={styles.transactionDetailsColumn}>
+          <View style={styles.transactionDetailItem}><BadgeIndianRupee size={18} color={COLORS.blue} /><View style={styles.transactionDetailCopy}><Text style={styles.transactionDetailLabel}>Amount</Text><Text style={styles.transactionDetailValue}>{money(transaction.amount)}</Text></View></View>
+          <View style={styles.transactionDetailItem}><CheckCircle2 size={18} color={success ? COLORS.green : statusColor} /><View style={styles.transactionDetailCopy}><Text style={styles.transactionDetailLabel}>Status</Text><Text style={[styles.transactionDetailValue, success && styles.detailSuccess, failed && styles.detailDanger]}>{statusLabel(transaction.status)}</Text></View></View>
         </View>
       </View>
     </View>
@@ -774,7 +766,16 @@ export default function SuperAdminScreen() {
   const successPercent = totalRevenue ? Math.round((successRevenue / totalRevenue) * 100) : 0;
   const pendingPercent = totalRevenue ? Math.round((pendingRevenue / totalRevenue) * 100) : 0;
   const apiRevenueTrend = Array.isArray(dashboard?.revenue?.trend) ? dashboard.revenue.trend : [];
-  const revenueTrend = apiRevenueTrend.length === 6 ? apiRevenueTrend : buildRevenueTrendFromTransactions(transactions);
+  const transactionRevenueTrend = buildRevenueTrendFromTransactions(transactions);
+  const apiHasRevenue = apiRevenueTrend.some((item) => Number(item.amount || 0) > 0);
+  const transactionHasRevenue = transactionRevenueTrend.some((item) => Number(item.amount || 0) > 0);
+  const revenueTrend = apiHasRevenue
+    ? apiRevenueTrend
+    : transactionHasRevenue
+      ? transactionRevenueTrend
+      : transactionRevenueTrend.map((item, index, list) => index === list.length - 1 && successRevenue > 0
+        ? { ...item, amount: successRevenue, count: dashboard?.revenue?.successfulCount || 1 }
+        : item);
   const highestTrendAmount = Math.max(0, ...revenueTrend.map((item) => Number(item.amount || 0)));
   const currentTrend = revenueTrend[revenueTrend.length - 1] || { amount: 0, label: "This month" };
   const previousTrend = revenueTrend[revenueTrend.length - 2] || { amount: 0, label: "last month" };
@@ -1398,7 +1399,7 @@ export default function SuperAdminScreen() {
                 </Pressable> */}
               </View>
               {!recentTransactions.length ? <Text style={styles.empty}>No transactions yet.</Text> : null}
-              {recentTransactions.map((transaction) => <TransactionRow key={transaction._id} transaction={transaction} />)}
+              {recentTransactions.map((transaction, index) => <TransactionRow key={transaction._id} transaction={transaction} featured={index === 0} />)}
             </View>
           </View>
         ) : null}
@@ -1422,14 +1423,14 @@ export default function SuperAdminScreen() {
               </View>
               <ChevronRight size={25} color={COLORS.blue} />
             </Pressable>
-            <Pressable onPress={loadData} style={styles.moreRow}>
+            {/* <Pressable onPress={loadData} style={styles.moreRow}>
               <View style={styles.moreIconBox}><RefreshCw size={28} color={COLORS.blue} /></View>
               <View style={styles.moreCopy}>
                 <Text style={styles.moreText}>Refresh Dashboard</Text>
                 <Text style={styles.moreSubText}>Get the latest data</Text>
               </View>
               <ChevronRight size={25} color={COLORS.blue} />
-            </Pressable>
+            </Pressable> */}
             <Pressable onPress={() => router.push("/superadmin/notifications")} style={styles.moreRow}>
               <View style={styles.moreIconBox}><Bell size={27} color={COLORS.blue} /></View>
               <View style={styles.moreCopy}>
@@ -3622,11 +3623,17 @@ const styles = StyleSheet.create({
 
   transactionDetailsCard: {
     marginTop: 6,
-    paddingTop: 6,
-
+    paddingTop: 14,
+    flexDirection: "row",
+    alignItems: "stretch",
     borderTopWidth: 1,
     borderTopColor: COLORS.soft,
   },
+
+  transactionDetailsColumn: { flex: 1, gap: 14 },
+  transactionDetailsDivider: { width: 1, marginHorizontal: 10, backgroundColor: COLORS.border },
+  transactionDetailItem: { minHeight: 34, flexDirection: "row", alignItems: "center", gap: 8 },
+  transactionDetailCopy: { flex: 1, minWidth: 0 },
 
   transactionDetailRow: {
     marginBottom: 3,
@@ -3637,25 +3644,20 @@ const styles = StyleSheet.create({
   },
 
   transactionDetailLabel: {
-    flex: 1,
-    minWidth: 0,
-
     color: COLORS.muted,
-
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: "800",
   },
 
   transactionDetailValue: {
-    flex: 1.4,
     minWidth: 0,
 
     color: COLORS.text,
 
-    fontSize: 9.5,
+    fontSize: 11,
     fontWeight: "800",
 
-    textAlign: "right",
+    textAlign: "left",
   },
 
   detailSuccess: {

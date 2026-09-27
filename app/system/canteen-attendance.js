@@ -3091,6 +3091,7 @@ const styles = StyleSheet.create({
 
   header: {
     minHeight: 58,
+    marginTop: 35,
 
     flexDirection: "row",
     alignItems: "center",
