@@ -11,9 +11,10 @@ import {
 } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react-native";
 
-import { deleteBed, deleteUnit, getUnit, updateBed, updateUnit } from "../../src/api/roomApi";
+import { deleteBed, deleteUnit, getRooms, getUnit, updateBed, updateUnit } from "../../src/api/roomApi";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { systemColors as colors } from "../../src/theme/systemTheme";
 
@@ -30,10 +31,12 @@ function unitTypeLabel(unit) {
 
 export default function UnitDetailsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { isUnitTypeAllowed } = useSystemAccess();
   const { id } = useLocalSearchParams();
   const [unit, setUnit] = useState(null);
   const [quota, setQuota] = useState(null);
+  const [pendingBedCount, setPendingBedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [editingUnit, setEditingUnit] = useState(false);
   const [updatingUnit, setUpdatingUnit] = useState(false);
@@ -49,7 +52,7 @@ export default function UnitDetailsScreen() {
     if (!id) return;
     try {
       setError("");
-      const data = await getUnit(id);
+      const [data, allUnits] = await Promise.all([getUnit(id), getRooms()]);
       const loadedUnit = data?.unit || null;
       if (loadedUnit && !isUnitTypeAllowed(loadedUnit.propertyType || "bed")) {
         setError("This property type is not included in the current subscription.");
@@ -58,6 +61,7 @@ export default function UnitDetailsScreen() {
       }
       setUnit(loadedUnit);
       setQuota(data?.quota || null);
+      setPendingBedCount((Array.isArray(allUnits) ? allUnits : []).filter((item) => item?.propertyType === "bed" && item?.isPlaceholder).length);
 
       const primaryBed = loadedUnit?.beds?.[0] || {};
       setUnitEdits({
@@ -112,6 +116,7 @@ export default function UnitDetailsScreen() {
   const isShop = (unit?.propertyType || "bed") === "shop";
   const beds = Array.isArray(unit?.beds) ? unit.beds : [];
   const remainingBeds = quota?.remaining?.beds ?? 0;
+  const canAddBed = remainingBeds > 0 || pendingBedCount > 0;
 
   function unitSlotBedNo() {
     return isShop ? "SHOP-1" : "ROOM-1";
@@ -258,7 +263,7 @@ export default function UnitDetailsScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + 8, 20) }]} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
         <Pressable onPress={() => router.replace("/system/units")} style={styles.iconButton}>
           <ArrowLeft size={22} color={colors.text} />
@@ -271,9 +276,9 @@ export default function UnitDetailsScreen() {
         </View>
         {isBedUnit ? (
           <Pressable
-            onPress={() => router.push({ pathname: "/system/add-bed", params: { id: unit._id } })}
-            disabled={remainingBeds < 1}
-            style={[styles.headerAction, remainingBeds < 1 && styles.disabled]}
+            onPress={() => router.push({ pathname: "/system/add-bed", params: { id: unit._id, usePlaceholder: remainingBeds < 1 ? "true" : "false", pendingBeds: String(pendingBedCount) } })}
+            disabled={!canAddBed}
+            style={[styles.headerAction, !canAddBed && styles.disabled]}
           >
             <Plus size={18} color={colors.surface} />
             <Text style={styles.headerActionText}>Add bed</Text>
@@ -365,21 +370,15 @@ export default function UnitDetailsScreen() {
               const isEditing = editingBedNo === String(bed.bedNo);
               return (
                 <View key={bed.bedNo} style={styles.bedRow}>
-                  <View style={styles.bedInfo}>
+                  {isEditing ? <View style={styles.editBedContent}>
                     <Text style={styles.bedName}>{bed.bedNo}</Text>
-                    {isEditing ? (
+                    <View style={styles.editBedFields}>
                       <TextInput
                         value={draft.bedCategory}
                         onChangeText={(value) => setBedEdit(String(bed.bedNo), "bedCategory", value)}
                         placeholder="Bed category"
                         style={styles.bedCategoryInput}
                       />
-                    ) : (
-                      <Text style={styles.bedCategory}>{bed.bedCategory || "Standard"}</Text>
-                    )}
-                  </View>
-                  <View style={styles.bedActions}>
-                    {isEditing ? (
                       <TextInput
                         value={draft.price}
                         onChangeText={(value) => setBedEdit(String(bed.bedNo), "price", value)}
@@ -387,18 +386,27 @@ export default function UnitDetailsScreen() {
                         placeholder="Price"
                         style={styles.bedPriceInput}
                       />
-                    ) : (
+                      <Pressable onPress={() => saveBedChanges(bed)} disabled={updatingBedNo === String(bed.bedNo)} style={[styles.editButton, updatingBedNo === String(bed.bedNo) && styles.disabled]}>
+                        {updatingBedNo === String(bed.bedNo) ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={styles.saveIconText}>Save</Text>}
+                      </Pressable>
+                      <Pressable onPress={() => confirmDeleteBed(bed)} disabled={deletingBedNo === String(bed.bedNo)} style={[styles.deleteButton, deletingBedNo === String(bed.bedNo) && styles.disabled]}>
+                        {deletingBedNo === String(bed.bedNo) ? <ActivityIndicator size="small" color={colors.danger} /> : <Trash2 size={17} color={colors.danger} />}
+                      </Pressable>
+                    </View>
+                  </View> : <>
+                  <View style={styles.bedInfo}>
+                    <Text style={styles.bedName}>{bed.bedNo}</Text>
+                      <Text style={styles.bedCategory}>{bed.bedCategory || "Standard"}</Text>
+                  </View>
+                  <View style={styles.bedActions}>
                       <Text style={styles.bedPrice} numberOfLines={1}>Rs. {bed.price ?? 0} /month</Text>
-                    )}
                     <Pressable
-                      onPress={() => (isEditing ? saveBedChanges(bed) : setEditingBedNo(String(bed.bedNo)))}
+                      onPress={() => setEditingBedNo(String(bed.bedNo))}
                       disabled={updatingBedNo === String(bed.bedNo)}
                       style={[styles.editButton, updatingBedNo === String(bed.bedNo) && styles.disabled]}
                     >
                       {updatingBedNo === String(bed.bedNo) ? (
                         <ActivityIndicator size="small" color={colors.primary} />
-                      ) : isEditing ? (
-                        <Text style={styles.saveIconText}>Save</Text>
                       ) : (
                         <Pencil size={16} color={colors.primary} />
                       )}
@@ -415,6 +423,7 @@ export default function UnitDetailsScreen() {
                       )}
                     </Pressable>
                   </View>
+                  </>}
                 </View>
               );
             })}
@@ -426,17 +435,17 @@ export default function UnitDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { width: "100%", maxWidth: 680, alignSelf: "center", padding: 18, paddingBottom: 36 },
+  screen: { flex: 1, backgroundColor: "#F6F8F7" },
+  content: { width: "100%", maxWidth: 680, alignSelf: "center", paddingHorizontal: 18, paddingBottom: 36 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 22, backgroundColor: colors.background },
+  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 18, backgroundColor: "#F6F8F7" },
   iconButton: { width: 44, height: 44, marginRight: 7, alignItems: "center", justifyContent: "center" },
   headerText: { flex: 1 },
   headerAction: { height: 42, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 7, backgroundColor: colors.primary },
   headerActionText: { color: colors.surface, fontSize: 13, fontWeight: "700" },
   title: { color: colors.text, fontSize: 24, fontWeight: "700" },
   subtitle: { marginTop: 3, color: colors.muted },
-  formSection: { marginBottom: 18, padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
+  formSection: { marginBottom: 18, padding: 16, borderWidth: 1, borderColor: "#D9E1E7", borderRadius: 8, backgroundColor: "#FFFFFF" },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: "700" },
   unitActionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -449,13 +458,15 @@ const styles = StyleSheet.create({
   quotaText: { color: colors.muted, fontSize: 12 },
   bedList: { gap: 8 },
   bedRow: { minHeight: 72, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  editBedContent: { flex: 1, minWidth: 0 },
+  editBedFields: { marginTop: 7, flexDirection: "row", alignItems: "center", gap: 7 },
   bedInfo: { flex: 1, minWidth: 0 },
   bedActions: { flex: 1.7, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6 },
   bedName: { color: colors.text, fontWeight: "700" },
   bedCategory: { marginTop: 3, color: colors.muted, fontSize: 12 },
-  bedCategoryInput: { marginTop: 6, height: 38, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.background, color: colors.text, fontSize: 12, fontWeight: "700" },
+  bedCategoryInput: { flex: 1.15, minWidth: 0, height: 38, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.background, color: colors.text, fontSize: 12, fontWeight: "700" },
   bedPrice: { flex: 1, minWidth: 92, color: colors.muted, fontSize: 12, fontWeight: "700", textAlign: "right" },
-  bedPriceInput: { flex: 1, minWidth: 76, maxWidth: 105, height: 42, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.background, color: colors.text, fontSize: 13, fontWeight: "700" },
+  bedPriceInput: { flex: 1, minWidth: 70, height: 38, paddingHorizontal: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.background, color: colors.text, fontSize: 13, fontWeight: "700" },
   editButton: { width: 48, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 18, backgroundColor: colors.primarySoft },
   deleteButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 18, backgroundColor: colors.dangerSoft },
   saveIconText: { color: colors.primary, fontSize: 11, fontWeight: "900" },

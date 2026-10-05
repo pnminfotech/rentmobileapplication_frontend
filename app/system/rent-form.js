@@ -93,7 +93,10 @@ export default function RentFormScreen() {
         setAmount(String(Math.max(Number(data.baseRent || 0) - paid, 0) || ""));
       }
     }
-    catch (err) { setError(err.response?.data?.message || "Unable to load tenant."); }
+    catch (err) {
+      const serverDetail = err.response?.data?.error;
+      setError(serverDetail ? `${err.response?.data?.message || "Unable to load tenant"}: ${serverDetail}` : (err.response?.data?.message || "Unable to load tenant."));
+    }
     finally { setLoading(false); }
   }, [id, requestedMonth]);
   useFocusEffect(useCallback(() => { loadTenant(); }, [loadTenant]));
@@ -129,7 +132,12 @@ export default function RentFormScreen() {
       if (!active) return;
       setQuote(data);
       setAmount(String(Math.max(Number(data.totalBalance ?? data.balance ?? 0), 0) || ""));
-    }).catch(() => { if (active) setQuote(null); });
+    }).catch((err) => {
+      if (!active) return;
+      setQuote(null);
+      const serverDetail = err.response?.data?.error;
+      setError(serverDetail ? `${err.response?.data?.message || "Unable to calculate rent"}: ${serverDetail}` : (err.response?.data?.message || "Unable to calculate tenant rent due."));
+    });
     return () => { active = false; };
   }, [existingPaid, id, key, selectedDue, tenant]);
 
@@ -338,7 +346,7 @@ export default function RentFormScreen() {
       <Text style={styles.label}>Receipt URL (optional)</Text>
       <TextInput value={receiptUrl} onChangeText={setReceiptUrl} autoCapitalize="none" keyboardType="url" placeholder="https://..." style={styles.input} />
 
-      {previousPayments.length ? <View style={styles.previousReceipts}><Text style={styles.previousReceiptsTitle}>Previous receipts for {key}</Text>{previousPayments.map((payment, index) => <Pressable key={payment._id || `${payment.date}-${index}`} onPress={() => router.push({ pathname: "/system/payment-receipt", params: { id, rentId: selectedRentEntry._id, paymentIndex: index, returnTo: "/system/rent-form" } })} style={styles.previousReceiptButton}><FileText size={18} color={colors.primary} /><Text style={styles.previousReceiptText}>Receipt {index + 1} · Rs. {Number(payment.amount ?? payment.rentAmount ?? 0).toLocaleString("en-IN")}</Text></Pressable>)}</View> : null}
+      {previousPayments.length ? <View style={styles.previousReceipts}><Text style={styles.previousReceiptsTitle}>Previous receipts for {key}</Text>{previousPayments.map((payment, index) => <Pressable key={payment._id || `${payment.date}-${index}`} onPress={() => router.push({ pathname: "/system/payment-receipt", params: { id, rentId: selectedRentEntry._id, paymentIndex: index, returnTo: "/system/rent-form", returnTenantId: id, returnMonth: key, returnRentReturnTo: returnTo } })} style={styles.previousReceiptButton}><FileText size={18} color={colors.primary} /><Text style={styles.previousReceiptText}>Receipt {index + 1} · Rs. {Number(payment.amount ?? payment.rentAmount ?? 0).toLocaleString("en-IN")}</Text></Pressable>)}</View> : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable onPress={saveRent} disabled={saving} style={[styles.saveButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveText}>Record payment</Text>}</Pressable>

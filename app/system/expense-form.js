@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Check, ChevronDown } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
@@ -67,6 +68,7 @@ function roomShopTitle(unit) {
 
 export default function ExpenseFormScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { unitTypes, firstUnitType, isUnitTypeAllowed } = useSystemAccess();
   const visiblePropertyTypes = useMemo(
     () => PROPERTY_TYPES.filter((item) => unitTypes.some((allowed) => allowed.value === item.value)),
@@ -239,8 +241,8 @@ export default function ExpenseFormScreen() {
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
-      <View style={styles.header}><Pressable onPress={() => router.replace("/system/expenses")} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><Text style={styles.title}>{editing ? "Edit expense" : "Add expense"}</Text></View>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + 8, 20) }]} keyboardShouldPersistTaps="handled">
+      <View style={styles.header}><Pressable onPress={() => router.replace("/system/expenses")} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View style={styles.headerCopy}><Text style={styles.title}>{editing ? "Edit expense" : "Add expense"}</Text><Text style={styles.subtitle}>Record a business expense</Text></View></View>
       <Text style={styles.label}>Category</Text>
       <Pressable onPress={() => setShowCategories((value) => !value)} style={styles.select}>
         <View style={styles.selectText}>
@@ -358,12 +360,14 @@ export default function ExpenseFormScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: "#F6F8F7" },
   content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 40 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: { marginBottom: 18, flexDirection: "row", alignItems: "center", backgroundColor: colors.background },
+  header: { marginBottom: 18, flexDirection: "row", alignItems: "center", backgroundColor: "#F6F8F7" },
+  headerCopy: { flex: 1, marginLeft: 4 },
   iconButton: { width: 44, height: 44, marginRight: 8, alignItems: "center", justifyContent: "center" },
-  title: { flex: 1, color: colors.text, fontSize: 24, fontWeight: "700" },
+  title: { color: colors.text, fontSize: 24, fontWeight: "700" },
+  subtitle: { marginTop: 2, color: colors.muted, fontSize: 12 },
   label: { marginTop: 15, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
   select: { minHeight: 58, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },

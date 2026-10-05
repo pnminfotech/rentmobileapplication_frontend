@@ -25,8 +25,11 @@ function escapeHtml(value) {
 
 export default function PaymentReceiptScreen() {
   const baseRouter = useRouter();
-  const { id, rentId, paymentIndex, returnTo = "/system/tenants" } = useLocalSearchParams();
+  const { id, rentId, paymentIndex, returnTo = "/system/tenants", returnTenantId, returnMonth, returnRentReturnTo } = useLocalSearchParams();
   const resolvedReturnTo = Array.isArray(returnTo) ? returnTo[0] : returnTo;
+  const resolvedReturnTenantId = Array.isArray(returnTenantId) ? returnTenantId[0] : returnTenantId;
+  const resolvedReturnMonth = Array.isArray(returnMonth) ? returnMonth[0] : returnMonth;
+  const resolvedRentReturnTo = Array.isArray(returnRentReturnTo) ? returnRentReturnTo[0] : returnRentReturnTo;
   const [tenant, setTenant] = useState(null);
   const [rent, setRent] = useState(null);
   const [payment, setPayment] = useState(null);
@@ -35,8 +38,19 @@ export default function PaymentReceiptScreen() {
   const [error, setError] = useState("");
 
   const goBack = useCallback(() => {
+    if (resolvedReturnTo === "/system/rent-form" && resolvedReturnTenantId) {
+      baseRouter.replace({
+        pathname: "/system/rent-form",
+        params: {
+          id: String(resolvedReturnTenantId),
+          month: String(resolvedReturnMonth || ""),
+          returnTo: String(resolvedRentReturnTo || "/system/tenants"),
+        },
+      });
+      return;
+    }
     baseRouter.replace(String(resolvedReturnTo || "/system/tenants"));
-  }, [baseRouter, resolvedReturnTo]);
+  }, [baseRouter, resolvedRentReturnTo, resolvedReturnMonth, resolvedReturnTenantId, resolvedReturnTo]);
 
   useFocusEffect(useCallback(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {

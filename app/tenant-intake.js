@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Check, Camera, ChevronDown, ShieldCheck } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
@@ -33,7 +33,7 @@ const INITIAL_FORM = {
   dob: toDateValue(), pincode: "", city: "", state: "", address: "", houseNo: "", nearbyPlace: "",
   relativeAddress1: "", relative1Relation: "Father", relative1Name: "", relative1Phone: "",
   relative2Relation: "Mother", relative2Name: "", relative2Phone: "", companyAddress: "",
-  dateOfJoiningCollege: toDateValue(), familyMembers: "", shopName: "", shopBusiness: "",
+  dateOfJoiningCollege: toDateValue(), familyMembers: "", shopName: "", shopBusiness: "", depositAmount: "",
 };
 
 const RELATIONS = ["Father", "Mother", "Husband", "Sister", "Brother", "Self"];
@@ -55,15 +55,15 @@ async function lookupIndianPincode(pincode) {
   };
 }
 
-function Field({ label, multiline, ...props }) {
-  return <><Text style={styles.label}>{label}</Text><TextInput {...props} style={[styles.input, multiline && styles.multiline]} multiline={multiline} /></>;
+function Field({ label, required = false, multiline, ...props }) {
+  return <><Text style={styles.label}>{label}{required ? <Text style={styles.requiredMark}> *</Text> : null}</Text><TextInput {...props} style={[styles.input, multiline && styles.multiline]} multiline={multiline} /></>;
 }
 
-function RelationPicker({ label, value, onChange }) {
+function RelationPicker({ label, value, onChange, required = false }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>{label}{required ? <Text style={styles.requiredMark}> *</Text> : null}</Text>
       <Pressable onPress={() => setOpen((current) => !current)} style={styles.select}>
         <Text style={styles.selectValue}>{value || "Choose relation"}</Text>
         <ChevronDown size={19} color={colors.muted} />
@@ -132,7 +132,7 @@ export default function TenantIntakeScreen() {
   const [saving, setSaving] = useState(false);
   const [invite, setInvite] = useState(null);
   const [form, setForm] = useState(INITIAL_FORM);
-  const [documents, setDocuments] = useState({});
+  const [documents, setDocuments] = useState({ selfAadhar: [], parentAadhar: [], photo: [] });
   const [cropRequest, setCropRequest] = useState(null);
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
@@ -223,7 +223,7 @@ export default function TenantIntakeScreen() {
 
   const setValue = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  async function chooseDocument(key) {
+  async function chooseDocument(key, index = 0) {
     setError("");
     const isSelfie = key === "photo";
     const options = {
@@ -232,20 +232,18 @@ export default function TenantIntakeScreen() {
       aspect: isSelfie ? [1, 1] : [4, 3],
       quality: 0.8,
     };
-    const permission = isSelfie
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return setError(isSelfie ? "Camera permission is required for tenant selfie." : "Photo permission is required to attach documents.");
-    const result = isSelfie
-      ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
-      : await ImagePicker.launchImageLibraryAsync(options);
+    const source = Platform.OS === "web" ? "library" : await new Promise((resolve) => Alert.alert("Add document", "Choose how to add this document", [{ text: "Camera", onPress: () => resolve("camera") }, { text: "Upload / Gallery", onPress: () => resolve("library") }, { text: "Cancel", style: "cancel", onPress: () => resolve(null) }]));
+    if (!source) return;
+    const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return setError(source === "camera" ? "Camera permission is required." : "Photo library permission is required.");
+    const result = source === "camera" ? await ImagePicker.launchCameraAsync({ ...options, cameraType: isSelfie ? ImagePicker.CameraType?.front || "front" : ImagePicker.CameraType?.back || "back" }) : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
     const selectedImage = result.assets[0];
     if (Platform.OS === "web") {
-      setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+      setCropRequest({ key, index, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
       return;
     }
-    setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+    setCropRequest({ key, index, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
   }
 
   function validate() {
@@ -254,6 +252,7 @@ export default function TenantIntakeScreen() {
     const isResidentialRoom = propertyType === "room";
     const isShop = propertyType === "shop";
     const required = [
+      ["depositAmount", "Deposit amount"],
       ...(isShop ? [] : [["dob", "Date of birth"]]),
       ["pincode", "Pincode"], ["city", "City"], ["state", "State"],
       ["address", "Address"], ["houseNo", "House number"], ["nearbyPlace", "Nearby place"],
@@ -271,6 +270,7 @@ export default function TenantIntakeScreen() {
     ];
     const missing = required.find(([key]) => !String(form[key] || "").trim());
     if (missing) return `${missing[1]} is required.`;
+    if (!/^\d+(\.\d{1,2})?$/.test(String(form.depositAmount).trim()) || Number(form.depositAmount) < 0) return "Deposit amount must be 0 or more.";
     if (!/^\d{6}$/.test(form.pincode)) return "Pincode must be 6 digits.";
     if (!isResidentialRoom && !isShop && (!/^\d{10}$/.test(form.relative1Phone) || !/^\d{10}$/.test(form.relative2Phone))) return "Contact phone numbers must be 10 digits.";
     const existingDocuments = Array.isArray(invite?.existingDocuments) ? invite.existingDocuments : [];
@@ -279,7 +279,7 @@ export default function TenantIntakeScreen() {
       normalizeDocumentRelation(document?.relation) === normalizeDocumentRelation(relation)
     );
     const requiredDocuments = isShop ? SHOP_DOCUMENTS : isResidentialRoom ? RESIDENTIAL_DOCUMENTS : DOCUMENTS;
-    if (requiredDocuments.some(([key, , relation]) => !documents[key] && !hasDocument(relation))) return `All ${requiredDocuments.length} required tenant documents are required.`;
+    if (requiredDocuments.some(([key, , relation]) => !documents[key]?.length && !hasDocument(relation))) return `All ${requiredDocuments.length} required tenant documents are required.`;
     return "";
   }
 
@@ -295,7 +295,7 @@ export default function TenantIntakeScreen() {
       const prefill = invite?.prefill || {};
       const propertyType = propertyTypeFromTenant(prefill);
       const selectedDocumentList = propertyType === "shop" ? SHOP_DOCUMENTS : propertyType === "room" ? RESIDENTIAL_DOCUMENTS : DOCUMENTS;
-      const selectedDocuments = selectedDocumentList.filter(([key]) => documents[key]).map(([key, , relation]) => ({ ...documents[key], relation }));
+      const selectedDocuments = selectedDocumentList.flatMap(([key, , relation]) => (documents[key] || []).map((document) => ({ ...document, relation })));
       const uploaded = selectedDocuments.length ? await uploadTenantInviteDocuments(selectedDocuments, token) : [];
       if (selectedDocuments.length !== uploaded.length) {
         throw new Error("One or more documents could not be uploaded. Please select them again and retry.");
@@ -347,35 +347,36 @@ export default function TenantIntakeScreen() {
       </View>
 
       <Text style={styles.section}>Personal and address</Text>
-      <FormDateField label="Date of birth" value={form.dob || toDateValue()} onChange={(v) => setValue("dob", v)} maximumDate={new Date()} />
+      <Field required label="Deposit amount" value={form.depositAmount} onChangeText={(v) => setValue("depositAmount", v.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" placeholder="Enter deposit amount" />
+      <FormDateField label={isShop ? "Date of birth" : "Date of birth *"} value={form.dob || toDateValue()} onChange={(v) => setValue("dob", v)} maximumDate={new Date()} />
       {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(v) => setValue("shopName", v)} /> : null}
-      <Field label="Pincode" value={form.pincode} onChangeText={(v) => setValue("pincode", v.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" />
+      <Field required label="Pincode" value={form.pincode} onChangeText={(v) => setValue("pincode", v.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" />
       {pinLookupStatus === "loading" ? <Text style={styles.helperText}>Fetching city and state from PIN code...</Text> : null}
       {pinLookupStatus === "success" ? <Text style={styles.helperText}>City and state updated from PIN code. You can still edit them.</Text> : null}
       {pinLookupStatus === "error" ? <Text style={styles.errorInline}>Could not fetch city/state for this PIN code. Please enter them manually.</Text> : null}
-      <Field label="City" value={form.city} onChangeText={(v) => setValue("city", v)} />
-      <Field label="State" value={form.state} onChangeText={(v) => setValue("state", v)} />
-      <Field label="Full address" value={form.address} onChangeText={(v) => setValue("address", v)} multiline />
-      <Field label="House number" value={form.houseNo} onChangeText={(v) => setValue("houseNo", v)} />
-      <Field label="Nearby place" value={form.nearbyPlace} onChangeText={(v) => setValue("nearbyPlace", v)} />
+      <Field required label="City" value={form.city} onChangeText={(v) => setValue("city", v)} />
+      <Field required label="State" value={form.state} onChangeText={(v) => setValue("state", v)} />
+      <Field required label="Full address" value={form.address} onChangeText={(v) => setValue("address", v)} multiline />
+      <Field required label="House number" value={form.houseNo} onChangeText={(v) => setValue("houseNo", v)} />
+      <Field required label="Nearby place" value={form.nearbyPlace} onChangeText={(v) => setValue("nearbyPlace", v)} />
 
       {!isResidentialRoom && !isShop ? <>
-        <Field label="Relative address" value={form.relativeAddress1} onChangeText={(v) => setValue("relativeAddress1", v)} multiline />
+        <Field required label="Relative address" value={form.relativeAddress1} onChangeText={(v) => setValue("relativeAddress1", v)} multiline />
 
         <Text style={styles.section}>Emergency contacts</Text>
-        <RelationPicker label="First contact relation" value={form.relative1Relation} onChange={(v) => setValue("relative1Relation", v)} />
-        <Field label="First contact name" value={form.relative1Name} onChangeText={(v) => setValue("relative1Name", v)} />
-        <Field label="First contact phone" value={form.relative1Phone} onChangeText={(v) => setValue("relative1Phone", v.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
-        <RelationPicker label="Second contact relation" value={form.relative2Relation} onChange={(v) => setValue("relative2Relation", v)} />
-        <Field label="Second contact name" value={form.relative2Name} onChangeText={(v) => setValue("relative2Name", v)} />
-        <Field label="Second contact phone" value={form.relative2Phone} onChangeText={(v) => setValue("relative2Phone", v.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
+        <RelationPicker required label="First contact relation" value={form.relative1Relation} onChange={(v) => setValue("relative1Relation", v)} />
+        <Field required label="First contact name" value={form.relative1Name} onChangeText={(v) => setValue("relative1Name", v)} />
+        <Field required label="First contact phone" value={form.relative1Phone} onChangeText={(v) => setValue("relative1Phone", v.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
+        <RelationPicker required label="Second contact relation" value={form.relative2Relation} onChange={(v) => setValue("relative2Relation", v)} />
+        <Field required label="Second contact name" value={form.relative2Name} onChangeText={(v) => setValue("relative2Name", v)} />
+        <Field required label="Second contact phone" value={form.relative2Phone} onChangeText={(v) => setValue("relative2Phone", v.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
       </> : null}
 
       <Text style={styles.section}>{isResidentialRoom ? "Family and work" : isShop ? "Shop work" : "Work or education"}</Text>
-      {isResidentialRoom ? <Field label="No. of family members" value={form.familyMembers} onChangeText={(v) => setValue("familyMembers", v.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" /> : null}
-      {isShop ? <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(v) => setValue("shopBusiness", v)} multiline /> : <>
-        <Field label={isResidentialRoom ? "Company Address / College" : "Company or college name and address"} value={form.companyAddress} onChangeText={(v) => setValue("companyAddress", v)} multiline />
-        <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege || toDateValue()} onChange={(v) => setValue("dateOfJoiningCollege", v)} />
+      {isResidentialRoom ? <Field required label="No. of family members" value={form.familyMembers} onChangeText={(v) => setValue("familyMembers", v.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" /> : null}
+      {isShop ? <Field required label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(v) => setValue("shopBusiness", v)} multiline /> : <>
+        <Field required label={isResidentialRoom ? "Company Address / College" : "Company or college name and address"} value={form.companyAddress} onChangeText={(v) => setValue("companyAddress", v)} multiline />
+        <FormDateField label="Joining date at company/college *" value={form.dateOfJoiningCollege || toDateValue()} onChange={(v) => setValue("dateOfJoiningCollege", v)} />
       </>}
 
       <Text style={styles.section}>Required documents</Text>
@@ -386,14 +387,12 @@ export default function TenantIntakeScreen() {
           Boolean(document?.url || document?.filePath || document?.fileId) &&
           normalizeDocumentRelation(document?.relation) === normalizeDocumentRelation(relation)
         );
-        const ready = Boolean(documents[key] || alreadyUploaded);
+        const ready = Boolean(documents[key]?.length || alreadyUploaded);
         return (
           <View key={key}>
-            <Text style={styles.label}>{label}</Text>
-            <Pressable onPress={() => chooseDocument(key)} style={[styles.documentButton, ready && styles.documentReady]}>
-              {ready ? <Check size={20} color={colors.success} /> : <Camera size={20} color={colors.primary} />}
-              <Text style={[styles.documentText, ready && styles.documentReadyText]}>{documents[key] ? "Selected" : alreadyUploaded ? "Already uploaded - tap to replace" : "Choose image"}</Text>
-            </Pressable>
+            <Text style={styles.label}>{label} <Text style={styles.requiredMark}>*</Text></Text>
+            {(documents[key] || []).map((document, index) => <View key={`${key}-${index}`} style={styles.documentRow}><Pressable onPress={() => chooseDocument(key, index)} style={[styles.documentButton, styles.documentButtonFlex, styles.documentReady]}><Check size={20} color={colors.success} /><Text style={[styles.documentText, styles.documentReadyText]}>Document {index + 1} selected</Text></Pressable><Pressable onPress={() => setDocuments((current) => ({ ...current, [key]: current[key].filter((_, itemIndex) => itemIndex !== index) }))}><Text style={styles.removeDocumentText}>Remove</Text></Pressable></View>)}
+            <Pressable onPress={() => chooseDocument(key, (documents[key] || []).length)} style={[styles.documentButton, ready && styles.documentReady]}><Camera size={20} color={colors.primary} /><Text style={[styles.documentText, ready && styles.documentReadyText]}>+ Add another</Text></Pressable>
           </View>
         );
       })}
@@ -414,7 +413,7 @@ export default function TenantIntakeScreen() {
             if (cropError) setError(cropError.message || "Unable to crop image.");
           }}
           onConfirm={async (image) => {
-            setDocuments((current) => ({ ...current, [cropRequest.key]: image }));
+            setDocuments((current) => { const next = [...(current[cropRequest.key] || [])]; next[cropRequest.index] = image; return { ...current, [cropRequest.key]: next }; });
             setCropRequest(null);
           }}
         />
@@ -433,7 +432,7 @@ const styles = StyleSheet.create({
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 }, multiline: { height: 82, paddingTop: 13, textAlignVertical: "top" },
   select: { height: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, selectValue: { flex: 1, color: colors.text, fontSize: 16 },
   options: { marginTop: 5, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, option: { height: 46, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft }, optionSelected: { backgroundColor: colors.primarySoft }, optionText: { flex: 1, color: colors.muted, fontWeight: "600" },
-  documentButton: { height: 50, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentReady: { borderColor: colors.successSoft, backgroundColor: colors.successSoft }, documentText: { color: colors.primary, fontWeight: "700" }, documentReadyText: { color: colors.success }, documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
+  requiredMark: { color: colors.danger }, documentRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }, documentButtonFlex: { flex: 1 }, removeDocumentText: { color: colors.danger, fontWeight: "700" }, documentButton: { height: 50, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentReady: { borderColor: colors.successSoft, backgroundColor: colors.successSoft }, documentText: { color: colors.primary, fontWeight: "700" }, documentReadyText: { color: colors.success }, documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
   errorInline: { marginTop: 6, color: colors.danger, fontSize: 12 },
   error: { marginTop: 18, color: colors.danger, textAlign: "center" }, submit: { height: 52, marginTop: 22, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, submitText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.55 }, securityNote: { marginTop: 12, color: colors.muted, fontSize: 12, textAlign: "center" },
   successIcon: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderRadius: 34, backgroundColor: colors.successSoft }, completeTitle: { marginTop: 18, color: colors.success, fontSize: 24, fontWeight: "700" }, invalidTitle: { color: colors.danger, fontSize: 24, fontWeight: "700" }, completeText: { maxWidth: 430, marginTop: 10, color: colors.muted, lineHeight: 22, textAlign: "center" },

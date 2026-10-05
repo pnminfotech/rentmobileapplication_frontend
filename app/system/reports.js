@@ -88,7 +88,7 @@ export default function ReportsScreen() {
   const baseRouter = useRouter();
   const params = useLocalSearchParams();
   const initialTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
-  const router = { back: () => baseRouter.replace("/system/more") };
+  const router = { back: () => baseRouter.back() };
   const [reportMode] = useState("Monthly");
   const [reportConfig, setReportConfig] = useState("combined");
   const [activeType, setActiveType] = useState("bed");

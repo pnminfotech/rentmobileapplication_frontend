@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Building2, ChevronDown, ChevronLeft, ChevronRight, Clock3, History, MoreHorizontal, Pencil, Plus, Settings, Trash2, Users, Zap } from "lucide-react-native";
+import { Building2, ChevronDown, ChevronLeft, ChevronRight, Clock3, History, MoreHorizontal, Pencil, Plus, Search, Settings, Trash2, Users, Zap } from "lucide-react-native";
 
 import { deleteLightBill, getLightBillSettings, getLightBills } from "../../src/api/lightBillApi";
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
@@ -202,6 +202,7 @@ export default function LightBillsScreen() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [showCategoryFilter, setShowCategoryFilter] = useState(false);
   const [wingFilter, setWingFilter] = useState("all");
+  const [searchText, setSearchText] = useState("");
   const [showWingFilter, setShowWingFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
@@ -270,10 +271,16 @@ export default function LightBillsScreen() {
       if (propertyFilter !== "all" && billType !== propertyFilter) return false;
       if (categoryFilter !== "all" && String(bill.category || "").trim() !== categoryFilter) return false;
       if (wingFilter !== "all" && String(bill.wingName || "").trim() !== wingFilter) return false;
+      const query = searchText.trim().toLowerCase();
+      if (query) {
+        const searchable = [bill.category, bill.wingName, bill.roomNo, bill.bedNo, bill.unitNo, bill.unitName, bill.name, bill.propertyType]
+          .filter(Boolean).join(" ").toLowerCase();
+        if (!searchable.includes(query)) return false;
+      }
       if (statusFilter !== "all" && (statusFilter === "paid" ? bill.status !== "paid" : bill.status === "paid")) return false;
       return true;
     });
-  }, [allBills, categoryFilter, isUnitTypeAllowed, monthBills, propertyFilter, statusFilter, summaryMode, summaryRange, wingFilter]);
+  }, [allBills, categoryFilter, isUnitTypeAllowed, monthBills, propertyFilter, searchText, statusFilter, summaryMode, summaryRange, wingFilter]);
   const categoryOptions = useMemo(() => {
     const names = [...new Set(
       [...monthBills, ...allBills]
@@ -383,6 +390,18 @@ export default function LightBillsScreen() {
               ) : null}
           </View>
 
+          <View style={styles.propertyTabs}>
+            {propertyFilters.map((item) => (
+              <Pressable key={item.value} onPress={() => { setPropertyFilter(item.value); setCategoryFilter("all"); setWingFilter("all"); }} style={[styles.propertyTab, propertyFilter === item.value && styles.propertyTabActive]}>
+                <Text style={[styles.propertyTabText, propertyFilter === item.value && styles.propertyTabTextActive]}>{item.value === "all" ? "All" : item.value === "bed" ? "Hostel" : item.value === "room" ? "Residential" : "Commercial"}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.searchBox}>
+            <Search size={19} color={stylesVars.muted} />
+            <TextInput value={searchText} onChangeText={setSearchText} placeholder="Search wing, building, room or unit" placeholderTextColor={stylesVars.muted} style={styles.searchInput} />
+          </View>
+
           <View style={styles.selectorRow}>
           <View style={[styles.propertyFilterWrap, styles.selectorFlex, showPropertyFilter && styles.selectorOpen]}>
             <Pressable onPress={() => { setShowPropertyFilter((value) => !value); setShowCategoryFilter(false); setShowWingFilter(false); }} style={styles.propertySelect}>
@@ -441,8 +460,8 @@ export default function LightBillsScreen() {
           {!loading && !error && !visibleBills.length && !automaticCharges.length ? (
             <View style={styles.empty}>
               <Zap size={34} color={colors.subtle} />
-              <Text style={styles.emptyTitle}>No entries for this filter</Text>
-              <Text style={styles.emptyText}>Change the filter, month, or add a new bill.</Text>
+              <Text style={styles.emptyTitle}>No bills found</Text>
+              {/* <Text style={styles.emptyText}>Change the filter, month, or add a new bill.</Text> */}
             </View>
           ) : null}
 
@@ -539,14 +558,14 @@ const stylesVars = {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: stylesVars.background },
   content: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 18 },
-  header: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10, marginTop: 35 },
+  header: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   headerAvatar: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: stylesVars.primarySoft },
   headerAvatarText: { color: stylesVars.primary, fontSize: 17, fontWeight: "900" },
   headerText: { flex: 1, minWidth: 0 },
-  title: { color: stylesVars.text, fontSize: 30, lineHeight: 34, fontWeight: "900" },
+  title: { color: stylesVars.text, fontSize: 26, lineHeight: 34, fontWeight: "900" },
   subtitle: { marginTop: 2, color: stylesVars.muted, fontSize: 14, fontWeight: "600" },
   iconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  headerAddButton: { height: 42, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, backgroundColor: stylesVars.primary },
+  headerAddButton: { height: 42, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, backgroundColor: "#244f70"},
   headerAddButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
   fab: { position: "absolute", right: 18, bottom: 18, minWidth: 112, height: 44, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 22, backgroundColor: stylesVars.primary, shadowColor: stylesVars.text, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   fabText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
@@ -571,7 +590,14 @@ const styles = StyleSheet.create({
   filterTabTextActive: { color: "#FFFFFF", fontWeight: "900" },
   dateRow: { padding: 10, flexDirection: "row", gap: 10, backgroundColor: "#FFFFFF" },
   dateField: { flex: 1, minWidth: 0 },
-  selectorRow: { flexDirection: "row", alignItems: "flex-start", gap: 5, zIndex: 4 },
+  selectorRow: { display: "none", flexDirection: "row", alignItems: "flex-start", gap: 5, zIndex: 4 },
+  propertyTabs: { flexDirection: "row", marginTop: 10, padding: 4, borderRadius: 10, backgroundColor: "#E7ECEF", gap: 4 },
+  propertyTab: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 5, borderRadius: 8 },
+  propertyTabActive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary },
+  propertyTabText: { color: stylesVars.muted, fontSize: 12, fontWeight: "800", textAlign: "center" },
+  propertyTabTextActive: { color: stylesVars.text },
+  searchBox: { minHeight: 52, marginTop: 10, marginBottom: 12, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 9, borderWidth: 1, borderColor: stylesVars.border, borderRadius: 10, backgroundColor: colors.surface },
+  searchInput: { flex: 1, color: stylesVars.text, fontSize: 14 },
   selectorFlex: { flex: 1 },
   selectorWide: { flex: 1.25 },
   selectorOpen: { zIndex: 10 },

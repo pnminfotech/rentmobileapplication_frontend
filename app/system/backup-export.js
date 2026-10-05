@@ -361,7 +361,7 @@ export default function BackupExportScreen() {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.replace("/system/more")} style={styles.iconButton}>
+        <Pressable onPress={() => router.back()} style={styles.iconButton}>
           <ArrowLeft size={22} color={colors.text} />
         </Pressable>
         <View style={styles.headerText}>

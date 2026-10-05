@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -76,6 +77,7 @@ export default function UnitFormScreen() {
   const [monthlyPrice, setMonthlyPrice] = useState("");
   const [bedCount, setBedCount] = useState("1");
   const [bedCategory, setBedCategory] = useState("Standard");
+  const [bedCategories, setBedCategories] = useState(["Standard", "Single", "Double", "Bunk"]);
   const [bedRoomMode, setBedRoomMode] = useState("new");
   const [units, setUnits] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -106,7 +108,7 @@ export default function UnitFormScreen() {
         title: "Add hostel beds",
         category: "Hostel or building",
         number: "Room number",
-        numberPlaceholder: "Example: 101",
+        numberPlaceholder: " 101",
         price: "Monthly price per bed",
       };
     }
@@ -115,7 +117,7 @@ export default function UnitFormScreen() {
         title: "Add rental room",
         category: "Property or building",
         number: "Room or unit number",
-        numberPlaceholder: "Example: A-101",
+        numberPlaceholder: " A-101",
         price: "Monthly room rent",
       };
     }
@@ -123,7 +125,7 @@ export default function UnitFormScreen() {
       title: "Add shop",
       category: "Market or building",
       number: "Shop number",
-      numberPlaceholder: "Example: S-12",
+      numberPlaceholder: " S-12",
       price: "Monthly shop rent",
     };
   }, [propertyType]);
@@ -387,7 +389,7 @@ export default function UnitFormScreen() {
         onSelect={selectFloor}
         emptyText={category.trim() ? "No saved floors for this selection yet." : `Choose or enter ${labels.category.toLowerCase()} first.`}
       />
-      <TextInput value={floorNo} onChangeText={setFloorNo} placeholder="Example: Ground or 1" style={styles.input} />
+      <TextInput value={floorNo} onChangeText={setFloorNo} placeholder=" Ground or 1" style={styles.input} />
 
       <View style={styles.switchRow}>
         <Text style={styles.switchLabel}>Has wing or block</Text>
@@ -403,7 +405,7 @@ export default function UnitFormScreen() {
             onSelect={setWingName}
             emptyText="No saved wing or block for this selection yet."
           />
-          <TextInput value={wingName} onChangeText={setWingName} placeholder="Example: A" style={styles.input} />
+          <TextInput value={wingName} onChangeText={setWingName} placeholder=" A" style={styles.input} />
         </>
       ) : null}
 
@@ -423,7 +425,7 @@ export default function UnitFormScreen() {
             onSelect={setFlatType}
             emptyText="No saved flat types for this selection yet."
           />
-          <TextInput value={flatType} onChangeText={setFlatType} placeholder="Example: 1 RK or 1 BHK" style={styles.input} />
+          <TextInput value={flatType} onChangeText={setFlatType} placeholder=" 1 RK or 1 BHK" style={styles.input} />
         </>
       ) : null}
 
@@ -463,23 +465,27 @@ export default function UnitFormScreen() {
           <TextInput value={roomNo} onChangeText={setRoomNo} placeholder={labels.numberPlaceholder} style={styles.input} />
 
           <Text style={styles.label}>Meter number (optional)</Text>
-          <TextInput value={meterNo} onChangeText={setMeterNo} placeholder="Example: MTR-101" style={styles.input} />
+          <TextInput value={meterNo} onChangeText={setMeterNo} placeholder=" MTR-101" style={styles.input} />
 
           <Text style={styles.label}>Last meter reading (optional)</Text>
-          <TextInput value={lastMeterReading} onChangeText={setLastMeterReading} keyboardType="numeric" placeholder="Example: 250" style={styles.input} />
+          <TextInput value={lastMeterReading} onChangeText={setLastMeterReading} keyboardType="numeric" placeholder=" 250" style={styles.input} />
 
           {propertyType === "bed" ? (
             <>
               <Text style={styles.label}>Number of beds</Text>
-              <TextInput value={bedCount} onChangeText={setBedCount} keyboardType="number-pad" placeholder="Example: 3" style={styles.input} />
+              <TextInput value={bedCount} onChangeText={setBedCount} keyboardType="number-pad" placeholder=" 3" style={styles.input} />
 
               <Text style={styles.label}>Bed category</Text>
-              <TextInput value={bedCategory} onChangeText={setBedCategory} placeholder="Example: Standard" style={styles.input} />
+              <OptionList options={bedCategories} selectedValue={bedCategory} onSelect={setBedCategory} emptyText="No bed categories yet." />
+              <View style={styles.categoryActions}>
+                <Pressable onPress={() => Alert.prompt("Add bed category", "Enter a category name", (value) => { const name = String(value || "").trim(); if (name && !bedCategories.some((item) => normalizeKey(item) === normalizeKey(name))) { setBedCategories((current) => [...current, name]); setBedCategory(name); } })} style={styles.categoryAction}><Text style={styles.categoryActionText}>+ Add category</Text></Pressable>
+                <Pressable onPress={() => Alert.prompt("Rename bed category", "Enter the new name", (value) => { const name = String(value || "").trim(); if (name && bedCategory) { setBedCategories((current) => current.map((item) => item === bedCategory ? name : item)); setBedCategory(name); } })} style={styles.categoryAction}><Text style={styles.categoryActionText}>Rename selected</Text></Pressable>
+              </View>
             </>
           ) : null}
 
           <Text style={styles.label}>{labels.price}</Text>
-          <TextInput value={monthlyPrice} onChangeText={setMonthlyPrice} keyboardType="numeric" placeholder="Example: 5000" style={styles.input} />
+          <TextInput value={monthlyPrice} onChangeText={setMonthlyPrice} keyboardType="numeric" placeholder=" 5000" style={styles.input} />
         </>
       ) : null}
 
@@ -502,6 +508,9 @@ const styles = StyleSheet.create({
   title: { flex: 1, fontSize: 24, fontWeight: "700", color: colors.text },
   label: { marginTop: 15, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
+  categoryActions: { flexDirection: "row", gap: 8, marginTop: 8 },
+  categoryAction: { paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: colors.primary, borderRadius: 7, backgroundColor: colors.primarySoft },
+  categoryActionText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
   optionWrap: { marginBottom: 8, flexDirection: "row", flexWrap: "wrap", gap: 8 },
   optionChip: { maxWidth: "100%", minHeight: 36, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
   optionChipActive: { borderColor: colors.border, backgroundColor: colors.primarySoft },

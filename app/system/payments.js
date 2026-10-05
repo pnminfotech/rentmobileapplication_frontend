@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react-native";
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search } from "lucide-react-native";
 
 import { getSystemDashboard } from "../../src/api/saasApi";
 import { getRentDues, getRentSummary, getTenants } from "../../src/api/tenantApi";
@@ -90,10 +90,13 @@ export default function PaymentsScreen() {
     const paid = Number(monthSummary?.totalPaid ?? monthSummary?.paid ?? rentEntry?.totalAmount ?? rentEntry?.rentAmount ?? 0);
     const balance = Math.max(expected - paid, 0);
     const overdue = dueMap.get(String(tenant._id));
-    const overdueAmount = Number(overdue?.totalDue || 0);
+    // The dues endpoint includes the currently selected month when its cycle is due.
+    // Exclude it here because `balance` already represents that month.
+    const previousDueMonths = (overdue?.dueMonths || []).filter((item) => String(item?.month || "") !== key);
+    const overdueAmount = previousDueMonths.reduce((sum, item) => sum + Number(item?.outstanding || 0), 0);
     const totalDue = balance + overdueAmount;
     const status = totalDue <= 0 ? "Paid" : paid > 0 ? "Partial" : "Pending";
-    return { tenant, included, expected, paid, balance, totalDue, status, overdue: overdueAmount, dueMonths: overdue?.dueMonths || [] };
+    return { tenant, included, expected, paid, balance, totalDue, status, overdue: overdueAmount, dueMonths: previousDueMonths };
   }), [dueMap, key, rentSummary, selectedMonth, tenants]);
   const typeAllRows = useMemo(() => (
     activeType === "all"
@@ -121,9 +124,9 @@ export default function PaymentsScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={[styles.content, { padding: responsive.pagePadding }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
+      <ScrollView contentContainerStyle={[styles.content, { padding: responsive.pagePadding, paddingBottom: 112 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.stickyHeader}>
-          <View style={styles.header}><View><Text style={styles.title}>Payments</Text><Text style={styles.subtitle}>Monthly rent collection</Text></View></View>
+          <View style={styles.header}><Pressable onPress={() => router.back()} style={styles.backButton}><ArrowLeft size={22} color={S.text} /></Pressable><View style={styles.headerCopy}><Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Payments</Text><Text style={styles.subtitle}>Monthly rent collection</Text></View></View>
 
           <View style={styles.typeTabs}>
             {tenantTypes.map((item) => {
@@ -151,7 +154,7 @@ export default function PaymentsScreen() {
           <View style={styles.summaryItem}><Text style={styles.summaryLabel}>Pending</Text><Text style={[styles.summaryValue, styles.pending]} numberOfLines={1} adjustsFontSizeToFit>{money(summary.balance)}</Text></View>
         </View>
 
-        <Pressable onPress={() => setFilter("Overdue")} style={[styles.overdueBanner, !typeDue.totalDue && styles.overdueClear]}>
+        {/* <Pressable onPress={() => setFilter("Overdue")} style={[styles.overdueBanner, !typeDue.totalDue && styles.overdueClear]}>
           <View style={styles.overdueTextBlock}>
             <Text style={[styles.overdueTitle, !typeDue.totalDue && styles.overdueClearText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
               {typeDue.totalDue ? "Previous rent overdue" : "Previous rent is clear"}
@@ -163,14 +166,14 @@ export default function PaymentsScreen() {
           <Text style={[styles.overdueAmount, !typeDue.totalDue && styles.overdueClearText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
             {typeDue.totalDue ? money(typeDue.totalDue) : "Clear"}
           </Text>
-        </Pressable>
+        </Pressable> */}
 
-        <View style={styles.search}><Search size={18} color={S.muted} /><TextInput value={query} onChangeText={setQuery} placeholder={`Search ${activeTypeLabel.toLowerCase()} tenant or room`} style={styles.searchInput} /></View>
+        <View style={styles.search}><Search size={18} color={S.muted} /><TextInput value={query} onChangeText={setQuery} placeholder={`Search ${activeTypeLabel.toLowerCase()} tenant `} style={styles.searchInput} /></View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{FILTERS.map((value) => { const count = value === "All" ? rows.length : value === "Overdue" ? typeAllRows.filter((row) => row.overdue > 0).length : rows.filter((row) => row.status === value).length; return <Pressable key={value} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.filterActive]}><Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{value} ({count})</Text></Pressable>; })}</ScrollView>
 
         {loading ? <View style={styles.loading}><ActivityIndicator size="large" color={S.deep} /></View> : error ? <View style={styles.loading}><Text style={styles.error}>{error}</Text></View> : (
           <View style={styles.list}>
-            {!visibleRows.length ? <Text style={styles.empty}>No payments match this view.</Text> : null}
+            {!visibleRows.length ? <Text style={styles.empty}>No payments found</Text> : null}
             {visibleRows.map((row) => (
               <View key={row.tenant._id} style={styles.paymentRow}>
                 <Pressable onPress={() => router.push({ pathname: "/system/tenant-details", params: { id: row.tenant._id, returnTo: "/system/payments" } })} style={[styles.rowMain, responsive.isTiny && styles.rowMainTiny]}>
@@ -181,7 +184,7 @@ export default function PaymentsScreen() {
                     <Text style={[styles.status, row.status === "Paid" && styles.statusPaid, row.status === "Partial" && styles.statusPartial]}>{!row.included && row.overdue ? "Overdue" : row.status}</Text>
                   </View>
                 </Pressable>
-                <Pressable onPress={() => router.push({ pathname: "/system/rent-form", params: { id: row.tenant._id, returnTo: "/system/payments" } })} style={styles.addPayment} accessibilityLabel={`Add rent for ${row.tenant.name}`}><Plus size={20} color={S.deep} /></Pressable>
+                <Pressable onPress={() => { const tenantId = row.tenant._id || row.tenant.id || row.tenant.tenantId; if (tenantId) router.push({ pathname: "/system/rent-form", params: { id: String(tenantId), returnTo: "/system/payments" } }); }} style={styles.addPayment} accessibilityLabel={`Add rent for ${row.tenant.name}`}><Plus size={20} color={S.deep} /></Pressable>
               </View>
             ))}
           </View>
@@ -192,13 +195,15 @@ export default function PaymentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: S.screen },
-  content: { width: "100%", maxWidth: 780, alignSelf: "center", padding: 18, paddingBottom: 40 },
-  stickyHeader: { backgroundColor: S.screen },
-  header: { marginBottom: 14, backgroundColor: S.screen },
+  screen: { flex: 1, backgroundColor: "#F6F8F7" },
+  content: { width: "100%", maxWidth: 780, alignSelf: "center", padding: 18, paddingBottom: 112 },
+  stickyHeader: { backgroundColor: "#F6F8F7" },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 14, backgroundColor: "#F6F8F7" },
+  backButton: { width: 44, height: 44, marginRight: 4, alignItems: "center", justifyContent: "center" },
+  headerCopy: { flex: 1, minWidth: 0 },
   title: { fontSize: 28, fontWeight: "900", color: S.text },
   subtitle: { marginTop: 3, color: S.muted, fontSize: 13, fontWeight: "700" },
-  typeTabs: { marginBottom: 12, flexDirection: "row", gap: 6, padding: 5, borderRadius: 14, backgroundColor: "#F2E8DA" },
+  typeTabs: { marginBottom: 12, flexDirection: "row", gap: 6, padding: 5, borderRadius: 14, backgroundColor: "#d9e1e7" },
   typeTab: { flex: 1, minWidth: 0, minHeight: 58, paddingHorizontal: 3, paddingVertical: 5, alignItems: "center", justifyContent: "center", borderRadius: 11 },
   typeTabActive: { backgroundColor: S.card, ...systemShadow },
   typeTabText: { width: "100%", color: S.muted, fontSize: 11, lineHeight: 14, fontWeight: "800", textAlign: "center" },

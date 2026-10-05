@@ -70,7 +70,7 @@ function occupancyData(units, tenants, endDate) {
 
 export default function CustomReportsScreen() {
   const baseRouter = useRouter();
-  const router = { back: () => baseRouter.replace("/system/more") };
+  const router = { back: () => baseRouter.back() };
   const [startDate, setStartDate] = useState(toDateValue(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
   const [endDate, setEndDate] = useState(toDateValue());
   const [reportConfig, setReportConfig] = useState("combined");

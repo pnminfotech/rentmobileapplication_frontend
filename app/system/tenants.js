@@ -959,8 +959,8 @@ export default function TenantsScreen() {
               {!pagedVisibleTenants.length ? (
                 <View style={styles.empty}>
                   <UserRound size={34} color={colors.subtle} />
-                  <Text style={styles.emptyTitle}>{query ? "No tenant found" : `No ${activeTypeLabel.toLowerCase()} tenants yet`}</Text>
-                  <Text style={styles.emptyText}>{query ? "Try another search." : "Add your first tenant to a vacant unit."}</Text>
+                  <Text style={styles.emptyTitle}>{query ? "No tenant found" : `No tenant yet`}</Text>
+                  {/* <Text style={styles.emptyText}>{query ? "Try another search." : "Add  tenant to a vacant unit."}</Text> */}
                 </View>
               ) : null}
               {groupedVisibleTenants.map((group) => (
@@ -1077,7 +1077,11 @@ export default function TenantsScreen() {
                           <Pressable
                             key={month.key}
                             disabled={inactiveMonth}
-                            onPress={() => router.push({ pathname: "/system/rent-form", params: { id: tenant._id, month: month.key, returnTo: "/system/tenants" } })}
+                            onPress={() => {
+                              const tenantId = tenant._id || tenant.id || tenant.tenantId;
+                              if (!tenantId) return;
+                              router.push({ pathname: "/system/rent-form", params: { id: String(tenantId), month: month.key, returnTo: "/system/tenants" } });
+                            }}
                             style={[
                               styles.monthBox,
                               { width: monthCardWidth },
@@ -1163,7 +1167,9 @@ export default function TenantsScreen() {
                     onPress={() => {
                       const tenantId = selectedDueRow?.tenant?._id;
                       setSelectedDueRow(null);
-                      router.push({ pathname: "/system/rent-form", params: { id: tenantId, month: item.month, returnTo: "/system/tenants" } });
+                      const resolvedTenantId = tenantId || tenant?._id || tenant?.id || tenant?.tenantId;
+                      if (!resolvedTenantId) return;
+                      router.push({ pathname: "/system/rent-form", params: { id: String(resolvedTenantId), month: item.month, returnTo: "/system/tenants" } });
                     }}
                     style={styles.dueMonthPayButton}
                   >
@@ -1183,12 +1189,12 @@ export default function TenantsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
   content: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 18 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10, marginTop: 35 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10 },
   headerTiny: { alignItems: "flex-start" },
   scroller: { flex: 1, minHeight: 0 },
   scrollContent: { flexGrow: 1, paddingBottom: 92 },
   headerText: { flex: 1, minWidth: 160 },
-  title: { fontSize: 30, fontWeight: "900", color: UI.navy },
+  title: { fontSize: 26, fontWeight: "900", color: UI.navy },
   subtitle: { marginTop: 2, color: UI.muted, fontSize: 14, fontWeight: "600" },
   headerIconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: UI.border, borderRadius: 22, backgroundColor: S.card, ...systemShadow },
   statusTabs: { height: 48, marginBottom: 10, flexDirection: "row", borderBottomWidth: 1, borderBottomColor: UI.border },

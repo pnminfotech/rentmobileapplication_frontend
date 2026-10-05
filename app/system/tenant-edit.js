@@ -34,7 +34,6 @@ const SHOP_DOCUMENTS = [
   { key: "photo", relation: "Tenant Photograph (Selfie)", label: "Tenant Photograph (Selfie)" },
 ];
 const CANTEEN_MODE_LABELS = {
-  full_package: "Full food package",
   per_meal: "Per meal pricing",
   meal_package: "Meal package monthly",
 };
@@ -119,7 +118,7 @@ export default function TenantEditScreen() {
     setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
   }
 
-  async function save() {
+  async function save(confirmedDateChange = false) {
     const deposit = Number(form.depositAmount);
     if (!form.name.trim() || !/^\d{10}$/.test(form.phoneNo)) return setError("Enter a name and valid 10-digit phone number.");
     if (!Number.isFinite(deposit) || deposit < 0) return setError("Enter a valid deposit amount.");
@@ -130,12 +129,24 @@ export default function TenantEditScreen() {
     const canteenPlans = (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal");
     const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
     if (type === "bed" && canteenEnabled && form.hasCanteen && (!canteenSettings?.isConfigured || !selectedCanteenPlan)) return setError("Configure canteen settings and choose a canteen billing plan.");
-    const selectedCanteenMeta = selectedCanteenPlan === "full_package"
-      ? { amount: Number(canteenSettings?.fullPackage?.monthlyAmount || 0), meals: canteenSettings?.fullPackage?.includedMeals || [] }
+    const selectedCanteenMeta = selectedCanteenPlan === "meal_package"
+      ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0), meals: canteenSettings?.mealPackage?.includedMeals || [] }
       : selectedCanteenPlan === "meal_package"
         ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0), meals: canteenSettings?.mealPackage?.includedMeals || [] }
         : { amount: 0, meals: [] };
     if (type === "room" && form.familyMembers && Number(form.familyMembers) < 0) return setError("Enter a valid family members count.");
+    const joiningDateChanged = toDateValue(tenant?.joiningDate) !== form.joiningDate;
+    if (joiningDateChanged && !tenant?.joiningDateChangeUsed && !confirmedDateChange) {
+      Alert.alert(
+        "Confirm joining date",
+        "Please select the correct joining date. After you save this change, the joining date cannot be changed again.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Confirm date", onPress: () => save(true) },
+        ]
+      );
+      return;
+    }
     try {
       setSaving(true); setError("");
       await updateTenantProfile(id, {
@@ -170,8 +181,8 @@ export default function TenantEditScreen() {
   const documentList = isShop ? SHOP_DOCUMENTS : isResidentialRoom ? RESIDENTIAL_DOCUMENTS : DOCUMENTS;
   const canteenPlans = (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal");
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
-  const selectedCanteenMeta = selectedCanteenPlan === "full_package"
-    ? { amount: Number(canteenSettings?.fullPackage?.monthlyAmount || 0) }
+  const selectedCanteenMeta = selectedCanteenPlan === "meal_package"
+      ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0) }
     : selectedCanteenPlan === "meal_package"
       ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0) }
       : { amount: 0 };
@@ -187,7 +198,8 @@ export default function TenantEditScreen() {
       <Field label="Full name" value={form.name} onChangeText={(value) => setValue("name", value)} />
       <Field label="Phone number" value={form.phoneNo} onChangeText={(value) => setValue("phoneNo", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
       {!isShop ? <FormDateField label="Date of birth" value={form.dob} onChange={(value) => setValue("dob", value)} maximumDate={new Date()} /> : null}
-      <FormDateField label="Tenant joining date" value={form.joiningDate} onChange={(value) => setValue("joiningDate", value)} maximumDate={new Date()} />
+      <FormDateField label="Tenant joining date" value={form.joiningDate} onChange={(value) => setValue("joiningDate", value)} maximumDate={new Date()} disabled={Boolean(tenant?.joiningDateChangeUsed)} />
+      {tenant?.joiningDateChangeUsed ? <Text style={styles.dateChangeHint}>Joining date has already been changed once and is now locked.</Text> : null}
 
       <Text style={styles.sectionTitle}>Financial</Text>
       <Field label="Deposit amount" value={form.depositAmount} onChangeText={(value) => setValue("depositAmount", value.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" />
@@ -306,7 +318,7 @@ const styles = StyleSheet.create({
   assignment: { minHeight: 70, marginTop: 10, padding: 13, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, assignmentText: { flex: 1, paddingRight: 8 }, assignmentTitle: { color: colors.text, fontWeight: "700" }, assignmentMeta: { marginTop: 5, color: colors.muted, fontSize: 13 }, shiftButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primarySoft },
   toggle: { height: 48, padding: 3, flexDirection: "row", borderRadius: 7, backgroundColor: colors.border }, toggleOption: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 5 }, toggleSelected: { backgroundColor: colors.surface }, toggleText: { color: colors.muted, fontWeight: "600" }, toggleTextSelected: { color: colors.primary },
   documentRow: { minHeight: 66, marginTop: 10, padding: 11, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentText: { flex: 1 }, documentTitle: { color: colors.text, fontWeight: "700" }, documentMeta: { marginTop: 4, color: colors.muted, fontSize: 12 }, documentButton: { minWidth: 92, height: 40, paddingHorizontal: 10, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primarySoft }, documentButtonText: { color: colors.primary, fontWeight: "700" },
-  error: { marginTop: 14, color: colors.danger }, saveButton: { height: 50, marginTop: 24, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, saveText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.5 },
+  dateChangeHint: { marginTop: 6, color: colors.muted, fontSize: 12, lineHeight: 17 }, error: { marginTop: 14, color: colors.danger }, saveButton: { height: 50, marginTop: 24, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, saveText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.5 },
   documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
   helperText: { marginTop: -4, marginBottom: 8, color: colors.muted, fontSize: 11 },
   cycleHelp: { marginTop: 8, padding: 10, borderRadius: 7, backgroundColor: colors.primarySoft },

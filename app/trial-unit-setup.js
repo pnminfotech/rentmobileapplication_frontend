@@ -15,6 +15,7 @@ import { BedDouble, DoorOpen, Store, Utensils } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getAppBootstrap, saveOnboardingUnits } from "../src/api/saasApi";
+import { updateCanteenSettings } from "../src/api/canteenApi";
 import { clearAuthSession } from "../src/storage/authStorage";
 import { colors } from "../src/theme/colors";
 
@@ -54,6 +55,11 @@ export default function TrialUnitSetupScreen() {
   const [bootstrap, setBootstrap] = useState(null);
   const [form, setForm] = useState({ beds: "", rooms: "", shops: "" });
   const [canteenEnabled, setCanteenEnabled] = useState(false);
+  const [canteenSkipped, setCanteenSkipped] = useState(false);
+  const [mealOption, setMealOption] = useState("meal_package");
+  const [mealAmounts, setMealAmounts] = useState({ breakfast: "", lunch: "", dinner: "" });
+  const [packageAmount, setPackageAmount] = useState("");
+  const [includedMeals, setIncludedMeals] = useState(["breakfast", "lunch", "dinner"]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -64,6 +70,9 @@ export default function TrialUnitSetupScreen() {
     shops: Number(form.shops || 0),
   }), [form.beds, form.rooms, form.shops]);
   const totalUnits = units.beds + units.rooms + units.shops;
+  const packageName = includedMeals.length
+    ? includedMeals.map((meal) => meal.charAt(0).toUpperCase() + meal.slice(1)).join(" + ")
+    : "Custom meal package";
 
   const load = useCallback(async () => {
     try {
@@ -105,7 +114,16 @@ export default function TrialUnitSetupScreen() {
         units,
         canteenEnabled: canteenEnabled && units.beds > 0,
       });
-      Alert.alert("Units saved", "Your trial workspace is ready.", [
+      if (canteenEnabled && !canteenSkipped) {
+        await updateCanteenSettings({
+          activeModes: [mealOption],
+          fullPackage: { monthlyAmount: 0, billingMethod: "fixed_monthly", includedMeals: [] },
+          perMeal: mealOption === "per_meal" ? Object.fromEntries(Object.entries(mealAmounts).map(([key, value]) => [key, Number(value || 0)])) : { breakfast: 0, lunch: 0, dinner: 0 },
+          mealPackage: { name: packageName, monthlyAmount: mealOption === "meal_package" ? Number(packageAmount || 0) : 0, billingMethod: "fixed_monthly", includedMeals },
+          guestMeal: mealOption === "guest_meal" ? Object.fromEntries(Object.entries(mealAmounts).map(([key, value]) => [key, Number(value || 0)])) : { breakfast: 0, lunch: 0, dinner: 0 },
+        });
+      }
+      Alert.alert("Units saved", canteenEnabled && !canteenSkipped ? "Your trial workspace is ready with the selected meal option." : "Your trial workspace is ready.", [
         { text: "Continue", onPress: () => router.replace("/system") },
       ]);
     } catch (err) {
@@ -162,7 +180,7 @@ export default function TrialUnitSetupScreen() {
         <UnitInput Icon={Store} label="Commercial shops" value={form.shops} onChangeText={(value) => setForm((current) => ({ ...current, shops: countText(value) }))} />
 
         {units.beds > 0 ? (
-          <Pressable onPress={() => setCanteenEnabled((value) => !value)} style={styles.canteenRow}>
+          <Pressable onPress={() => { setCanteenEnabled((value) => !value); setCanteenSkipped(false); }} style={styles.canteenRow}>
             <View style={styles.canteenIcon}><Utensils size={20} color={colors.primary} /></View>
             <View style={styles.canteenCopy}>
               <Text style={styles.canteenTitle}>Canteen available</Text>
@@ -174,6 +192,56 @@ export default function TrialUnitSetupScreen() {
           </Pressable>
         ) : null}
 
+        {canteenEnabled ? (
+          <View style={styles.mealOptionsCard}>
+            <Text style={styles.mealOptionsTitle}>Meal service options</Text>
+            <Text style={styles.mealOptionsText}>Choose how meals will be managed, or add these details later.</Text>
+            {!canteenSkipped ? (
+              <View style={styles.optionList}>
+                {[
+                  ["per_meal", "Per-meal pricing", "Charge separately for breakfast, lunch and dinner"],
+                  ["meal_package", "Meal package", "Create a monthly package for selected meals"],
+                  ["guest_meal", "Guest / extra meals", "Track meals served to guests or visitors"],
+                ].map(([value, title, description]) => (
+                  <Pressable key={value} onPress={() => setMealOption(value)} style={[styles.optionRow, mealOption === value && styles.optionRowActive]}>
+                    <View style={[styles.radio, mealOption === value && styles.radioActive]}>{mealOption === value ? <View style={styles.radioDot} /> : null}</View>
+                    <View style={styles.optionCopy}>
+                      <Text style={styles.optionTitle}>{title}</Text>
+                      <Text style={styles.optionDescription}>{description}</Text>
+                    </View>
+                  </Pressable>
+                ))}
+                {mealOption === "per_meal" || mealOption === "guest_meal" ? (
+                  <View style={styles.amountGrid}>
+                    {[["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"]].map(([key, label]) => (
+                      <View key={key} style={styles.amountCell}>
+                        <Text style={styles.amountLabel}>{label}</Text>
+                        <TextInput keyboardType="decimal-pad" value={mealAmounts[key]} onChangeText={(value) => setMealAmounts((current) => ({ ...current, [key]: value.replace(/[^0-9.]/g, "") }))} placeholder="₹ amount" style={styles.smallInput} />
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                {mealOption === "meal_package" ? (
+                  <View style={styles.packageFields}>
+                    {mealOption === "meal_package" ? <View style={styles.packageNameBox}><Text style={styles.amountLabel}>Package meals</Text><Text style={styles.packageName}>{packageName}</Text></View> : null}
+                    <TextInput keyboardType="decimal-pad" value={packageAmount} onChangeText={(value) => setPackageAmount(value.replace(/[^0-9.]/g, ""))} placeholder="Monthly amount" style={styles.smallInput} />
+                    <Text style={styles.amountLabel}>Included meals</Text>
+                    <View style={styles.mealChips}>{[["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"]].map(([key, label]) => <Pressable key={key} onPress={() => setIncludedMeals((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])} style={[styles.mealChip, includedMeals.includes(key) && styles.mealChipActive]}><Text style={[styles.mealChipText, includedMeals.includes(key) && styles.mealChipTextActive]}>{label}</Text></Pressable>)}</View>
+                  </View>
+                ) : null}
+                <Pressable onPress={() => setCanteenSkipped(true)} style={styles.skipButton}>
+                  <Text style={styles.skipText}>Skip for now — add later</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.skippedBox}>
+                <Text style={styles.skippedText}>Meal details skipped. You can add them later from the canteen area.</Text>
+                <Pressable onPress={() => setCanteenSkipped(false)}><Text style={styles.editSkipText}>Choose meal options</Text></Pressable>
+              </View>
+            )}
+          </View>
+        ) : null}
+
         <View style={styles.summary}>
           <Text style={styles.summaryLabel}>Total trial units</Text>
           <Text style={styles.summaryValue}>{totalUnits.toLocaleString("en-IN")}</Text>
@@ -182,7 +250,7 @@ export default function TrialUnitSetupScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Pressable onPress={saveUnits} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-          {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.primaryText}>Start using system</Text>}
+          {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.primaryText}>Finish Setup</Text>}
         </Pressable>
       </View>
     </ScrollView>
@@ -215,6 +283,35 @@ const styles = StyleSheet.create({
   toggleActive: { backgroundColor: colors.primary },
   toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.surface },
   toggleKnobActive: { alignSelf: "flex-end" },
+  mealOptionsCard: { marginTop: 10, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.background },
+  mealOptionsTitle: { color: colors.text, fontSize: 14, fontWeight: "900" },
+  mealOptionsText: { marginTop: 4, color: colors.muted, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  optionList: { marginTop: 9, gap: 7 },
+  optionRow: { padding: 9, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  optionRowActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  radio: { width: 18, height: 18, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.muted, borderRadius: 9 },
+  radioActive: { borderColor: colors.primary },
+  radioDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.primary },
+  optionCopy: { flex: 1, minWidth: 0, marginLeft: 9 },
+  optionTitle: { color: colors.text, fontSize: 12, fontWeight: "900" },
+  optionDescription: { marginTop: 2, color: colors.muted, fontSize: 10, lineHeight: 14, fontWeight: "700" },
+  skipButton: { minHeight: 38, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.primary, borderRadius: 7 },
+  skipText: { color: colors.primary, fontSize: 12, fontWeight: "900" },
+  skippedBox: { marginTop: 9, padding: 10, borderRadius: 7, backgroundColor: colors.surfaceSoft },
+  skippedText: { color: colors.muted, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  editSkipText: { marginTop: 7, color: colors.primary, fontSize: 12, fontWeight: "900" },
+  amountGrid: { marginTop: 8, flexDirection: "row", gap: 6 },
+  amountCell: { flex: 1 },
+  amountLabel: { marginBottom: 4, color: colors.muted, fontSize: 10, fontWeight: "800" },
+  smallInput: { minHeight: 40, paddingHorizontal: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, color: colors.text, fontSize: 12, fontWeight: "700" },
+  packageFields: { marginTop: 8, gap: 7 },
+  packageNameBox: { padding: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  packageName: { color: colors.text, fontSize: 13, fontWeight: "900" },
+  mealChips: { flexDirection: "row", gap: 6 },
+  mealChip: { paddingHorizontal: 9, paddingVertical: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 15, backgroundColor: colors.surface },
+  mealChipActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  mealChipText: { color: colors.muted, fontSize: 10, fontWeight: "800" },
+  mealChipTextActive: { color: colors.primary },
   summary: { marginTop: 13, padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 8, backgroundColor: colors.surfaceSoft },
   summaryLabel: { color: colors.muted, fontSize: 12, fontWeight: "800" },
   summaryValue: { color: colors.text, fontSize: 18, fontWeight: "900" },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -19,10 +19,10 @@ import { systemColors as colors } from "../../src/theme/systemTheme";
 const STEPS = ["Personal", "Address", "Contacts", "Work", "Payment & docs"];
 const RELATIONS = ["Father", "Mother", "Husband", "Sister", "Brother", "Self"];
 const CANTEEN_MODE_LABELS = {
-  full_package: "Full food package",
   per_meal: "Per meal pricing",
   meal_package: "Meal package monthly",
 };
+const BED_CATEGORY_OPTIONS = ["Standard", "Single", "Double", "Bunk"];
 let preferredAssignmentType = "bed";
 
 async function lookupIndianPincode(pincode) {
@@ -59,7 +59,7 @@ function blankForm() {
 }
 
 function blankDocuments() {
-  return { selfAadhar: null, parentAadhar: null, photo: null };
+  return { selfAadhar: [], parentAadhar: [], photo: [] };
 }
 
 function normalizeIdentifier(value) {
@@ -85,7 +85,7 @@ function unitDetailLabels(type) {
     return {
       category: "Market or building",
       number: "Shop number",
-      numberPlaceholder: "Example: S-12",
+      numberPlaceholder: " S-12",
       price: "Monthly shop rent",
     };
   }
@@ -93,14 +93,14 @@ function unitDetailLabels(type) {
     return {
       category: "Property or building",
       number: "Room or unit number",
-      numberPlaceholder: "Example: A-101",
+      numberPlaceholder: " A-101",
       price: "Monthly room rent",
     };
   }
   return {
     category: "Hostel or building",
     number: "Room number",
-    numberPlaceholder: "Example: 101",
+    numberPlaceholder: " 101",
     price: "Monthly price per bed",
   };
 }
@@ -128,8 +128,17 @@ function buildVacancies(units, tenants) {
   });
 }
 
-function Field({ label, ...props }) {
-  return <><Text style={styles.label}>{label}</Text><TextInput style={[styles.input, props.multiline && styles.multiline]} {...props} /></>;
+function Field({ label, required = false, ...props }) {
+  return <><Text style={styles.label}>{label}{required ? <Text style={styles.requiredMark}> *</Text> : null}</Text><TextInput style={[styles.input, props.multiline && styles.multiline]} {...props} /></>;
+}
+
+function SavedField({ label, required = false, value, options, active, onFocus, onChangeText, placeholder }) {
+  const visibleOptions = options.filter((option) => normalizeIdentifier(option).includes(normalizeIdentifier(value)));
+  return <>
+    <Text style={styles.label}>{label}{required ? <Text style={styles.requiredMark}> *</Text> : null}</Text>
+    <TextInput value={value} onFocus={onFocus} onChangeText={onChangeText} placeholder={placeholder} style={styles.input} />
+    {active && visibleOptions.length ? <View style={styles.savedOptions}>{visibleOptions.slice(0, 8).map((option) => <Pressable key={option} onPress={() => onChangeText(option)} style={styles.savedOption}><Text style={styles.savedOptionText}>{option}</Text></Pressable>)}</View> : null}
+  </>;
 }
 
 function RelationPicker({ label, value, onChange }) {
@@ -153,6 +162,7 @@ export default function TenantAdmissionScreen() {
   const initialAssignmentType = ["bed", "room", "shop"].includes(requestedType) ? requestedType : preferredAssignmentType;
   const [step, setStep] = useState(0);
   const [vacancies, setVacancies] = useState([]);
+  const [allUnits, setAllUnits] = useState([]);
   const [unitAccess, setUnitAccess] = useState(null);
   const [canteenEnabled, setCanteenEnabled] = useState(false);
   const [canteenSettings, setCanteenSettings] = useState(null);
@@ -169,6 +179,9 @@ export default function TenantAdmissionScreen() {
   const [unitDraft, setUnitDraft] = useState(() => blankUnitDraft(initialAssignmentType));
   const [showUnitDetailsModal, setShowUnitDetailsModal] = useState(false);
   const [savingUnitDetails, setSavingUnitDetails] = useState(false);
+  const [unitDetailsError, setUnitDetailsError] = useState("");
+  const [bedCategoryOpen, setBedCategoryOpen] = useState(false);
+  const [showMeterDetails, setShowMeterDetails] = useState(false);
 
   useEffect(() => {
     preferredAssignmentType = assignmentType;
@@ -216,7 +229,9 @@ export default function TenantAdmissionScreen() {
   const loadData = useCallback(async () => {
     try {
       const [units, tenants, dashboardData, settingsData] = await Promise.all([getRooms(), getTenants(), getSystemDashboard(), getCanteenSettings().catch(() => null)]);
-      setVacancies(buildVacancies(Array.isArray(units) ? units : [], Array.isArray(tenants) ? tenants : []));
+      const unitList = Array.isArray(units) ? units : [];
+      setAllUnits(unitList);
+      setVacancies(buildVacancies(unitList, Array.isArray(tenants) ? tenants : []));
       setUnitAccess(dashboardData?.units || dashboardData);
       setCanteenEnabled(hasCanteenFeature(dashboardData));
       setCanteenSettings(settingsData);
@@ -240,15 +255,27 @@ export default function TenantAdmissionScreen() {
   const isResidentialRoom = assignmentType === "room";
   const isShop = assignmentType === "shop";
   const needsUnitDetails = Boolean(selected?.unit?.isPlaceholder);
+  const [activeSavedField, setActiveSavedField] = useState("");
+  const savedUnitOptions = useMemo(() => {
+    const values = (key) => Array.from(new Set(allUnits.filter((unit) => !unit?.isPlaceholder).map((unit) => String(unit?.[key] || "").trim()).filter(Boolean)));
+    return { category: values("category"), floorNo: values("floorNo"), wingName: values("wingName"), flatType: values("flatType"), roomNo: values("roomNo") };
+  }, [allUnits]);
   const detailLabels = useMemo(() => unitDetailLabels(assignmentType), [assignmentType]);
   const unitLabel = useMemo(() => selected ? `${formatVacancyTitle(selected.unit)} | ${formatVacancyMeta(selected.unit, selected.bed)}` : "No vacant unit available", [selected]);
   const canteenPlans = useMemo(() => (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal"), [canteenSettings]);
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
   const selectedCanteenMeta = useMemo(() => {
-    if (selectedCanteenPlan === "full_package") return { amount: Number(canteenSettings?.fullPackage?.monthlyAmount || 0), meals: canteenSettings?.fullPackage?.includedMeals || [] };
     if (selectedCanteenPlan === "meal_package") return { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0), meals: canteenSettings?.mealPackage?.includedMeals || [] };
     return { amount: 0, meals: [] };
   }, [canteenSettings, selectedCanteenPlan]);
+
+  useEffect(() => {
+    if (needsUnitDetails) {
+      setUnitDetailsError("");
+      setError("");
+      setShowUnitDetailsModal(true);
+    }
+  }, [needsUnitDetails, selected?.unit?._id, selected?.bed?.bedNo]);
 
   useEffect(() => {
     if (!filteredVacancies.length) return;
@@ -266,7 +293,7 @@ export default function TenantAdmissionScreen() {
     }
   }, [filteredVacancies, requestedBedNo, requestedRoomId, requestedRoomNo]);
 
-  async function chooseImage(key) {
+  async function chooseImage(key, index = 0) {
     setError("");
     const isSelfie = key === "photo";
     const options = {
@@ -275,35 +302,70 @@ export default function TenantAdmissionScreen() {
       aspect: isSelfie ? [1, 1] : [4, 3],
       quality: 0.85,
     };
-    const permission = isSelfie
+    const openPicker = (mode) => mode === "camera"
+      ? ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
+      : ImagePicker.launchImageLibraryAsync(options);
+    const selectSource = async () => {
+      if (Platform.OS === "web") return "library";
+      return await new Promise((resolve) => Alert.alert("Add document", "Choose how to add this document", [
+        { text: "Camera", onPress: () => resolve("camera") },
+        { text: "Upload / Gallery", onPress: () => resolve("library") },
+        { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+      ]));
+    };
+    const source = await selectSource();
+    if (!source) return;
+    const permission = source === "camera"
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return setError(isSelfie ? "Camera permission is required for tenant selfie." : "Photo library permission is required.");
-    const result = isSelfie
-      ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
-      : await ImagePicker.launchImageLibraryAsync(options);
+    if (!permission.granted) return setError(source === "camera" ? "Camera permission is required." : "Photo library permission is required.");
+    const result = await openPicker(source);
     if (result.canceled) return;
     const selectedImage = result.assets[0];
     if (Platform.OS === "web") {
-      setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+      setCropRequest({ key, index, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
       return;
     }
-    setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+    setCropRequest({ key, index, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+  }
+
+  function removeDocument(key, index) {
+    setDocuments((current) => ({ ...current, [key]: current[key].filter((_, itemIndex) => itemIndex !== index) }));
   }
 
   function validateStep() {
-    if (step === 0 && (!form.name.trim() || !/^\d{10}$/.test(form.phoneNo) || !selected)) return "Enter name, a valid phone number and select a vacant unit.";
+    if (step === 0) {
+      const missing = [];
+      if (!form.name.trim()) missing.push("full name");
+      if (!/^\d{10}$/.test(form.phoneNo)) missing.push("a valid 10-digit phone number");
+      if (!selected) missing.push("a vacant unit");
+      if (missing.length) return `Please enter ${missing.join(", ")}.`;
+    }
     if (step === 0 && needsUnitDetails) return "This unit is already added, but room or unit details are not set yet. Save unit details first.";
     if (step === 0 && assignmentType === "bed" && canteenEnabled && form.hasCanteen && (!canteenSettings?.isConfigured || !selectedCanteenPlan)) return "Configure canteen settings and choose a canteen billing plan.";
-    if (!isShop && step === 1 && (!/^\d{6}$/.test(form.pincode) || !form.city.trim() || !form.state.trim() || !form.address.trim())) return "Enter a 6-digit pincode, city, state and address.";
+    if (!isShop && step === 1) {
+      const missing = [];
+      if (!/^\d{6}$/.test(form.pincode)) missing.push("a valid 6-digit pincode");
+      if (!form.city.trim()) missing.push("city");
+      if (!form.state.trim()) missing.push("state");
+      if (!form.address.trim()) missing.push("address");
+      if (missing.length) return `Please enter ${missing.join(", ")}.`;
+    }
     if (isShop && step === 1 && form.pincode && !/^\d{6}$/.test(form.pincode)) return "Enter a valid 6-digit pincode.";
     if (isResidentialRoom && step === 2) return "";
     if (isShop && step === 2) return "";
-    if (isResidentialRoom && step === 3 && form.familyMembers && Number(form.familyMembers) < 0) return "Enter a valid family members count.";
+    if (isResidentialRoom && step === 3 && (!/^\d+$/.test(String(form.familyMembers).trim()) || Number(form.familyMembers) < 0)) return "Please enter the number of family members.";
     if (!isResidentialRoom && !isShop && step === 2 && (!form.relative1Name.trim() || !/^\d{10}$/.test(form.relative1Phone) || !form.relative2Name.trim() || !/^\d{10}$/.test(form.relative2Phone))) return "Complete both emergency contacts with valid phone numbers.";
     if (!isResidentialRoom && !isShop && step === 3 && !form.companyAddress.trim()) return "Enter the company or college details.";
     if (isShop && step === 3 && !form.shopBusiness.trim()) return "Enter what is being sold or done in the shop.";
-    if (step === 4 && ((!Number.isFinite(Number(form.depositAmount)) || Number(form.depositAmount) < 0) || !documents.selfAadhar || !documents.photo || (!isShop && !documents.parentAadhar))) return isShop ? "Enter the deposit and add Aadhaar plus tenant photograph." : "Enter the deposit and add all three required images.";
+    if (step === 4) {
+      const missing = [];
+      if (!Number.isFinite(Number(form.depositAmount)) || Number(form.depositAmount) < 0) missing.push("a valid deposit amount");
+      if (!documents.selfAadhar.length) missing.push(isShop ? "self Aadhaar" : "tenant Aadhaar");
+      if (!documents.photo.length) missing.push("tenant photograph");
+      if (!isShop && !documents.parentAadhar.length) missing.push(isResidentialRoom ? "partner Aadhaar" : "parent/relative Aadhaar");
+      if (missing.length) return `Please add ${missing.join(", ")}.`;
+    }
     return "";
   }
 
@@ -315,6 +377,7 @@ export default function TenantAdmissionScreen() {
 
   function updateUnitDraft(key, value) {
     setUnitDraft((current) => ({ ...current, [key]: value }));
+    setUnitDetailsError("");
   }
 
   function selectAssignmentType(value) {
@@ -323,6 +386,8 @@ export default function TenantAdmissionScreen() {
     setShowUnits(false);
     setUnitDraft(blankUnitDraft(value));
     setShowUnitDetailsModal(false);
+    setBedCategoryOpen(false);
+    setShowMeterDetails(false);
     setError("");
   }
 
@@ -331,33 +396,37 @@ export default function TenantAdmissionScreen() {
     setShowUnits(false);
     setUnitDraft(blankUnitDraft(assignmentType));
     setShowUnitDetailsModal(false);
+    setBedCategoryOpen(false);
+    setShowMeterDetails(false);
     setError("");
   }
 
   async function saveSelectedUnitDetails() {
     if (!selected?.unit?._id || !selected?.bed?.bedNo) return;
+    const fail = (message) => { setUnitDetailsError(message); setError(message); };
     const monthlyPrice = Number(unitDraft.monthlyPrice);
     const meterReading = unitDraft.lastMeterReading === "" ? null : Number(unitDraft.lastMeterReading);
 
     if (!unitDraft.category.trim() || !unitDraft.floorNo.trim() || !unitDraft.roomNo.trim()) {
-      setError(`${detailLabels.category}, floor and ${detailLabels.number.toLowerCase()} are required.`);
+      fail(`${detailLabels.category}, floor and ${detailLabels.number.toLowerCase()} are required.`);
       return;
     }
     if (assignmentType === "room" && !unitDraft.flatType.trim()) {
-      setError("Enter the flat type.");
+      fail("Enter the flat type.");
       return;
     }
     if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
-      setError("Enter a valid monthly rent.");
+      fail("Enter a valid monthly rent.");
       return;
     }
     if (unitDraft.lastMeterReading !== "" && (!Number.isFinite(meterReading) || meterReading < 0)) {
-      setError("Enter a valid last meter reading.");
+      fail("Enter a valid last meter reading.");
       return;
     }
 
     try {
       setSavingUnitDetails(true);
+      setUnitDetailsError("");
       setError("");
       await updateBed(selected.unit._id, selected.bed.bedNo, {
         price: monthlyPrice,
@@ -378,6 +447,7 @@ export default function TenantAdmissionScreen() {
         meterNo: normalizeIdentifier(unitDraft.meterNo),
         lastMeterReading: meterReading,
       });
+      setAllUnits((current) => current.map((unit) => String(unit._id) === String(updatedUnit._id) ? updatedUnit : unit));
 
       setVacancies((current) => current.map((vacancy) => {
         if (
@@ -403,7 +473,9 @@ export default function TenantAdmissionScreen() {
       setUnitDraft(blankUnitDraft(assignmentType));
       setShowUnitDetailsModal(false);
     } catch (err) {
-      setError(err.response?.data?.message || "Unable to save unit details.");
+      const message = err.response?.data?.message || "Unable to save unit details. Check the required fields and try again.";
+      setUnitDetailsError(message);
+      setError(message);
     } finally {
       setSavingUnitDetails(false);
     }
@@ -432,9 +504,9 @@ export default function TenantAdmissionScreen() {
         shopName: form.shopName.trim(),
         shopBusiness: form.shopBusiness.trim(),
       }, [
-        { ...documents.selfAadhar, relation: "Self Aadhaar Card" },
-        ...(isShop ? [] : [{ ...documents.parentAadhar, relation: isResidentialRoom ? "Partner Aadhaar Card" : "Parent Aadhaar Card" }]),
-        { ...documents.photo, relation: isResidentialRoom || isShop ? "Tenant Photograph (Selfie)" : "Tenant Photo" },
+        ...documents.selfAadhar.map((document) => ({ ...document, relation: "Self Aadhaar Card" })),
+        ...(isShop ? [] : documents.parentAadhar.map((document) => ({ ...document, relation: isResidentialRoom ? "Partner Aadhaar Card" : "Parent Aadhaar Card" }))),
+        ...documents.photo.map((document) => ({ ...document, relation: isResidentialRoom || isShop ? "Tenant Photograph (Selfie)" : "Tenant Photo" })),
       ]);
       setForm(blankForm());
       setDocuments(blankDocuments());
@@ -450,14 +522,14 @@ export default function TenantAdmissionScreen() {
 
   return (
     <>
-    <View style={styles.screen}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={styles.topBar}>
-        <Pressable onPress={() => step ? setStep(step - 1) : router.replace("/system/tenants")} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
+        <Pressable onPress={() => step ? setStep(step - 1) : router.back()} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
         <View style={styles.topTitle}><Text style={styles.title}>Tenant admission</Text><Text style={styles.subtitle}>Step {step + 1} of {STEPS.length} | {STEPS[step]}</Text></View>
       </View>
       <View style={styles.progress}><View style={[styles.progressFill, { width: `${((step + 1) / STEPS.length) * 100}%` }]} /></View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.formScroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {step === 0 ? <>
           <Text style={styles.sectionTitle}>Personal and unit</Text>
           <Text style={styles.label}>Where are we adding this tenant?</Text>
@@ -475,14 +547,14 @@ export default function TenantAdmissionScreen() {
                 <Text style={styles.unitSetupTitle}>Unit details not set yet</Text>
                 <Text style={styles.unitSetupHint}>Set property, floor, unit number and rent before continuing.</Text>
               </View>
-              <Pressable onPress={() => { setError(""); setShowUnitDetailsModal(true); }} style={styles.setUnitButton}>
+              <Pressable onPress={() => { setError(""); setUnitDetailsError(""); setShowUnitDetailsModal(true); }} style={styles.setUnitButton}>
                 <Text style={styles.setUnitButtonText}>Set unit now</Text>
               </Pressable>
             </View>
           ) : null}
-          <Field label="Full name" value={form.name} onChangeText={(value) => setValue("name", value)} placeholder="Tenant name" />
+          <Field required label="Full name" value={form.name} onChangeText={(value) => setValue("name", value)} placeholder="Tenant name" />
           {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(value) => setValue("shopName", value)} placeholder="Enter shop name" /> : null}
-          <Field label="Phone number" value={form.phoneNo} onChangeText={(value) => setValue("phoneNo", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" placeholder="10-digit mobile number" />
+          <Field required label="Phone number" value={form.phoneNo} onChangeText={(value) => setValue("phoneNo", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" placeholder="10-digit mobile number" />
           <FormDateField label="Date of birth" value={form.dob} onChange={(value) => setValue("dob", value)} maximumDate={new Date()} />
           <FormDateField label="Joining date" value={form.joiningDate} onChange={(value) => setValue("joiningDate", value)} />
           {!isResidentialRoom && !isShop && canteenEnabled ? <>
@@ -540,13 +612,13 @@ export default function TenantAdmissionScreen() {
 
         {step === 1 ? <>
           <Text style={styles.sectionTitle}>Permanent address</Text>
-          <Field label="Pincode" value={form.pincode} onChangeText={(value) => setValue("pincode", value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" placeholder="6-digit pincode" />
+          <Field required={!isShop} label="Pincode" value={form.pincode} onChangeText={(value) => setValue("pincode", value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" placeholder="6-digit pincode" />
           {pinLookupStatus === "loading" ? <Text style={styles.helperText}>Fetching city and state from PIN code...</Text> : null}
           {pinLookupStatus === "success" ? <Text style={styles.helperText}>City and state updated from PIN code. You can still edit them.</Text> : null}
           {pinLookupStatus === "error" ? <Text style={styles.error}>Could not fetch city/state for this PIN code. Please enter them manually.</Text> : null}
-          <Field label="City" value={form.city} onChangeText={(value) => setValue("city", value)} />
-          <Field label="State" value={form.state} onChangeText={(value) => setValue("state", value)} />
-          <Field label="Address" value={form.address} onChangeText={(value) => setValue("address", value)} multiline placeholder="Street and locality" />
+          <Field required={!isShop} label="City" value={form.city} onChangeText={(value) => setValue("city", value)} />
+          <Field required={!isShop} label="State" value={form.state} onChangeText={(value) => setValue("state", value)} />
+          <Field required={!isShop} label="Address" value={form.address} onChangeText={(value) => setValue("address", value)} multiline placeholder="Street and locality" />
           <Field label="House number (optional)" value={form.houseNo} onChangeText={(value) => setValue("houseNo", value)} />
           <Field label="Nearby place (optional)" value={form.nearbyPlace} onChangeText={(value) => setValue("nearbyPlace", value)} />
         </> : null}
@@ -554,11 +626,11 @@ export default function TenantAdmissionScreen() {
         {step === 2 && !isResidentialRoom && !isShop ? <>
           <Text style={styles.sectionTitle}>Emergency contacts</Text>
           <RelationPicker label="First contact relation" value={form.relative1Relation} onChange={(value) => setValue("relative1Relation", value)} />
-          <Field label="First contact name" value={form.relative1Name} onChangeText={(value) => setValue("relative1Name", value)} />
-          <Field label="First contact phone" value={form.relative1Phone} onChangeText={(value) => setValue("relative1Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
+          <Field required label="First contact name" value={form.relative1Name} onChangeText={(value) => setValue("relative1Name", value)} />
+          <Field required label="First contact phone" value={form.relative1Phone} onChangeText={(value) => setValue("relative1Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
           <RelationPicker label="Second contact relation" value={form.relative2Relation} onChange={(value) => setValue("relative2Relation", value)} />
-          <Field label="Second contact name" value={form.relative2Name} onChangeText={(value) => setValue("relative2Name", value)} />
-          <Field label="Second contact phone" value={form.relative2Phone} onChangeText={(value) => setValue("relative2Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
+          <Field required label="Second contact name" value={form.relative2Name} onChangeText={(value) => setValue("relative2Name", value)} />
+          <Field required label="Second contact phone" value={form.relative2Phone} onChangeText={(value) => setValue("relative2Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
         </> : null}
 
         {step === 2 && isResidentialRoom ? <>
@@ -575,9 +647,9 @@ export default function TenantAdmissionScreen() {
 
         {step === 3 ? <>
           <Text style={styles.sectionTitle}>{isResidentialRoom ? "Family and work" : isShop ? "Shop work" : "Work or education"}</Text>
-          {isResidentialRoom ? <Field label="No. of family members" value={form.familyMembers} onChangeText={(value) => setValue("familyMembers", value.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" placeholder="Enter family members count" /> : null}
-          {isShop ? <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(value) => setValue("shopBusiness", value)} multiline placeholder="Example: Grocery, mobile repair, salon, tailoring..." /> : <>
-            <Field label={isResidentialRoom ? "Company Address / College" : "Company or college"} value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline placeholder="Name and address" />
+          {isResidentialRoom ? <Field required label="No. of family members" value={form.familyMembers} onChangeText={(value) => setValue("familyMembers", value.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" placeholder="Enter family members count" /> : null}
+          {isShop ? <Field required label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(value) => setValue("shopBusiness", value)} multiline placeholder=" Grocery, mobile repair, salon, tailoring..." /> : <>
+            <Field required={!isShop} label={isResidentialRoom ? "Company Address / College" : "Company or college"} value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline placeholder="Name and address" />
             <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
           </>}
         </> : null}
@@ -586,22 +658,26 @@ export default function TenantAdmissionScreen() {
           <Text style={styles.sectionTitle}>Payment and documents</Text>
           <Text style={styles.helperText}>After choosing an image, adjust the crop, then tap Cancel to discard or Done/Choose to use it. Selfies use a square crop.</Text>
           <View style={styles.summary}><Text style={styles.summaryLabel}>Monthly rent</Text><Text style={styles.summaryValue}>Rs. {selected?.bed?.price || 0}</Text></View>
-          <Field label="Deposit amount" value={form.depositAmount} onChangeText={(value) => setValue("depositAmount", value)} keyboardType="numeric" placeholder="Example: 10000" />
+          <Field required label="Deposit amount" value={form.depositAmount} onChangeText={(value) => setValue("depositAmount", value)} keyboardType="numeric" placeholder=" 10000" />
           <Text style={styles.label}>Payment cycle</Text>
           <View style={styles.segment}>{[["NOT_PAID", "Normal cycle"], ["ADVANCE_PAID", "Advance cycle"]].map(([value, label]) => <Pressable key={value} onPress={() => setValue("firstRentStatus", value)} style={[styles.segmentButton, form.firstRentStatus === value && styles.segmentActive]}><Text style={[styles.segmentText, form.firstRentStatus === value && styles.segmentTextActive]}>{label}</Text></Pressable>)}</View>
           <View style={styles.cycleHelp}><Text style={styles.cycleHelpText}>• Normal cycle: rent becomes payable after the month completes.</Text><Text style={styles.cycleHelpText}>• Advance cycle: the joining month rent is paid at joining.</Text></View>
           {form.firstRentStatus === "ADVANCE_PAID" ? <><Text style={styles.label}>Payment mode</Text><View style={styles.segment}>{["Cash", "Online"].map((value) => <Pressable key={value} onPress={() => setValue("paymentMode", value)} style={[styles.segmentButton, form.paymentMode === value && styles.segmentActive]}><Text style={[styles.segmentText, form.paymentMode === value && styles.segmentTextActive]}>{value}</Text></Pressable>)}</View></> : null}
-          {(isShop ? [["selfAadhar", "Self Aadhaar Card"], ["photo", "Tenant Photograph (Selfie)"]] : isResidentialRoom ? [["selfAadhar", "Self Aadhaar Card"], ["parentAadhar", "Partner Aadhaar Card"], ["photo", "Tenant Photograph (Selfie)"]] : [["selfAadhar", "Tenant Aadhaar"], ["parentAadhar", "Parent/relative Aadhaar"], ["photo", "Tenant photograph"]]).map(([key, label]) => <View key={key}><Text style={styles.label}>{label}</Text><Pressable onPress={() => chooseImage(key)} style={[styles.documentButton, documents[key] && styles.documentReady]}>{documents[key] ? <Check size={19} color={colors.success} /> : <Camera size={19} color={colors.primary} />}<Text style={[styles.documentText, documents[key] && styles.documentReadyText]}>{documents[key] ? "Image selected" : "Choose image"}</Text></Pressable></View>)}
+          {(isShop ? [["selfAadhar", "Self Aadhaar Card"] , ["photo", "Tenant Photograph (Selfie)"]] : isResidentialRoom ? [["selfAadhar", "Self Aadhaar Card"], ["parentAadhar", "Partner Aadhaar Card"], ["photo", "Tenant Photograph (Selfie)"]] : [["selfAadhar", "Tenant Aadhaar"], ["parentAadhar", "Parent/relative Aadhaar"], ["photo", "Tenant photograph"]]).map(([key, label]) => <View key={key}>
+            <Text style={styles.label}>{label} <Text style={styles.requiredMark}>*</Text></Text>
+            {documents[key].map((document, index) => <View key={`${key}-${index}`} style={styles.documentRow}><Pressable onPress={() => chooseImage(key, index)} style={[styles.documentButton, styles.documentButtonFlex, document && styles.documentReady]}><Check size={19} color={colors.success} /><Text style={[styles.documentText, styles.documentReadyText]}>Document {index + 1} selected</Text></Pressable><Pressable onPress={() => removeDocument(key, index)} style={styles.removeDocument}><Text style={styles.removeDocumentText}>Remove</Text></Pressable></View>)}
+            <Pressable onPress={() => chooseImage(key, documents[key].length)} style={styles.addDocumentButton}><Text style={styles.addDocumentText}>+ Add another {label.toLowerCase()}</Text></Pressable>
+          </View>)}
         </> : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
 
       <View style={styles.footer}>
-        {step > 0 ? <Pressable onPress={() => { setError(""); setStep(step - 1); }} style={styles.backButton}><ChevronLeft size={20} color={colors.primary} /><Text style={styles.backButtonText}>Back</Text></Pressable> : <View />}
+        {step > 0 ? <Pressable onPress={() => { setError(""); setStep(step - 1); }} style={styles.backButton}><ChevronLeft size={20} color={colors.surface} /><Text style={styles.backButtonText}>Back</Text></Pressable> : <View />}
         {step < STEPS.length - 1 ? <Pressable onPress={nextStep} style={styles.nextButton}><Text style={styles.nextText}>Continue</Text><ChevronRight size={20} color={colors.surface} /></Pressable> : <Pressable onPress={submit} disabled={saving} style={[styles.nextButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.nextText}>Save tenant</Text>}</Pressable>}
       </View>
-    </View>
+    </KeyboardAvoidingView>
     <Modal
       visible={showUnitDetailsModal && needsUnitDetails}
       transparent
@@ -629,15 +705,16 @@ export default function TenantAdmissionScreen() {
           </View>
 
           <ScrollView contentContainerStyle={styles.unitModalBody} keyboardShouldPersistTaps="handled">
-            <Field label={detailLabels.category} value={unitDraft.category} onChangeText={(value) => updateUnitDraft("category", value)} placeholder={`Enter ${detailLabels.category.toLowerCase()}`} />
-            <Field label="Floor" value={unitDraft.floorNo} onChangeText={(value) => updateUnitDraft("floorNo", value)} placeholder="Example: Ground or 1" />
-            <Field label="Wing or block (optional)" value={unitDraft.wingName} onChangeText={(value) => updateUnitDraft("wingName", value)} placeholder="Example: A" />
-            {assignmentType === "room" ? <Field label="Flat type" value={unitDraft.flatType} onChangeText={(value) => updateUnitDraft("flatType", value)} placeholder="Example: 1 RK or 1 BHK" /> : null}
-            <Field label={detailLabels.number} value={unitDraft.roomNo} onChangeText={(value) => updateUnitDraft("roomNo", value)} placeholder={detailLabels.numberPlaceholder} />
-            <Field label="Meter number (optional)" value={unitDraft.meterNo} onChangeText={(value) => updateUnitDraft("meterNo", value)} placeholder="Example: MTR-101" />
-            <Field label="Last meter reading (optional)" value={unitDraft.lastMeterReading} onChangeText={(value) => updateUnitDraft("lastMeterReading", value)} keyboardType="numeric" placeholder="Example: 250" />
-            {assignmentType === "bed" ? <Field label="Bed category" value={unitDraft.bedCategory} onChangeText={(value) => updateUnitDraft("bedCategory", value)} placeholder="Example: Standard" /> : null}
-            <Field label={detailLabels.price} value={unitDraft.monthlyPrice} onChangeText={(value) => updateUnitDraft("monthlyPrice", value)} keyboardType="numeric" placeholder="Example: 5000" />
+            <SavedField required label={detailLabels.category} value={unitDraft.category} options={savedUnitOptions.category} active={activeSavedField === "category"} onFocus={() => setActiveSavedField("category")} onChangeText={(value) => { updateUnitDraft("category", value); setActiveSavedField("category"); }} placeholder={`Enter ${detailLabels.category.toLowerCase()}`} />
+            <SavedField required label="Floor" value={unitDraft.floorNo} options={savedUnitOptions.floorNo} active={activeSavedField === "floorNo"} onFocus={() => setActiveSavedField("floorNo")} onChangeText={(value) => { updateUnitDraft("floorNo", value); setActiveSavedField("floorNo"); }} placeholder=" Ground or 1" />
+            <SavedField label="Wing or block (optional)" value={unitDraft.wingName} options={savedUnitOptions.wingName} active={activeSavedField === "wingName"} onFocus={() => setActiveSavedField("wingName")} onChangeText={(value) => { updateUnitDraft("wingName", value); setActiveSavedField("wingName"); }} placeholder=" A" />
+            {assignmentType === "room" ? <SavedField required label="Flat type" value={unitDraft.flatType} options={savedUnitOptions.flatType} active={activeSavedField === "flatType"} onFocus={() => setActiveSavedField("flatType")} onChangeText={(value) => { updateUnitDraft("flatType", value); setActiveSavedField("flatType"); }} placeholder=" 1 RK or 1 BHK" /> : null}
+            <SavedField required label={detailLabels.number} value={unitDraft.roomNo} options={savedUnitOptions.roomNo} active={activeSavedField === "roomNo"} onFocus={() => setActiveSavedField("roomNo")} onChangeText={(value) => { updateUnitDraft("roomNo", value); setActiveSavedField("roomNo"); }} placeholder={detailLabels.numberPlaceholder} />
+            {showMeterDetails ? <><Field label="Meter number (optional)" value={unitDraft.meterNo} onChangeText={(value) => updateUnitDraft("meterNo", value)} placeholder=" MTR-101" /><Field label="Last meter reading (optional)" value={unitDraft.lastMeterReading} onChangeText={(value) => updateUnitDraft("lastMeterReading", value)} keyboardType="numeric" placeholder=" 250" /><Pressable onPress={() => { updateUnitDraft("meterNo", ""); updateUnitDraft("lastMeterReading", ""); setShowMeterDetails(false); }}><Text style={styles.skipMeterText}>Skip for now / add later</Text></Pressable></> : <Pressable onPress={() => setShowMeterDetails(true)} style={styles.addMeterButton}><Text style={styles.addMeterText}>Add meter details</Text></Pressable>}
+            {assignmentType === "bed" ? <><Text style={styles.fieldLabel}>Bed category<Text style={styles.requiredMark}> *</Text></Text><Pressable onPress={() => setBedCategoryOpen((value) => !value)} style={styles.categorySelect}><Text style={styles.categorySelectText}>{unitDraft.bedCategory || "Select bed category"}</Text><ChevronDown size={18} color={colors.muted} /></Pressable>{bedCategoryOpen ? <View style={styles.categoryOptions}>{BED_CATEGORY_OPTIONS.map((option) => <Pressable key={option} onPress={() => { updateUnitDraft("bedCategory", option); setBedCategoryOpen(false); }} style={styles.categoryOption}><Text style={styles.categoryOptionText}>{option}</Text></Pressable>)}</View> : null}</> : null}
+            <Field required label={detailLabels.price} value={unitDraft.monthlyPrice} onChangeText={(value) => updateUnitDraft("monthlyPrice", value)} keyboardType="numeric" placeholder=" 5000" />
+
+            {unitDetailsError ? <Text style={styles.unitDetailsError}>{unitDetailsError}</Text> : null}
 
             <Pressable onPress={saveSelectedUnitDetails} disabled={savingUnitDetails} style={[styles.saveUnitButton, savingUnitDetails && styles.disabled]}>
               {savingUnitDetails ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveUnitButtonText}>Save unit details</Text>}
@@ -658,7 +735,11 @@ export default function TenantAdmissionScreen() {
           if (cropError) setError(cropError.message || "Unable to crop image.");
         }}
         onConfirm={(image) => {
-          setDocuments((current) => ({ ...current, [cropRequest.key]: image }));
+          setDocuments((current) => {
+            const next = [...current[cropRequest.key]];
+            next[cropRequest.index] = image;
+            return { ...current, [cropRequest.key]: next };
+          });
           setCropRequest(null);
         }}
       />
@@ -677,9 +758,11 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 2, color: colors.muted, fontSize: 12 },
   progress: { height: 3, marginTop: 10, backgroundColor: colors.border },
   progressFill: { height: 3, backgroundColor: colors.primary },
-  content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 30 },
+  formScroll: { flex: 1 },
+  content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 110 },
   sectionTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginBottom: 2 },
   label: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
+  requiredMark: { color: colors.danger },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
   multiline: { height: 82, paddingTop: 13, textAlignVertical: "top" },
   select: { minHeight: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
@@ -715,6 +798,19 @@ const styles = StyleSheet.create({
   unitModalBody: { paddingHorizontal: 16, paddingBottom: 18 },
   saveUnitButton: { height: 48, marginTop: 18, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary },
   saveUnitButtonText: { color: colors.surface, fontWeight: "800" },
+  fieldLabel: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
+  categorySelect: { minHeight: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  categorySelectText: { color: colors.text, fontWeight: "600" },
+  categoryOptions: { marginTop: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  categoryOption: { minHeight: 44, paddingHorizontal: 13, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft },
+  categoryOptionText: { color: colors.text, fontWeight: "600" },
+  addMeterButton: { minHeight: 42, marginTop: 16, paddingHorizontal: 13, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.primarySoft },
+  addMeterText: { color: colors.primary, fontWeight: "800" },
+  skipMeterText: { marginTop: 8, color: colors.primary, fontSize: 12, fontWeight: "700", textAlign: "right" },
+  unitDetailsError: { marginTop: 12, color: colors.danger, fontSize: 13, lineHeight: 18, fontWeight: "700" },
+  savedOptions: { marginTop: 5, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  savedOption: { minHeight: 42, paddingHorizontal: 13, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft },
+  savedOptionText: { color: colors.text, fontWeight: "600" },
   summary: { height: 56, marginTop: 14, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 7, backgroundColor: colors.primarySoft },
   summaryLabel: { color: colors.muted, fontWeight: "600" },
   summaryValue: { color: colors.primaryDark, fontSize: 17, fontWeight: "700" },
@@ -735,13 +831,19 @@ const styles = StyleSheet.create({
   segmentText: { color: colors.muted, fontSize: 13, fontWeight: "600" },
   segmentTextActive: { color: colors.primary },
   documentButton: { height: 48, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  documentRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  documentButtonFlex: { flex: 1 },
+  removeDocument: { paddingHorizontal: 8 },
+  removeDocumentText: { color: colors.danger, fontWeight: "700" },
+  addDocumentButton: { height: 42, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", borderWidth: 1, borderStyle: "dashed", borderColor: colors.primary, borderRadius: 7, marginBottom: 14 },
+  addDocumentText: { color: colors.primary, fontWeight: "700" },
   documentReady: { borderColor: colors.successSoft, backgroundColor: colors.successSoft },
   documentText: { color: colors.primary, fontWeight: "700" },
   documentReadyText: { color: colors.success },
   error: { marginTop: 16, color: colors.danger },
   footer: { minHeight: 68, paddingHorizontal: 20, paddingVertical: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
-  backButton: { height: 48, minWidth: 100, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 7 },
-  backButtonText: { color: colors.primary, fontWeight: "700" },
+  backButton: { height: 48, minWidth: 135, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 7, backgroundColor: colors.primary }, 
+  backButtonText: { color: colors.surface,  fontWeight: "700" },
   nextButton: { height: 48, minWidth: 135, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 7, backgroundColor: colors.primary },
   nextText: { color: colors.surface, fontWeight: "700" },
   disabled: { opacity: 0.5 },

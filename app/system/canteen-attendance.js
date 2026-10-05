@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   RefreshControl,
@@ -1392,7 +1393,7 @@ export default function CanteenAttendanceScreen() {
   ======================================================== */
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
 
       <View
         style={[
@@ -3046,7 +3047,7 @@ export default function CanteenAttendanceScreen() {
 
       </View>
 
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Check, IndianRupee, Save, Zap } from "lucide-react-native";
@@ -250,9 +250,10 @@ function applyMode(type, mode) {
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.deep} /></View>;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: 140 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <View style={styles.header}>
-        <Pressable onPress={() => router.replace("/system/more")} style={styles.backButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.backButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
         <View style={styles.headerText}>
           <Text style={styles.eyebrow}>LIGHT BILL SETUP</Text>
           <Text style={styles.title}>Light Bill Settings</Text>
@@ -350,6 +351,7 @@ function applyMode(type, mode) {
         {saving ? <ActivityIndicator color={colors.surface} /> : <><Save size={19} color={colors.surface} /><Text style={styles.saveText}>Save light bill settings</Text></>}
       </Pressable>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

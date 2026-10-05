@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -13,8 +14,8 @@ import {
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import {
-  BedDouble, Building2, ChevronDown, ChevronRight,
-  DoorOpen, MapPin, Plus, Search, SlidersHorizontal, Store,Check,
+  BedDouble, Building2, ChevronRight,
+  DoorOpen, MapPin, Plus, Search, Store,Check,
 Pencil,
 X,
 } from "lucide-react-native";
@@ -51,11 +52,12 @@ const TYPE_LABELS = {
 
 function blankUnitDraft(unit, type) {
   const bed = Array.isArray(unit?.beds) ? unit.beds[0] : null;
+  const emptyIfUnassigned = (value) => /^unassigned$/i.test(String(value || "").trim()) ? "" : String(value || "");
   return {
-    category: unit?.isPlaceholder ? "" : String(unit?.category || ""),
+    category: unit?.isPlaceholder ? "" : emptyIfUnassigned(unit?.category),
     floorNo: unit?.isPlaceholder ? "" : String(unit?.floorNo || ""),
     wingName: unit?.isPlaceholder ? "" : String(unit?.wingName || ""),
-    flatType: unit?.isPlaceholder ? "" : String(unit?.flatType || ""),
+    flatType: unit?.isPlaceholder ? "" : normalizeFlatType(unit?.flatType),
     roomNo: unit?.isPlaceholder ? "" : String(unit?.roomNo || ""),
     meterNo: unit?.isPlaceholder ? "" : String(unit?.meterNo || ""),
     lastMeterReading:
@@ -67,7 +69,8 @@ function blankUnitDraft(unit, type) {
         ? "Shop"
         : type === "room"
           ? "Rental Room"
-          : String(bed?.bedCategory || ""),
+          : emptyIfUnassigned(bed?.bedCategory),
+    bedNo: type === "bed" ? String(bed?.bedNo || "") : "",
     monthlyPrice: bed?.price === undefined || bed?.price === null ? "" : String(bed.price),
   };
 }
@@ -77,7 +80,7 @@ function unitDetailLabels(type) {
     return {
       category: "Property name",
       number: "Shop number",
-      numberPlaceholder: "Example: S-01",
+      numberPlaceholder: " S-01",
       price: "Monthly shop rent",
     };
   }
@@ -85,14 +88,14 @@ function unitDetailLabels(type) {
     return {
       category: "Building or property name",
       number: "Room or flat number",
-      numberPlaceholder: "Example: 101 or A-101",
+      numberPlaceholder: " 101 / A-101",
       price: "Monthly room rent",
     };
   }
   return {
-    category: "Building or hostel name",
+    category: "Building / hostel name",
     number: "Room number",
-    numberPlaceholder: "Example: 101",
+    numberPlaceholder: " 101/201/301",
     price: "Monthly bed rent",
   };
 }
@@ -103,6 +106,13 @@ function normalizeIdentifier(value) {
 
 function normalizeKey(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeFlatType(value) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  const match = text.match(/^(\d+)\s*(rk|bhk)$/i);
+  if (match) return `${match[1]} ${match[2].toUpperCase()}`;
+  return text.replace(/\b(rk|bhk)\b/gi, (part) => part.toUpperCase());
 }
 
 function uniqueValues(items, selector) {
@@ -149,7 +159,7 @@ function groupUnits(units, tenants) {
     const building = unit.isPlaceholder
       ? "Units to set up"
       : String(unit.category || "Property not named").trim();
-    const wing = unit.isPlaceholder ? "Details pending" : String(unit.wingName || "Main").trim();
+    const wing = unit.isPlaceholder ? "Details pending" : String(unit.wingName || "Main Block").trim();
     const floor = unit.isPlaceholder ? "Details pending" : String(unit.floorNo || "Floor not set").trim();
     if (!grouped.has(building)) grouped.set(building, new Map());
     if (!grouped.get(building).has(wing)) grouped.get(building).set(wing, new Map());
@@ -164,9 +174,10 @@ function groupUnits(units, tenants) {
     wings: Array.from(wings, ([name, floors]) => {
       const floorList = Array.from(floors, ([floorName, rooms]) => ({
         name: floorName,
-        rooms: rooms.sort((a, b) =>
-          String(a.roomNo || "").localeCompare(String(b.roomNo || ""), undefined, { numeric: true })
-        ),
+        rooms: rooms.sort((a, b) => {
+          if (Boolean(a.isPlaceholder) !== Boolean(b.isPlaceholder)) return a.isPlaceholder ? 1 : -1;
+          return String(a.roomNo || "").localeCompare(String(b.roomNo || ""), undefined, { numeric: true });
+        }),
       })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       return {
         name,
@@ -174,7 +185,10 @@ function groupUnits(units, tenants) {
         rooms: floorList.flatMap((floor) => floor.rooms),
       };
     }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
-  })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  })).sort((a, b) => {
+    if (Boolean(a.isReserved) !== Boolean(b.isReserved)) return a.isReserved ? 1 : -1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
+  });
 }
 
 function TypeTabs({ value, onChange, types }) {
@@ -281,7 +295,9 @@ function RoomRow({ room, type, onPress, last, index }) {
     : `${rowType === "shop" ? "Shop" : "Room"} ${room.roomNo}`;
   const roomMeta = room.isPlaceholder
     ? "Details pending"
-    : `${total} ${label}${total === 1 ? "" : "s"}`;
+    : rowType === "room" && room.flatType
+      ? `${room.flatType} · ${total} ${label}${total === 1 ? "" : "s"}`
+      : `${total} ${label}${total === 1 ? "" : "s"}`;
   return (
     <Pressable onPress={onPress}
       style={({ pressed }) => [styles.roomRow, !last && styles.rowBorder, pressed && styles.pressed]}>
@@ -304,33 +320,21 @@ function RoomRow({ room, type, onPress, last, index }) {
   );
 }
 
-function SavedOptionChips({ options, selectedValue, onSelect, emptyText }) {
+function SavedOptionChips({ options, selectedValue, onSelect, emptyText, visible }) {
   if (!options.length) {
     return emptyText ? <Text style={styles.optionHelper}>{emptyText}</Text> : null;
   }
 
-  return (
-    <View style={styles.optionWrap}>
-      {options.map((option) => {
-        const selected = normalizeKey(option) === normalizeKey(selectedValue);
-        return (
-          <Pressable
-            key={option}
-            onPress={() => onSelect(option)}
-            style={[styles.optionChip, selected && styles.optionChipActive]}
-          >
-            <Text
-              style={[styles.optionText, selected && styles.optionTextActive]}
-              numberOfLines={1}
-            >
-              {option}
-            </Text>
-            {selected ? <Check size={14} color={UI.primaryDark} /> : null}
-          </Pressable>
-        );
-      })}
+  return visible ? (
+    <View style={styles.savedDropdownWrap}>
+      <View style={styles.savedDropdownMenu}>
+        {options.map((option) => {
+          const selected = normalizeKey(option) === normalizeKey(selectedValue);
+          return <Pressable key={option} onPressIn={() => { Keyboard.dismiss(); onSelect(option); }} style={[styles.savedDropdownItem, selected && styles.savedDropdownItemActive]}><Text style={[styles.savedDropdownItemText, selected && styles.savedDropdownItemTextActive]}>{option}</Text>{selected ? <Check size={14} color={UI.primaryDark} /> : null}</Pressable>;
+        })}
+      </View>
     </View>
-  );
+  ) : null;
 }
 
 function BuildingCard({
@@ -375,7 +379,7 @@ function BuildingCard({
         <View style={styles.activeStatus}><View style={styles.activeDot} /><Text style={styles.activeText}>{building.isReserved ? "Pending" : "Active"}</Text></View>
       </View>
 
-      {building.wings.length > 1 || building.wings[0]?.name !== "Main" ? (
+      {building.wings.length > 1 || building.wings[0]?.name !== "Main Block" ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.wingTabs}>
           {building.wings.map((wing) => (
             <Pressable key={wing.name} onPress={() => {
@@ -386,7 +390,7 @@ function BuildingCard({
             }}
               style={[styles.wingTab, selectedWing?.name === wing.name && styles.wingTabActive]}>
               <Text style={[styles.wingText, selectedWing?.name === wing.name && styles.wingTextActive]}>
-                {wing.name === "Details pending" ? "Set details" : wing.name === "Main" ? "Main" : `Wing ${wing.name}`}
+                {wing.name === "Details pending" ? "Set details" : wing.name === "Main Block" ? "Main Block" : `Wing ${wing.name}`}
               </Text>
             </Pressable>
           ))}
@@ -443,8 +447,15 @@ const [propertyName, setPropertyName] = useState("");
 const [renaming, setRenaming] = useState(false);
 const [unitDetailsTarget, setUnitDetailsTarget] = useState(null);
 const [unitDetailsDraft, setUnitDetailsDraft] = useState(blankUnitDraft(null, type));
+const [bedCategoryOptions, setBedCategoryOptions] = useState(["Standard", "Single", "Double", "Bunk"]);
+const [bedCategoryOpen, setBedCategoryOpen] = useState(false);
+const [customBedCategory, setCustomBedCategory] = useState("");
+const [bedCategoryEditor, setBedCategoryEditor] = useState("");
+const [activeSavedField, setActiveSavedField] = useState("");
 const [savingUnitDetails, setSavingUnitDetails] = useState(false);
 const [unitDetailsError, setUnitDetailsError] = useState("");
+const [unitDetailErrors, setUnitDetailErrors] = useState({});
+const [showMeterDetails, setShowMeterDetails] = useState(false);
   const load = useCallback(async () => {
     try {
       setRefreshing(true);
@@ -480,8 +491,12 @@ function closeRenameProperty() {
 
 function openUnitDetails(unit) {
   setUnitDetailsTarget(unit);
-  setUnitDetailsDraft(blankUnitDraft(unit, unit.propertyType || type));
+  const draft = blankUnitDraft(unit, unit.propertyType || type);
+  setUnitDetailsDraft(draft);
+  setShowMeterDetails(Boolean(draft.meterNo || draft.lastMeterReading));
+  setUnitDetailErrors({});
   setUnitDetailsError("");
+  setUnitDetailErrors({});
 }
 
 function closeUnitDetails() {
@@ -493,6 +508,42 @@ function closeUnitDetails() {
 
 function updateUnitDetailsDraft(key, value) {
   setUnitDetailsDraft((current) => ({ ...current, [key]: value }));
+  setUnitDetailErrors((current) => {
+    const next = { ...current };
+    const text = String(value || "").trim();
+    const targetType = unitDetailsTarget?.propertyType || type;
+    if (["category", "floorNo", "roomNo"].includes(key)) {
+      if (!text) next[key] = `${key === "roomNo" ? "Unit number" : key === "floorNo" ? "Floor" : "Property name"} is required.`;
+      else delete next[key];
+      const draft = { ...unitDetailsDraft, [key]: value };
+      const duplicateUnit = draft.category.trim() && draft.floorNo.trim() && draft.roomNo.trim() && units.some((unit) => String(unit?._id || "") !== String(unitDetailsTarget?._id || "") && !unit?.isPlaceholder && normalizeKey(unit.category) === normalizeKey(draft.category) && normalizeKey(unit.floorNo) === normalizeKey(draft.floorNo) && normalizeKey(unit.roomNo) === normalizeKey(draft.roomNo));
+      if (duplicateUnit) next.roomNo = "This unit number already exists on this floor.";
+      else if (key !== "roomNo" || text) delete next.roomNo;
+    }
+    if (key === "bedCategory") {
+      if (!text) next.bedCategory = "Bed category is required.";
+      else delete next.bedCategory;
+    }
+    if (key === "flatType") {
+      if (targetType === "room" && !text) next.flatType = "Flat type is required.";
+      else delete next.flatType;
+    }
+    if (key === "bedNo") {
+      const duplicate = targetType === "bed" && (unitDetailsTarget?.beds || []).some((bed) => String(bed.bedNo || "").trim().toLowerCase() !== String(unitDetailsTarget?.beds?.[0]?.bedNo || "").trim().toLowerCase() && String(bed.bedNo || "").trim().toLowerCase() === text.toLowerCase());
+      if (!text) next.bedNo = "Bed number is required.";
+      else if (duplicate) next.bedNo = "This bed number already exists in this room.";
+      else delete next.bedNo;
+    }
+    if (key === "monthlyPrice") {
+      if (text && (!Number.isFinite(Number(text)) || Number(text) <= 0)) next.monthlyPrice = "Enter a monthly rent greater than ₹0.";
+      else delete next.monthlyPrice;
+    }
+    if (key === "lastMeterReading") {
+      if (text && (!Number.isFinite(Number(text)) || Number(text) < 0)) next.lastMeterReading = "Enter a valid meter reading.";
+      else delete next.lastMeterReading;
+    }
+    return next;
+  });
 }
 
 async function saveUnitDetails() {
@@ -507,24 +558,18 @@ async function saveUnitDetails() {
       ? null
       : Number(unitDetailsDraft.lastMeterReading);
 
-  if (
-    !unitDetailsDraft.category.trim() ||
-    !unitDetailsDraft.floorNo.trim() ||
-    !unitDetailsDraft.roomNo.trim()
-  ) {
-    setUnitDetailsError(
-      `${labels.category}, floor and ${labels.number.toLowerCase()} are required.`
-    );
-    return;
-  }
-
-  if (targetType === "room" && !unitDetailsDraft.flatType.trim()) {
-    setUnitDetailsError("Enter the flat type.");
-    return;
-  }
-
-  if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
-    setUnitDetailsError("Enter a valid monthly rent.");
+  const nextErrors = {};
+  if (!unitDetailsDraft.category.trim()) nextErrors.category = `${labels.category} is required.`;
+  if (!unitDetailsDraft.floorNo.trim()) nextErrors.floorNo = "Floor is required.";
+  if (!unitDetailsDraft.roomNo.trim()) nextErrors.roomNo = `${labels.number} is required.`;
+  if (targetType === "bed" && !unitDetailsDraft.bedCategory.trim()) nextErrors.bedCategory = "Bed category is required.";
+  if (targetType === "bed" && !unitDetailsDraft.bedNo.trim()) nextErrors.bedNo = "Bed number is required.";
+  if (targetType === "bed" && unitDetailsDraft.bedNo.trim() && (unitDetailsTarget?.beds || []).some((bed) => String(bed.bedNo || "").trim().toLowerCase() !== String(firstBed?.bedNo || "").trim().toLowerCase() && String(bed.bedNo || "").trim().toLowerCase() === unitDetailsDraft.bedNo.trim().toLowerCase())) nextErrors.bedNo = "This bed number already exists in this room.";
+  if (targetType === "room" && !unitDetailsDraft.flatType.trim()) nextErrors.flatType = "Flat type is required.";
+  if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) nextErrors.monthlyPrice = "Enter a monthly rent greater than ₹0.";
+  if (Object.keys(nextErrors).length) {
+    setUnitDetailErrors(nextErrors);
+    setUnitDetailsError("Please correct the highlighted fields.");
     return;
   }
 
@@ -539,9 +584,11 @@ async function saveUnitDetails() {
   try {
     setSavingUnitDetails(true);
     setUnitDetailsError("");
+    setUnitDetailErrors({});
 
     await updateBed(unitDetailsTarget._id, bedNo, {
       price: monthlyPrice,
+      newBedNo: targetType === "bed" ? unitDetailsDraft.bedNo.trim() : undefined,
       bedCategory:
         targetType === "shop"
           ? "Shop"
@@ -556,7 +603,7 @@ async function saveUnitDetails() {
       roomNo: normalizeIdentifier(unitDetailsDraft.roomNo),
       hasWing: Boolean(unitDetailsDraft.wingName.trim()),
       wingName: unitDetailsDraft.wingName.trim(),
-      flatType: targetType === "room" ? unitDetailsDraft.flatType.trim() : "",
+      flatType: targetType === "bed" ? "" : normalizeFlatType(unitDetailsDraft.flatType),
       meterNo: normalizeIdentifier(unitDetailsDraft.meterNo),
       lastMeterReading: meterReading,
     });
@@ -674,6 +721,14 @@ async function savePropertyName() {
     () => uniqueValues(savedLocationUnits, (unit) => unit.category),
     [savedLocationUnits]
   );
+  const existingBedCategoryOptions = useMemo(() => uniqueValues(
+    savedLocationUnits.flatMap((item) => Array.isArray(item.beds) ? item.beds : []),
+    (bed) => bed.bedCategory
+  ), [savedLocationUnits]);
+  const allBedCategoryOptions = useMemo(
+    () => uniqueValues([...bedCategoryOptions, ...existingBedCategoryOptions], (value) => value),
+    [bedCategoryOptions, existingBedCategoryOptions]
+  );
   const savedFloorOptions = useMemo(() => {
     const categoryKey = normalizeKey(unitDetailsDraft.category);
     return uniqueValues(
@@ -702,16 +757,13 @@ async function savePropertyName() {
         if (floorKey && normalizeKey(unit.floorNo) !== floorKey) return false;
         return Boolean(unit.flatType);
       }),
-      (unit) => unit.flatType
+      (unit) => normalizeFlatType(unit.flatType)
     );
   }, [savedLocationUnits, unitDetailsDraft.category, unitDetailsDraft.floorNo]);
   const stats = useMemo(() => filteredUnits.reduce((sum, unit) => {
     const value = unitOccupancy(unit, tenants);
     return { total: sum.total + value.total, occupied: sum.occupied + value.occupied, vacant: sum.vacant + value.vacant };
   }, { total: 0, occupied: 0, vacant: 0 }), [filteredUnits, tenants]);
-  const quotaKey = type === "bed" ? "beds" : type === "room" ? "rooms" : type === "shop" ? "shops" : null;
-  const limitReached = quotaKey ? quota?.remaining?.[quotaKey] === 0 : false;
-  const addType = type === "all" ? firstUnitType : type;
 
   if (loading) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={UI.primary} /></View>;
@@ -726,8 +778,7 @@ async function savePropertyName() {
           <Text style={styles.title}>Units</Text>
           <Text style={styles.subtitle}>Manage buildings, rooms & beds</Text>
         </View>
-        <Pressable style={styles.circleButton} onPress={() => setQuery("")}><Search size={19} color={UI.text} /></Pressable>
-        <Pressable disabled={limitReached} style={[styles.addCircle, limitReached && styles.disabledAction]} onPress={() => router.push({ pathname: "/system/unit-form", params: { type: addType } })}><Plus size={20} color={UI.primary} /></Pressable>
+        {/* Search and Add Unit header actions are intentionally hidden. */}
       </View>
 
       <TypeTabs value={type} onChange={setType} types={visibleTypes} />
@@ -740,12 +791,10 @@ async function savePropertyName() {
             placeholder="Search building, room or bed" placeholderTextColor="#98A2B3"
             style={styles.searchInput} />
         </View>
-        <Pressable style={styles.filterButton}><SlidersHorizontal size={19} color={UI.text} /></Pressable>
       </View>
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Properties</Text>
-        <Pressable style={styles.sortButton}><Text style={styles.sortText}>A – Z</Text><ChevronDown size={18} color={UI.text} /></Pressable>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -825,12 +874,7 @@ async function savePropertyName() {
         )}
       </View>
 
-      <Pressable disabled={limitReached} style={[styles.floatingButton, limitReached && styles.disabledAction]}
-        onPress={() => addType === "bed"
-          ? router.push("/system/beds-manage")
-          : router.push({ pathname: "/system/unit-form", params: { type: addType } })}>
-        <Plus size={19} color="#FFF" /><Text style={styles.floatingText}>{limitReached ? "Limit reached" : "Add Unit"}</Text>
-      </Pressable>
+      {/* Initial units are created during registration; the redundant Add Unit action is intentionally hidden. */}
 
 
       <Modal
@@ -947,10 +991,6 @@ async function savePropertyName() {
         onRequestClose={closeUnitDetails}
       >
         <View style={styles.renameOverlay}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={closeUnitDetails}
-          />
 
           <View style={styles.renameModal}>
             <View style={styles.renameHeader}>
@@ -972,7 +1012,7 @@ async function savePropertyName() {
 
             <ScrollView
               showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               style={styles.unitDetailsScroll}
             >
               {(() => {
@@ -980,50 +1020,59 @@ async function savePropertyName() {
                 const labels = unitDetailLabels(targetType);
                 return (
                   <>
-                    <Text style={styles.renameLabel}>{labels.category}</Text>
+                    <Text style={styles.renameLabel}>{labels.category} <Text style={styles.requiredMark}>*</Text></Text>
                     <TextInput
                       value={unitDetailsDraft.category}
                       onChangeText={(value) => updateUnitDetailsDraft("category", value)}
+                      onFocus={() => setActiveSavedField("category")}
                       placeholder={`Enter ${labels.category.toLowerCase()}`}
                       placeholderTextColor="#98A2B3"
                       style={styles.renameInput}
                       editable={!savingUnitDetails}
                     />
+                    {unitDetailErrors.category ? <Text style={styles.fieldError}>{unitDetailErrors.category}</Text> : null}
                     <SavedOptionChips
                       options={savedPropertyOptions}
                       selectedValue={unitDetailsDraft.category}
                       onSelect={(value) => {
                         updateUnitDetailsDraft("category", value);
+                        setActiveSavedField("");
                         updateUnitDetailsDraft("floorNo", "");
                         updateUnitDetailsDraft("wingName", "");
                         updateUnitDetailsDraft("flatType", "");
                       }}
+                      visible={activeSavedField === "category"}
                     />
 
-                    <Text style={styles.renameLabel}>Floor</Text>
+                    <Text style={styles.renameLabel}>Floor <Text style={styles.requiredMark}>*</Text></Text>
                     <TextInput
                       value={unitDetailsDraft.floorNo}
                       onChangeText={(value) => updateUnitDetailsDraft("floorNo", value)}
-                      placeholder="Example: Ground or 1"
+                      onFocus={() => setActiveSavedField("floorNo")}
+                      placeholder=" Ground / 1"
                       placeholderTextColor="#98A2B3"
                       style={styles.renameInput}
                       editable={!savingUnitDetails}
                     />
+                    {unitDetailErrors.floorNo ? <Text style={styles.fieldError}>{unitDetailErrors.floorNo}</Text> : null}
                     <SavedOptionChips
                       options={savedFloorOptions}
                       selectedValue={unitDetailsDraft.floorNo}
                       onSelect={(value) => {
                         updateUnitDetailsDraft("floorNo", value);
+                        setActiveSavedField("");
                         updateUnitDetailsDraft("wingName", "");
                         updateUnitDetailsDraft("flatType", "");
                       }}
+                      visible={activeSavedField === "floorNo"}
                     />
 
-                    <Text style={styles.renameLabel}>Wing or block</Text>
+                    <Text style={styles.renameLabel}>Wing / block</Text>
                     <TextInput
                       value={unitDetailsDraft.wingName}
                       onChangeText={(value) => updateUnitDetailsDraft("wingName", value)}
-                      placeholder="Example: A"
+                      onFocus={() => setActiveSavedField("wingName")}
+                      placeholder="building / hostel name"
                       placeholderTextColor="#98A2B3"
                       style={styles.renameInput}
                       editable={!savingUnitDetails}
@@ -1031,16 +1080,18 @@ async function savePropertyName() {
                     <SavedOptionChips
                       options={savedWingOptions}
                       selectedValue={unitDetailsDraft.wingName}
-                      onSelect={(value) => updateUnitDetailsDraft("wingName", value)}
+                      onSelect={(value) => { updateUnitDetailsDraft("wingName", value); setActiveSavedField(""); }}
+                      visible={activeSavedField === "wingName"}
                     />
 
                     {targetType === "room" ? (
                       <>
-                        <Text style={styles.renameLabel}>Flat type</Text>
+                        <Text style={styles.renameLabel}>Flat type <Text style={styles.requiredMark}>*</Text></Text>
                         <TextInput
                           value={unitDetailsDraft.flatType}
-                          onChangeText={(value) => updateUnitDetailsDraft("flatType", value)}
-                          placeholder="Example: 1 RK or 1 BHK"
+                          onChangeText={(value) => updateUnitDetailsDraft("flatType", normalizeFlatType(value))}
+                          onFocus={() => setActiveSavedField("flatType")}
+                          placeholder=" 1 RK / 1 BHK"
                           placeholderTextColor="#98A2B3"
                           style={styles.renameInput}
                           editable={!savingUnitDetails}
@@ -1048,12 +1099,14 @@ async function savePropertyName() {
                         <SavedOptionChips
                           options={savedFlatTypeOptions}
                           selectedValue={unitDetailsDraft.flatType}
-                          onSelect={(value) => updateUnitDetailsDraft("flatType", value)}
+                          onSelect={(value) => { updateUnitDetailsDraft("flatType", value); setActiveSavedField(""); }}
+                          visible={activeSavedField === "flatType"}
                         />
+                        {unitDetailErrors.flatType ? <Text style={styles.fieldError}>{unitDetailErrors.flatType}</Text> : null}
                       </>
                     ) : null}
 
-                    <Text style={styles.renameLabel}>{labels.number}</Text>
+                    <Text style={styles.renameLabel}>{labels.number} <Text style={styles.requiredMark}>*</Text></Text>
                     <TextInput
                       value={unitDetailsDraft.roomNo}
                       onChangeText={(value) => updateUnitDetailsDraft("roomNo", value)}
@@ -1062,56 +1115,70 @@ async function savePropertyName() {
                       style={styles.renameInput}
                       editable={!savingUnitDetails}
                     />
+                    {unitDetailErrors.roomNo ? <Text style={styles.fieldError}>{unitDetailErrors.roomNo}</Text> : null}
 
-                    <Text style={styles.renameLabel}>Meter number</Text>
+                    {showMeterDetails ? <>
+                    <Text style={styles.renameLabel}>Meter number <Text style={styles.optionalText}>(optional)</Text></Text>
                     <TextInput
                       value={unitDetailsDraft.meterNo}
                       onChangeText={(value) => updateUnitDetailsDraft("meterNo", value)}
-                      placeholder="Example: MTR-101"
+                      placeholder=" MTR-101"
                       placeholderTextColor="#98A2B3"
                       style={styles.renameInput}
                       editable={!savingUnitDetails}
                     />
 
-                    <Text style={styles.renameLabel}>Last meter reading</Text>
+                    <Text style={styles.renameLabel}>Last meter reading <Text style={styles.optionalText}>(optional)</Text></Text>
                     <TextInput
                       value={unitDetailsDraft.lastMeterReading}
                       onChangeText={(value) =>
                         updateUnitDetailsDraft("lastMeterReading", value.replace(/[^\d.]/g, ""))
                       }
                       keyboardType="numeric"
-                      placeholder="Example: 250"
+                      placeholder="250"
                       placeholderTextColor="#98A2B3"
                       style={styles.renameInput}
                       editable={!savingUnitDetails}
                     />
+                    <Pressable onPress={() => { updateUnitDetailsDraft("meterNo", ""); updateUnitDetailsDraft("lastMeterReading", ""); setShowMeterDetails(false); }} style={styles.skipMeterButton}><Text style={styles.skipMeterText}>Skip for now / add later</Text></Pressable>
+                    </> : <Pressable onPress={() => setShowMeterDetails(true)} style={styles.addMeterButton}><Text style={styles.addMeterText}>+ Add meter details</Text></Pressable>}
 
                     {targetType === "bed" ? (
                       <>
-                        <Text style={styles.renameLabel}>Bed category</Text>
-                        <TextInput
-                          value={unitDetailsDraft.bedCategory}
-                          onChangeText={(value) => updateUnitDetailsDraft("bedCategory", value)}
-                          placeholder="Example: Standard"
-                          placeholderTextColor="#98A2B3"
-                          style={styles.renameInput}
-                          editable={!savingUnitDetails}
-                        />
+                        <Text style={styles.renameLabel}>Bed number <Text style={styles.requiredMark}>*</Text></Text>
+                        <TextInput value={unitDetailsDraft.bedNo} onChangeText={(value) => updateUnitDetailsDraft("bedNo", value)} placeholder="Example: B1" placeholderTextColor="#98A2B3" style={styles.renameInput} editable={!savingUnitDetails} />
+                        {unitDetailErrors.bedNo ? <Text style={styles.fieldError}>{unitDetailErrors.bedNo}</Text> : null}
+                        <Text style={styles.renameLabel}>Bed category <Text style={styles.requiredMark}>*</Text></Text>
+                        <Pressable onPress={() => setBedCategoryOpen((value) => !value)} style={styles.categoryDropdownButton}>
+                          <Text style={styles.categoryDropdownText}>{unitDetailsDraft.bedCategory || "Select bed category"}</Text>
+                          <Text style={styles.categoryDropdownChevron}>{bedCategoryOpen ? "▲" : "▼"}</Text>
+                        </Pressable>
+                        {bedCategoryOpen ? <View style={styles.categoryMenu}>{allBedCategoryOptions.map((option) => <Pressable key={option} onPress={() => { updateUnitDetailsDraft("bedCategory", option); setBedCategoryOpen(false); }} style={[styles.categoryMenuItem, normalizeKey(option) === normalizeKey(unitDetailsDraft.bedCategory) && styles.categoryMenuItemSelected]}><Text style={[styles.categoryMenuText, normalizeKey(option) === normalizeKey(unitDetailsDraft.bedCategory) && styles.categoryMenuTextSelected]}>{option}</Text></Pressable>)}</View> : null}
+                        <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+                          <Pressable onPress={() => { setBedCategoryEditor("add"); setCustomBedCategory(""); setBedCategoryOpen(false); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>+ Add category</Text></Pressable>
+                          <Pressable onPress={() => { setBedCategoryEditor("rename"); setCustomBedCategory(unitDetailsDraft.bedCategory); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>Rename category</Text></Pressable>
+                        </View>
+                        {bedCategoryEditor ? <View style={styles.customCategoryRow}><TextInput value={customBedCategory} onChangeText={setCustomBedCategory} placeholder="Enter category" placeholderTextColor="#98A2B3" style={[styles.renameInput, styles.customCategoryInput]} /><Pressable onPress={() => { const name = customBedCategory.trim(); if (!name) return; setBedCategoryOptions((current) => bedCategoryEditor === "rename" ? [...current.filter((item) => normalizeKey(item) !== normalizeKey(unitDetailsDraft.bedCategory)), name] : current.some((item) => normalizeKey(item) === normalizeKey(name)) ? current : [...current, name]); updateUnitDetailsDraft("bedCategory", name); setCustomBedCategory(""); setBedCategoryEditor(""); }} style={styles.customCategorySave}><Text style={styles.customCategorySaveText}>Save</Text></Pressable></View> : null}
+                        {unitDetailErrors.bedCategory ? <Text style={styles.fieldError}>{unitDetailErrors.bedCategory}</Text> : null}
                       </>
                     ) : null}
 
-                    <Text style={styles.renameLabel}>{labels.price}</Text>
-                    <TextInput
+                    <Text style={styles.renameLabel}>{labels.price} <Text style={styles.requiredMark}>*</Text></Text>
+                      <TextInput
                       value={unitDetailsDraft.monthlyPrice}
                       onChangeText={(value) =>
                         updateUnitDetailsDraft("monthlyPrice", value.replace(/[^\d.]/g, ""))
                       }
+                        onFocus={() => {
+                          if (unitDetailsDraft.monthlyPrice === "0") updateUnitDetailsDraft("monthlyPrice", "");
+                        }}
                       keyboardType="numeric"
-                      placeholder="Example: 5000"
+                      placeholder="5000"
                       placeholderTextColor="#98A2B3"
                       style={styles.renameInput}
                       editable={!savingUnitDetails}
                     />
+                    {unitDetailErrors.monthlyPrice ? <Text style={styles.fieldError}>{unitDetailErrors.monthlyPrice}</Text> : null}
                   </>
                 );
               })()}
@@ -1153,8 +1220,29 @@ async function savePropertyName() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
   content: { paddingTop: 4, paddingBottom: 92 },
+  categoryAction: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: UI.primary, borderRadius: 7, backgroundColor: UI.blueSoft },
+  categoryActionText: { color: UI.primaryDark, fontSize: 11, fontWeight: "800" },
+  requiredMark: { color: systemColors.danger, fontWeight: "900" },
+  optionalText: { color: UI.muted, fontSize: 11, fontWeight: "600" },
+  fieldError: { marginTop: 4, color: systemColors.danger, fontSize: 11, fontWeight: "700" },
+  addMeterButton: { minHeight: 42, marginTop: 12, paddingHorizontal: 12, justifyContent: "center", borderWidth: 1, borderColor: UI.primary, borderRadius: 8, backgroundColor: UI.primarySoft },
+  addMeterText: { color: UI.primaryDark, fontSize: 12, fontWeight: "900" },
+  skipMeterButton: { alignSelf: "flex-start", marginTop: 7, paddingVertical: 5 },
+  skipMeterText: { color: UI.primaryDark, fontSize: 11, fontWeight: "800" },
+  categoryDropdownButton: { minHeight: 48, marginBottom: 7, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: UI.border, borderRadius: 7, backgroundColor: UI.card },
+  categoryDropdownText: { color: UI.text, fontSize: 15, fontWeight: "800" },
+  categoryDropdownChevron: { color: UI.primaryDark, fontSize: 12, fontWeight: "900" },
+  categoryMenu: { marginTop: -4, marginBottom: 7, overflow: "hidden", borderWidth: 1, borderColor: UI.border, borderRadius: 7, backgroundColor: UI.card },
+  categoryMenuItem: { minHeight: 40, paddingHorizontal: 14, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: UI.border },
+  categoryMenuItemSelected: { backgroundColor: UI.blueSoft },
+  categoryMenuText: { color: UI.text, fontSize: 14, fontWeight: "700" },
+  categoryMenuTextSelected: { color: UI.primaryDark, fontWeight: "900" },
+  customCategoryRow: { marginTop: 8, flexDirection: "row", gap: 8, alignItems: "center" },
+  customCategoryInput: { flex: 1, marginBottom: 0 },
+  customCategorySave: { minHeight: 46, paddingHorizontal: 13, justifyContent: "center", borderRadius: 7, backgroundColor: UI.primaryDark },
+  customCategorySaveText: { color: "#FFF", fontSize: 12, fontWeight: "900" },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: UI.screen },
-  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 ,marginTop:35},
+  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
   headerCopy: { flex: 1 },
   title: { color: UI.text, fontSize: 26, fontWeight: "900" },
   subtitle: { marginTop: 2, color: UI.muted, fontSize: 12, fontWeight: "600" },
@@ -1413,6 +1501,16 @@ optionWrap: {
   flexWrap: "wrap",
   gap: 7,
 },
+
+savedDropdownWrap: { marginTop: 8 },
+savedDropdownButton: { minHeight: 40, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: UI.card },
+savedDropdownText: { flex: 1, color: UI.text, fontSize: 12, fontWeight: "700" },
+savedDropdownArrow: { marginLeft: 10, color: UI.primaryDark, fontSize: 11, fontWeight: "900" },
+savedDropdownMenu: { overflow: "hidden", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: UI.card },
+savedDropdownItem: { minHeight: 39, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: UI.border },
+savedDropdownItemActive: { backgroundColor: UI.primarySoft },
+savedDropdownItemText: { color: UI.text, fontSize: 12, fontWeight: "700" },
+savedDropdownItemTextActive: { color: UI.primaryDark, fontWeight: "900" },
 
 optionChip: {
   minHeight: 30,

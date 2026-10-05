@@ -38,7 +38,7 @@ function unitDetailLabels(type) {
     return {
       category: "Market or building",
       number: "Shop number",
-      numberPlaceholder: "Example: S-12",
+      numberPlaceholder: " S-12",
       price: "Monthly shop rent",
     };
   }
@@ -46,14 +46,14 @@ function unitDetailLabels(type) {
     return {
       category: "Property or building",
       number: "Room or unit number",
-      numberPlaceholder: "Example: A-101",
+      numberPlaceholder: " A-101",
       price: "Monthly room rent",
     };
   }
   return {
     category: "Hostel or building",
     number: "Room number",
-    numberPlaceholder: "Example: 101",
+    numberPlaceholder: " 101",
     price: "Monthly price per bed",
   };
 }
@@ -248,8 +248,8 @@ export default function TenantFormScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.replace("/system/tenants")} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
-        <View><Text style={styles.title}>Add tenant</Text><Text style={styles.subtitle}>{vacancies.length} vacant units available</Text></View>
+        <Pressable onPress={() => router.back()} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
+        <View style={styles.headerCopy}><Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Add tenant</Text><Text style={styles.subtitle}>{vacancies.length} vacant units available</Text></View>
       </View>
 
       <Text style={styles.label}>Where are we adding this tenant?</Text>
@@ -281,15 +281,15 @@ export default function TenantFormScreen() {
           <TextInput value={unitDraft.category} onChangeText={(value) => updateDraft("category", value)} placeholder={`Enter ${detailLabels.category.toLowerCase()}`} style={styles.input} />
 
           <Text style={styles.label}>Floor</Text>
-          <TextInput value={unitDraft.floorNo} onChangeText={(value) => updateDraft("floorNo", value)} placeholder="Example: Ground or 1" style={styles.input} />
+          <TextInput value={unitDraft.floorNo} onChangeText={(value) => updateDraft("floorNo", value)} placeholder=" Ground / 1" style={styles.input} />
 
           <Text style={styles.label}>Wing or block (optional)</Text>
-          <TextInput value={unitDraft.wingName} onChangeText={(value) => updateDraft("wingName", value)} placeholder="Example: A" style={styles.input} />
+          <TextInput value={unitDraft.wingName} onChangeText={(value) => updateDraft("wingName", value)} placeholder=" A" style={styles.input} />
 
           {assignmentType === "room" ? (
             <>
               <Text style={styles.label}>Flat type</Text>
-              <TextInput value={unitDraft.flatType} onChangeText={(value) => updateDraft("flatType", value)} placeholder="Example: 1 RK or 1 BHK" style={styles.input} />
+              <TextInput value={unitDraft.flatType} onChangeText={(value) => updateDraft("flatType", value)} placeholder=" 1 RK / 1 BHK" style={styles.input} />
             </>
           ) : null}
 
@@ -297,20 +297,20 @@ export default function TenantFormScreen() {
           <TextInput value={unitDraft.roomNo} onChangeText={(value) => updateDraft("roomNo", value)} placeholder={detailLabels.numberPlaceholder} style={styles.input} />
 
           <Text style={styles.label}>Meter number (optional)</Text>
-          <TextInput value={unitDraft.meterNo} onChangeText={(value) => updateDraft("meterNo", value)} placeholder="Example: MTR-101" style={styles.input} />
+          <TextInput value={unitDraft.meterNo} onChangeText={(value) => updateDraft("meterNo", value)} placeholder=" MTR-101" style={styles.input} />
 
           <Text style={styles.label}>Last meter reading (optional)</Text>
-          <TextInput value={unitDraft.lastMeterReading} onChangeText={(value) => updateDraft("lastMeterReading", value)} keyboardType="numeric" placeholder="Example: 250" style={styles.input} />
+          <TextInput value={unitDraft.lastMeterReading} onChangeText={(value) => updateDraft("lastMeterReading", value)} keyboardType="numeric" placeholder=" 250" style={styles.input} />
 
           {assignmentType === "bed" ? (
             <>
               <Text style={styles.label}>Bed category</Text>
-              <TextInput value={unitDraft.bedCategory} onChangeText={(value) => updateDraft("bedCategory", value)} placeholder="Example: Standard" style={styles.input} />
+              <TextInput value={unitDraft.bedCategory} onChangeText={(value) => updateDraft("bedCategory", value)} placeholder=" Standard" style={styles.input} />
             </>
           ) : null}
 
           <Text style={styles.label}>{detailLabels.price}</Text>
-          <TextInput value={unitDraft.monthlyPrice} onChangeText={(value) => updateDraft("monthlyPrice", value)} keyboardType="numeric" placeholder="Example: 5000" style={styles.input} />
+          <TextInput value={unitDraft.monthlyPrice} onChangeText={(value) => updateDraft("monthlyPrice", value)} keyboardType="numeric" placeholder=" 5000" style={styles.input} />
         </View>
       ) : null}
 
@@ -330,7 +330,7 @@ export default function TenantFormScreen() {
         </View>
       </> : null}
       <Text style={styles.label}>Deposit amount</Text>
-      <TextInput value={deposit} onChangeText={setDeposit} keyboardType="numeric" placeholder="Example: 10000" style={styles.input} />
+      <TextInput value={deposit} onChangeText={setDeposit} keyboardType="numeric" placeholder=" 10000" style={styles.input} />
       <Text style={styles.label}>Monthly rent</Text>
       <View style={styles.readOnly}><Text style={styles.readOnlyText}>Rs. {rent}</Text></View>
       <Text style={styles.label}>Address (optional)</Text>
@@ -349,6 +349,7 @@ const styles = StyleSheet.create({
   content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 40 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: { marginBottom: 10, flexDirection: "row", alignItems: "center", backgroundColor: colors.background },
+  headerCopy: { flex: 1, minWidth: 0 },
   iconButton: { width: 44, height: 44, marginRight: 8, alignItems: "center", justifyContent: "center" },
   title: { color: colors.text, fontSize: 25, fontWeight: "700" },
   subtitle: { marginTop: 3, color: colors.muted, fontSize: 12 },

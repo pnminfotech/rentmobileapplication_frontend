@@ -262,6 +262,11 @@ function tenantPhotoUrl(tenant) {
   return photo?.url || "";
 }
 
+function isImageDocument(document) {
+  const value = `${document?.mimeType || ""} ${document?.fileName || ""} ${document?.url || ""}`.toLowerCase();
+  return value.includes("image/") || /\.(png|jpe?g|webp|heic)(\?|$)/.test(value);
+}
+
 function propertyType(tenant) {
   const raw = String(
     tenant?.propertyType || ""
@@ -1660,25 +1665,31 @@ export default function TenantDetailsScreen() {
                 tone="blue"
               />
 
-              <View style={styles.simpleList}>
+              <View style={styles.documentsGrid}>
 
                 {documents.map(
-                  (document, index) => (
-                    <View
+                  (document, index) => {
+                    const relation = String(document?.relation || document?.documentType || "").toLowerCase();
+                    const sameRelationIndex = documents.slice(0, index + 1).filter((item) => String(item?.relation || item?.documentType || "").toLowerCase() === relation).length;
+                    const documentLabel = relation.includes("self") && relation.includes("aadhaar")
+                      ? `Tenant Aadhaar ${sameRelationIndex}`
+                      : relation.includes("parent") || relation.includes("partner") || relation.includes("relative")
+                        ? `Partner/relative Aadhaar ${sameRelationIndex}`
+                        : relation.includes("photo") || relation.includes("photograph")
+                          ? `Photo ${sameRelationIndex}`
+                          : document?.documentType || document?.relation || document?.fileName || `Document ${index + 1}`;
+                    return (
+                    <Pressable
                       key={
                         document?._id ||
                         document?.url ||
                         index
                       }
                       style={styles.documentCard}
+                      onPress={() => document?.url && Linking.openURL(document.url)}
                     >
 
-                      <View style={styles.documentIcon}>
-                        <FileText
-                          size={18}
-                          color={UI.primaryDark}
-                        />
-                      </View>
+                      {isImageDocument(document) && document?.url ? <Image source={{ uri: document.url }} style={styles.documentPreview} contentFit="cover" /> : <View style={styles.documentIcon}><FileText size={18} color={UI.primaryDark} /></View>}
 
                       <View style={styles.documentCopy}>
 
@@ -1686,12 +1697,7 @@ export default function TenantDetailsScreen() {
                           style={styles.documentTitle}
                           numberOfLines={1}
                         >
-                          {document?.documentType ||
-                            document?.relation ||
-                            document?.fileName ||
-                            `Document ${
-                              index + 1
-                            }`}
+                          {documentLabel}
                         </Text>
 
                         <Text style={styles.documentMeta}>
@@ -1699,24 +1705,16 @@ export default function TenantDetailsScreen() {
                             ? `Uploaded · ${formatDate(
                                 document.createdAt
                               )}`
-                            : "Uploaded document"}
+                            : ""}
                         </Text>
 
                       </View>
 
-                      <View style={styles.availableBadge}>
-                        <ShieldCheck
-                          size={12}
-                          color={UI.green}
-                        />
+                     
 
-                        <Text style={styles.availableText}>
-                          Available
-                        </Text>
-                      </View>
-
-                    </View>
-                  )
+                    </Pressable>
+                    );
+                  }
                 )}
 
                 {!documents.length ? (
@@ -1884,7 +1882,6 @@ const styles = StyleSheet.create({
   header: {
     minHeight: 58,
     marginBottom: 8,
-    marginTop: 35,
     flexDirection: "row",
     alignItems: "center",
     gap: 9,
@@ -1895,10 +1892,10 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: UI.border,
-    backgroundColor: UI.card,
+    // borderRadius: 9,
+    // borderWidth: 1,
+    // borderColor: UI.border,
+    // backgroundColor: UI.card,
     ...lightShadow,
   },
 
@@ -2578,6 +2575,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
 
+  documentsGrid: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+
   paymentCard: {
     minHeight: 62,
     marginVertical: 4,
@@ -2650,12 +2655,14 @@ const styles = StyleSheet.create({
   ======================================================== */
 
   documentCard: {
-    minHeight: 64,
+    width: "48.5%",
+    minHeight: 156,
     marginVertical: 4,
-    paddingHorizontal: 9,
-    flexDirection: "row",
+    padding: 8,
+    flexDirection: "column",
     alignItems: "center",
-    gap: 9,
+    justifyContent: "flex-start",
+    gap: 6,
     borderRadius: 9,
     borderWidth: 1,
     borderColor: "#E1E8ED",
@@ -2671,15 +2678,24 @@ const styles = StyleSheet.create({
     backgroundColor: UI.primarySoft,
   },
 
+  documentPreview: {
+    width: "100%",
+    height: 105,
+    borderRadius: 8,
+    backgroundColor: UI.primarySoft,
+  },
+
   documentCopy: {
-    flex: 1,
+    width: "100%",
     minWidth: 0,
+    alignItems: "center",
   },
 
   documentTitle: {
     color: UI.text,
     fontSize: 10,
     fontWeight: "900",
+    textAlign: "center",
   },
 
   documentMeta: {

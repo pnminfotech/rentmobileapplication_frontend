@@ -149,8 +149,9 @@ export default function StaffExpensesScreen() {
     <View style={styles.screen}>
       <View style={styles.content}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.replace("/system/more")} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
-          <View style={styles.headerText}><Text style={styles.title}>Staff expenses</Text><Text style={styles.subtitle}>{monthLabel(selectedMonth)} | {visibleItems.length} entries</Text></View>
+          <Pressable onPress={() => router.back()} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
+          <View style={styles.headerText}><Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Staff expenses</Text><Text style={styles.subtitle}>{monthLabel(selectedMonth)} | {visibleItems.length} entries</Text></View>
+          <Pressable onPress={() => router.push("/system/staff-expense-form")} style={styles.headerAddButton} accessibilityLabel="Add staff expense"><Plus size={16} color="#FFFFFF" /><Text style={styles.headerAddButtonText}>Add Expense</Text></Pressable>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -187,7 +188,7 @@ export default function StaffExpensesScreen() {
 
           {loading ? <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          {!loading && !error && !visibleItems.length ? <View style={styles.empty}><Users size={34} color={colors.subtle} /><Text style={styles.emptyTitle}>No staff expenses</Text><Text style={styles.emptyText}>Change filters or add a staff payment.</Text></View> : null}
+          {!loading && !error && !visibleItems.length ? <View style={styles.empty}><Users size={34} color={colors.subtle} /><Text style={styles.emptyTitle}>No expenses</Text></View> : null}
 
           {visibleItems.map((item) => (
             <View key={item._id} style={styles.row}>
@@ -201,22 +202,23 @@ export default function StaffExpensesScreen() {
             </View>
           ))}
         </ScrollView>
-        <Pressable onPress={() => router.push("/system/staff-expense-form")} style={styles.fab}><Plus size={24} color={colors.surface} /></Pressable>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: "#F6F8F7" },
   content: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 18 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 14, marginTop: 35, backgroundColor: colors.background },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 14, backgroundColor: "#F6F8F7" },
+  headerAddButton: { height: 42, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, backgroundColor: "#244F70" },
+  headerAddButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
   iconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   headerText: { flex: 1, minWidth: 0, marginLeft: 4 },
-  title: { color: colors.text, fontSize: 24, fontWeight: "700" },
+  title: { color: colors.text, fontSize: 22, fontWeight: "700" },
   subtitle: { marginTop: 3, color: colors.muted, fontSize: 12 },
-  fab: { position: "absolute", right: 18, bottom: 22, width: 56, height: 56, alignItems: "center", justifyContent: "center", borderRadius: 28, backgroundColor: colors.primary, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
-  scrollContent: { paddingBottom: 36, gap: 8 },
+  fab: { position: "absolute", right: 18, bottom: 82, width: 56, height: 56, alignItems: "center", justifyContent: "center", borderRadius: 28, backgroundColor: colors.primary, shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  scrollContent: { paddingBottom: 112, gap: 8 },
   monthBar: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
   monthButton: { width: 48, height: 48, alignItems: "center", justifyContent: "center" },
   monthText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: "800", textAlign: "center" },

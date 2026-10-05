@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft,
   Check,
@@ -53,11 +55,6 @@ const MEALS = [
 ];
 
 const PRIMARY_MODES = [
-  {
-    key: "full_package",
-    title: "Full food package",
-    subtitle: "Breakfast + lunch + dinner fixed monthly",
-  },
   {
     key: "per_meal",
     title: "Per meal pricing",
@@ -168,6 +165,7 @@ function MoneyInput({ value, onChange }) {
 
 export default function CanteenSettingsScreen() {
   const router = useRouter();
+  const { returnTo = "/system/more" } = useLocalSearchParams();
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -275,7 +273,7 @@ export default function CanteenSettingsScreen() {
       router.replace(
         needsCanteenAttendance(payload)
           ? "/system/canteen-attendance"
-          : "/system/more"
+          : String(returnTo)
       );
     } catch (err) {
       setError(
@@ -297,20 +295,20 @@ export default function CanteenSettingsScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={styles.content}>
         <View style={styles.header}>
           <Pressable
-            onPress={() => router.replace("/system/more")}
+            onPress={() => router.replace(String(returnTo))}
             style={styles.backButton}
           >
             <ArrowLeft size={21} color={UI.blueDark} />
           </Pressable>
 
           <View style={styles.headerText}>
-            <Text style={styles.title}>Canteen Settings</Text>
+            <Text style={styles.title}>Meal service setup</Text>
             <Text style={styles.subtitle}>
-              Configure billing, packages and meal charges
+              Choose meal plans, billing and charges
             </Text>
           </View>
         </View>
@@ -338,7 +336,7 @@ export default function CanteenSettingsScreen() {
           </View>
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionHeaderTitle}>Main billing type</Text>
+            <Text style={styles.sectionHeaderTitle}>Meal billing options</Text>
             <Text style={styles.sectionHeaderMeta}>Select one</Text>
           </View>
 
@@ -576,13 +574,16 @@ export default function CanteenSettingsScreen() {
             ) : (
               <>
                 <Save size={18} color="#FFFFFF" />
-                <Text style={styles.saveText}>Save settings</Text>
+                <Text style={styles.saveText}>Save meal options</Text>
               </>
             )}
           </Pressable>
+          <Pressable onPress={() => router.replace(String(returnTo))} disabled={saving} style={styles.skipButton}>
+            <Text style={styles.skipText}>Skip for now — add later</Text>
+          </Pressable>
         </ScrollView>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1160,6 +1161,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
+
+  skipButton: { minHeight: 42, marginTop: 7, alignItems: "center", justifyContent: "center" },
+  skipText: { color: UI.muted, fontSize: 13, fontWeight: "800" },
 
   
   disabled: {

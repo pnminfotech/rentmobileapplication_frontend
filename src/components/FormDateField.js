@@ -17,7 +17,7 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
-export default function FormDateField({ label, value, onChange, minimumDate, maximumDate, placeholder = "Select date" }) {
+export default function FormDateField({ label, value, onChange, minimumDate, maximumDate, placeholder = "Select date", disabled = false }) {
   const [open, setOpen] = useState(false);
   const webInputRef = useRef(null);
   const hasValue = Boolean(value);
@@ -34,10 +34,12 @@ export default function FormDateField({ label, value, onChange, minimumDate, max
             value: value || "",
             min: minimumDate ? toDateValue(minimumDate) : undefined,
             max: maximumDate ? toDateValue(maximumDate) : undefined,
+            disabled,
             onChange: (event) => onChange(event.target.value),
             style: webInputStyle,
           })}
           <Pressable
+            disabled={disabled}
             onPress={() => {
               if (typeof webInputRef.current?.showPicker === "function") webInputRef.current.showPicker();
               else webInputRef.current?.focus();
@@ -52,7 +54,7 @@ export default function FormDateField({ label, value, onChange, minimumDate, max
         </View>
       ) : (
         <>
-          <Pressable onPress={() => setOpen(true)} style={styles.button}>
+          <Pressable disabled={disabled} onPress={() => setOpen(true)} style={[styles.button, disabled && styles.disabled]}>
             <CalendarDays size={19} color={colors.primary} />
             <Text style={[styles.text, !hasValue && styles.placeholder]}>{hasValue ? date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : placeholder}</Text>
           </Pressable>
@@ -96,6 +98,7 @@ const styles = StyleSheet.create({
   button: { height: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
   text: { color: colors.text, fontSize: 16, fontWeight: "600" },
   placeholder: { color: colors.subtle },
+  disabled: { opacity: 0.55 },
   done: { height: 40, alignItems: "center", justifyContent: "center", backgroundColor: colors.primarySoft },
   doneText: { color: colors.primary, fontWeight: "700" },
 });

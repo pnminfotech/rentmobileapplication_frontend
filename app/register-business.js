@@ -12,17 +12,22 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft } from "lucide-react-native";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { registerBusiness } from "../src/api/saasApi";
 import { colors } from "../src/theme/colors";
 
-function Field({ label, ...props }) {
+function Field({ label, required = false, error, note, right, ...props }) {
   return (
     <View>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput {...props} style={styles.input} />
+      <Text style={styles.label}>{label}{required ? <Text style={styles.required}> *</Text> : null}</Text>
+      <View style={[styles.inputWrap, error && styles.inputWrapError]}>
+        <TextInput {...props} style={[styles.input, right && styles.inputWithRight]} />
+        {right}
+      </View>
+      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      {!error && note ? <Text style={styles.fieldError}>{note}</Text> : null}
     </View>
   );
 }
@@ -47,8 +52,19 @@ export default function RegisterBusinessScreen() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginIdNote, setLoginIdNote] = useState("");
 
-  const setValue = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const setValue = (key, value) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
   const goBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -62,19 +78,22 @@ export default function RegisterBusinessScreen() {
     const email = form.email.trim().toLowerCase();
     const phone = form.phone.replace(/\D/g, "");
 
-    if (!form.businessName.trim() || !form.ownerName.trim()) {
-      return setError("Business name and owner name are required.");
-    }
-    if (!loginId) return setError("Create a login ID.");
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return setError("Enter a valid email address or leave email blank.");
-    }
-    if (phone && phone.length !== 10) return setError("Enter a valid 10-digit phone number.");
-    if (form.password.length < 8) return setError("Password must be at least 8 characters.");
+    const nextErrors = {};
+    if (!form.ownerName.trim()) nextErrors.ownerName = "Owner name is required.";
+    if (!loginId) nextErrors.loginId = "Login ID is required.";
+    if (!email) nextErrors.email = "Email address is required.";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.email = "Enter a valid email address, for example owner@gmail.com.";
+    if (!phone) nextErrors.phone = "Phone number is required.";
+    else if (phone.length !== 10) nextErrors.phone = `Phone number must be 10 digits. You entered ${phone.length}.`;
+    if (!form.password) nextErrors.password = "Password is required.";
+    else if (form.password.length < 8) nextErrors.password = "Password must be at least 8 characters.";
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return setError("Please correct the highlighted fields.");
 
     try {
       setSaving(true);
       setError("");
+      setFieldErrors({});
       await registerBusiness({
         businessName: form.businessName.trim(),
         ownerName: form.ownerName.trim(),
@@ -96,7 +115,7 @@ export default function RegisterBusinessScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -106,6 +125,8 @@ export default function RegisterBusinessScreen() {
           },
         ]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
       >
         <View style={styles.header}>
           <Pressable onPress={goBack} style={styles.backButton}>
@@ -113,33 +134,44 @@ export default function RegisterBusinessScreen() {
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.title}>Create trial account</Text>
-            <Text style={styles.subtitle}>Register now. Purchase a plan after 15 days.</Text>
+            <Text style={styles.subtitle}>Start your 15-day free trial. No payment required.</Text>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Business details</Text>
-          <Field label="Business name" value={form.businessName} onChangeText={(value) => setValue("businessName", value)} placeholder="Example: Demo Hostel" />
-          <Field label="Owner name" value={form.ownerName} onChangeText={(value) => setValue("ownerName", value)} placeholder="Owner full name" />
+          {/* <Text style={styles.sectionTitle}>Business details</Text> */}
+          <Field label="Business name " value={form.businessName} onChangeText={(value) => setValue("businessName", value)} placeholder="Property Name" />
+          <Field label="Owner name" required error={fieldErrors.ownerName} value={form.ownerName} onChangeText={(value) => setValue("ownerName", value)} placeholder=" Full Name" />
 
-          <Text style={styles.sectionTitle}>Login details</Text>
+          {/* <Text style={styles.sectionTitle}>Login details</Text> */}
           <Field
             label="Login ID"
+            required
+            error={fieldErrors.loginId}
+            note={loginIdNote}
             value={form.loginId}
-            onChangeText={(value) => setValue("loginId", cleanLoginId(value))}
+            onChangeText={(value) => {
+              const cleaned = cleanLoginId(value);
+              setLoginIdNote(/[^a-zA-Z0-9._-]/.test(value) ? "Only letters, numbers, dot, underscore and hyphen are allowed." : "");
+              setValue("loginId", cleaned);
+            }}
             autoCapitalize="none"
-            placeholder="example_owner"
+            placeholder="Create a login ID"
           />
           <Field
-            label="Email optional"
+            label="Email"
+            required
+            error={fieldErrors.email}
             value={form.email}
             onChangeText={(value) => setValue("email", value)}
             autoCapitalize="none"
             keyboardType="email-address"
-            placeholder="owner@example.com"
+            placeholder="email address"
           />
           <Field
-            label="Phone optional"
+            label="Phone"
+            required
+            error={fieldErrors.phone}
             value={form.phone}
             onChangeText={(value) => setValue("phone", value.replace(/\D/g, "").slice(0, 10))}
             keyboardType="phone-pad"
@@ -147,15 +179,19 @@ export default function RegisterBusinessScreen() {
           />
           <Field
             label="Password"
+            required
+            error={fieldErrors.password}
             value={form.password}
             onChangeText={(value) => setValue("password", value)}
-            secureTextEntry
+            secureTextEntry={!showPassword}
             placeholder="Minimum 8 characters"
+            right={<Pressable onPress={() => setShowPassword((value) => !value)} style={styles.eyeButton} accessibilityLabel={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={20} color={colors.muted} /> : <Eye size={20} color={colors.muted} />}</Pressable>}
           />
 
           <View style={styles.trialBox}>
             <Text style={styles.trialTitle}>15-day free access</Text>
-            <Text style={styles.trialText}>After login, you will set beds, rooms, and shops once. After the trial ends, the app will ask you to purchase a plan.</Text>
+            <Text style={styles.trialText}>Try all features free for 15 days.
+No payment is required now. Choose a plan after your trial to continue.</Text>
           </View>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -180,7 +216,13 @@ const styles = StyleSheet.create({
   card: { padding: 15, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
   sectionTitle: { marginTop: 10, color: colors.text, fontSize: 17, fontWeight: "800" },
   label: { marginTop: 14, marginBottom: 7, color: colors.muted, fontSize: 13, fontWeight: "800" },
-  input: { minHeight: 50, paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, color: colors.text, fontSize: 15 },
+  inputWrap: { minHeight: 50, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
+  inputWrapError: { borderColor: colors.danger },
+  input: { flex: 1, minHeight: 48, paddingHorizontal: 13, color: colors.text, fontSize: 15 },
+  inputWithRight: { paddingRight: 4 },
+  eyeButton: { width: 44, height: 48, alignItems: "center", justifyContent: "center" },
+  required: { color: colors.danger },
+  fieldError: { marginTop: 5, color: colors.danger, fontSize: 12, fontWeight: "700" },
   trialBox: { marginTop: 18, padding: 13, borderWidth: 1, borderColor: colors.primarySoft, borderRadius: 8, backgroundColor: colors.primarySoft },
   trialTitle: { color: colors.primary, fontSize: 14, fontWeight: "900" },
   trialText: { marginTop: 5, color: colors.muted, fontSize: 12, lineHeight: 18, fontWeight: "700" },

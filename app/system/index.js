@@ -161,9 +161,8 @@ function QuickAction({ Icon, title, subtitle, primary, tint = UI.mint, iconColor
       </View>
       <View style={styles.quickCopy}>
         <Text style={[styles.quickTitle, primary && styles.onPrimary]} numberOfLines={1}>{title}</Text>
-        <Text style={[styles.quickSubtitle, primary && styles.onPrimaryMuted]} numberOfLines={1}>{subtitle}</Text>
+        {subtitle ? <Text style={[styles.quickSubtitle, primary && styles.onPrimaryMuted]} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
-      <ArrowRight size={19} color="#30485E" />
     </Pressable>
   );
 }
@@ -426,7 +425,7 @@ export default function SystemAdminScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding }]}
+        contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding, paddingTop: 16 }]}
         showsVerticalScrollIndicator={false}
         refreshing={refreshing}
         onRefresh={loadDashboard}
@@ -522,10 +521,10 @@ export default function SystemAdminScreen() {
 
           <Text style={styles.sectionTitle}>Quick access</Text>
           <View style={styles.quickGrid}>
-            <QuickAction Icon={WalletCards} title="Collect Rent" subtitle="Record tenant payments" primary tint="#E2EDF6" iconColor="#456F91" onPress={() => router.push("/system/payments")} />
-            <QuickAction Icon={CirclePlus} title="Add Tenant" subtitle="Create a new tenant" tint="#ECECFF" iconColor="#5266B8" onPress={() => router.push("/system/tenant-form")} />
-            <QuickAction Icon={ReceiptText} title="Record Expense" subtitle="Add maintenance costs" tint="#FFF2D7" iconColor="#CC8800" onPress={() => router.push("/system/expenses")} />
-            <QuickAction Icon={BarChart3} title="Generate Report" subtitle="View financial summary" tint="#E1EFFA" iconColor="#376F9B" onPress={() => router.push("/system/reports")} />
+            <QuickAction Icon={WalletCards} title="Collect Rent"  primary tint="#E2EDF6" iconColor="#456F91" onPress={() => router.push("/system/payments")} />
+            <QuickAction Icon={CirclePlus} title="Add Tenant"  tint="#ECECFF" iconColor="#5266B8" onPress={() => router.push("/system/tenant-admission")} />
+            <QuickAction Icon={ReceiptText} title="Expenses"  tint="#FFF2D7" iconColor="#CC8800" onPress={() => router.push("/system/expenses")} />
+            <QuickAction Icon={BarChart3} title="Report"  tint="#E1EFFA" iconColor="#376F9B" onPress={() => router.push("/system/reports")} />
           </View>
 
           <Text style={styles.sectionTitle}>Today</Text>
@@ -552,7 +551,7 @@ export default function SystemAdminScreen() {
             )) : (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyTitle}>No transactions yet</Text>
-                <Text style={styles.emptyText}>Payments recorded this month will appear here.</Text>
+                {/* <Text style={styles.emptyText}>Payments recorded this month will appear here.</Text> */}
               </View>
             )}
           </View>
@@ -634,9 +633,9 @@ export default function SystemAdminScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
-  content: { paddingTop: 4, paddingBottom: 92 },
+  content: { paddingTop: 0, paddingBottom: 92 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: UI.screen },
-  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8, marginTop:35 },
+  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
   profileAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#DFEBF4" },
   profileInitials: { color: UI.primaryDark, fontSize: 13, fontWeight: "800" },
   dashboardLogo: { width: 38, height: 38, borderRadius: 19 },
@@ -688,7 +687,7 @@ const styles = StyleSheet.create({
   quickIcon: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 17, backgroundColor: UI.mint },
   quickIconPrimary: { backgroundColor: UI.mint },
   quickCopy: { flex: 1, minWidth: 0, marginHorizontal: 7 },
-  quickTitle: { color: UI.text, fontSize: 11, fontWeight: "900" },
+  quickTitle: { color: UI.text, fontSize: 13, fontWeight: "800" },
   quickSubtitle: { marginTop: 2, color: UI.muted, fontSize: 8, fontWeight: "600" },
   onPrimary: { color: UI.text },
   onPrimaryMuted: { color: UI.muted },

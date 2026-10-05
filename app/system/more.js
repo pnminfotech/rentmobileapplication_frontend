@@ -92,7 +92,6 @@ function CompactCard({ Icon, title, subtitle, tone, onPress }) {
         <Text style={styles.compactTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>{title}</Text>
         <Text style={styles.compactSubtitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{subtitle}</Text>
       </View>
-      <ChevronRight size={17} color={UI.muted} />
     </Pressable>
   );
 }
@@ -121,6 +120,8 @@ export default function MoreScreen() {
   const canteenEnabled = hasCanteenFeature(bootstrap);
   const showCanteenAttendance = canteenEnabled && needsCanteenAttendance(canteenSettings);
   const walletValue = walletBalance === null ? undefined : walletBalance.toLocaleString("en-IN");
+  const subscription = bootstrap?.subscription || {};
+  const subscriptionRequired = Boolean(bootstrap?.access?.expired || bootstrap?.access?.needsPayment || ["expired", "pending", "pending_payment"].includes(String(subscription.status || bootstrap?.organization?.status || "").toLowerCase()));
 
   return (
     <View style={styles.screen}>
@@ -148,6 +149,16 @@ export default function MoreScreen() {
             onPress={() => router.push("/system/wallet")}
           />
         </View>
+
+        {subscriptionRequired ? (
+          <Pressable onPress={() => router.push("/subscription-expired")} style={styles.subscriptionBanner}>
+            <View style={styles.subscriptionCopy}>
+              <Text style={styles.subscriptionTitle}>Subscription required</Text>
+              <Text style={styles.subscriptionSubtitle}>Renew or upgrade your plan to restore all features.</Text>
+            </View>
+            <Text style={styles.subscriptionAction}>Upgrade</Text>
+          </Pressable>
+        ) : null}
 
         <Text style={styles.sectionTitle}>Reports & Data</Text>
         <View style={styles.sectionCard}>
@@ -183,9 +194,14 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: UI.screen },
   content: { width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 108 },
-  header: { paddingHorizontal: 2, paddingBottom: 14, marginTop: 35 },
+  subscriptionBanner: { marginTop:16, marginBottom: 16, padding: 14, flexDirection: "row", alignItems: "center", borderRadius: 12, backgroundColor: "#e0b4bc", borderWidth: 1, borderColor: "#da0707" },
+  subscriptionCopy: { flex: 1, minWidth: 0 },
+  subscriptionTitle: { color: UI.text, fontSize: 14, fontWeight: "900" },
+  subscriptionSubtitle: { marginTop: 3, color: UI.muted, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  subscriptionAction: { marginLeft: 10, color: UI.red, fontSize: 13, fontWeight: "900" },
+  header: { paddingHorizontal: 2, paddingBottom: 14 },
   eyebrow: { color: UI.subtle, fontSize: 10, fontWeight: "900", letterSpacing: 0, textTransform: "uppercase" },
-  title: { marginTop: 3, color: UI.text, fontSize: 30, lineHeight: 34, fontWeight: "900" },
+  title: { marginTop: 3, color: UI.text, fontSize: 26, lineHeight: 34, fontWeight: "900" },
   subtitle: { marginTop: 2, color: UI.muted, fontSize: 14, fontWeight: "600" },
   summaryGrid: { flexDirection: "row", gap: 8 },
   summaryCard: { flex: 1, minWidth: 0, minHeight: 108, paddingHorizontal: 12, paddingVertical: 14, alignItems: "flex-start", borderWidth: 1, borderColor: UI.border, borderRadius: 8, backgroundColor: UI.card, ...systemShadow },

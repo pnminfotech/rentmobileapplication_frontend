@@ -25,7 +25,7 @@ function nextBedNumber(beds = []) {
 
 export default function AddBedScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
+  const { id, usePlaceholder, pendingBeds } = useLocalSearchParams();
   const [unit, setUnit] = useState(null);
   const [quota, setQuota] = useState(null);
   const [bedNo, setBedNo] = useState("");
@@ -70,6 +70,7 @@ export default function AddBedScreen() {
         bedNo: bedNo.trim(),
         bedCategory: bedCategory.trim() || "Standard",
         price: monthlyPrice,
+        usePlaceholder: String(usePlaceholder) === "true",
       });
       router.replace({ pathname: "/system/unit-details", params: { id } });
     } catch (err) {
@@ -84,6 +85,8 @@ export default function AddBedScreen() {
   }
 
   const remaining = quota?.remaining?.beds ?? 0;
+  const availablePendingBeds = Number(pendingBeds || 0);
+  const canAddBed = remaining > 0 || availablePendingBeds > 0;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
@@ -99,7 +102,8 @@ export default function AddBedScreen() {
 
       {unit ? (
         <View style={styles.form}>
-          <Text style={styles.remaining}>{remaining} purchased beds remaining</Text>
+          <Text style={styles.remaining}>{remaining > 0 ? `${remaining} purchased beds remaining` : availablePendingBeds > 0 ? `${availablePendingBeds} pending setup bed${availablePendingBeds === 1 ? "" : "s"} available` : "No beds available"}</Text>
+          {remaining === 0 && availablePendingBeds > 0 ? <Text style={styles.contextText}>This bed will use one of your existing units with details pending.</Text> : null}
           {unit.wingName ? <Text style={styles.contextText}>This bed will be added in Wing {unit.wingName}.</Text> : null}
 
           <Text style={styles.label}>Bed number</Text>
@@ -113,7 +117,7 @@ export default function AddBedScreen() {
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Pressable onPress={saveBed} disabled={saving || remaining < 1} style={[styles.saveButton, (saving || remaining < 1) && styles.disabled]}>
+          <Pressable onPress={saveBed} disabled={saving || !canAddBed} style={[styles.saveButton, (saving || !canAddBed) && styles.disabled]}>
             {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveButtonText}>Add bed</Text>}
           </Pressable>
         </View>

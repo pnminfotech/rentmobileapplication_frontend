@@ -19,7 +19,6 @@ const FIRST_RENT_OPTIONS = [
   { value: "ADVANCE_PAID", label: "Advance cycle" },
 ];
 const CANTEEN_MODE_LABELS = {
-  full_package: "Full food package",
   per_meal: "Per meal pricing",
   meal_package: "Meal package monthly",
 };
@@ -72,8 +71,8 @@ function buildVacancies(units, tenants) {
   });
 }
 
-function Field({ label, ...props }) {
-  return <><Text style={styles.label}>{label}</Text><TextInput style={[styles.input, props.multiline && styles.multiline]} {...props} /></>;
+function Field({ label, required = false, ...props }) {
+  return <><Text style={styles.label}>{label}{required ? <Text style={styles.requiredMark}> *</Text> : null}</Text><TextInput style={[styles.input, props.multiline && styles.multiline]} {...props} /></>;
 }
 
 function isValidShareUrl(value) {
@@ -106,6 +105,8 @@ export default function TenantInviteScreen() {
     familyMembers: "", shopName: "", shopBusiness: "", companyAddress: "", dateOfJoiningCollege: "",
     firstRentStatus: "NOT_PAID", paymentMode: "Cash", hasCanteen: false, canteenPlanType: "",
   });
+  const isResidentialRoom = assignmentType === "room";
+  const isShop = assignmentType === "shop";
 
   function updateForm(values) {
     setGeneratedLink("");
@@ -191,13 +192,11 @@ export default function TenantInviteScreen() {
   const assignmentTypes = useMemo(() => ASSIGNMENT_TYPES.filter((type) => allowedUnitTypes(unitAccess).some((allowed) => allowed.value === type.value)), [unitAccess]);
   const groupedVacancies = useMemo(() => groupVacanciesByProperty(filteredVacancies), [filteredVacancies]);
   const selected = filteredVacancies[selectedIndex];
-  const isResidentialRoom = assignmentType === "room";
-  const isShop = assignmentType === "shop";
+  const needsUnitDetails = Boolean(selected?.unit?.isPlaceholder);
   const unitLabel = useMemo(() => selected ? formatVacancyLabel(selected.unit, selected.bed) : "No vacant unit available", [selected]);
   const canteenPlans = useMemo(() => (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal"), [canteenSettings]);
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
   const selectedCanteenMeta = useMemo(() => {
-    if (selectedCanteenPlan === "full_package") return { amount: Number(canteenSettings?.fullPackage?.monthlyAmount || 0), meals: canteenSettings?.fullPackage?.includedMeals || [] };
     if (selectedCanteenPlan === "meal_package") return { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0), meals: canteenSettings?.mealPackage?.includedMeals || [] };
     return { amount: 0, meals: [] };
   }, [canteenSettings, selectedCanteenPlan]);
@@ -218,10 +217,18 @@ export default function TenantInviteScreen() {
     if (!form.name.trim()) return setError("Tenant name is required.");
     if (!/^\d{10}$/.test(form.phoneNo)) return setError("Enter a valid 10-digit mobile number.");
     if (!selected) return setError("Select a vacant unit.");
+    if (needsUnitDetails) return setError("Set the unit details before sharing a tenant form.");
     if (assignmentType === "bed" && canteenEnabled && form.hasCanteen && (!canteenSettings?.isConfigured || !selectedCanteenPlan)) return setError("Configure canteen settings and choose a canteen billing plan.");
-    if (!Number.isFinite(Number(form.depositAmount)) || Number(form.depositAmount) < 0) return setError("Enter a valid deposit amount.");
-    if ((isResidentialRoom || isShop) && form.pincode && !/^\d{6}$/.test(form.pincode)) return setError("Enter a valid 6-digit pincode.");
-    if (isResidentialRoom && form.familyMembers && Number(form.familyMembers) < 0) return setError("Enter a valid family members count.");
+    if (!/^\d+(\.\d{1,2})?$/.test(String(form.depositAmount).trim()) || Number(form.depositAmount) < 0) return setError("Enter a valid deposit amount.");
+    if (isResidentialRoom || isShop) {
+      const requiredAddress = [["pincode", "pincode"], ["city", "city"], ["state", "state"], ["address", "local address"], ["houseNo", "house number"], ["nearbyPlace", "nearby place"]];
+      const missingAddress = requiredAddress.find(([key]) => !String(form[key] || "").trim());
+      if (missingAddress) return setError(`Enter ${missingAddress[1]}.`);
+      if (!/^\d{6}$/.test(form.pincode)) return setError("Enter a valid 6-digit pincode.");
+    }
+    if (isResidentialRoom && (!/^\d+$/.test(String(form.familyMembers).trim()) || Number(form.familyMembers) < 0)) return setError("Enter a valid family members count.");
+    if (isResidentialRoom && !form.companyAddress.trim()) return setError("Enter company address or college.");
+    if (isShop && !form.shopBusiness.trim()) return setError("Enter what is being sold or done in the shop.");
 
     try {
       createInFlight.current = true;
@@ -307,10 +314,11 @@ export default function TenantInviteScreen() {
         <Text style={styles.label}>Vacant unit</Text>
         <Pressable onPress={() => setShowUnits((current) => !current)} disabled={!filteredVacancies.length} style={[styles.select, !filteredVacancies.length && styles.disabled]}><Text style={styles.selectText}>{unitLabel}</Text><ChevronDown size={19} color={colors.muted} /></Pressable>
         {showUnits ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => { setSelectedIndex(index); setShowUnits(false); setGeneratedLink(""); }} style={[styles.option, index === selectedIndex && styles.optionActive]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
-        <Field label="Tenant name" value={form.name} onChangeText={(name) => updateForm({ name })} placeholder="Full name" />
+        {needsUnitDetails ? <View style={styles.unitSetupNotice}><View style={styles.unitSetupCopy}><Text style={styles.unitSetupTitle}>Unit details not set yet</Text><Text style={styles.unitSetupHint}>Set property, floor, unit number and rent before sharing this form.</Text></View><Pressable onPress={() => router.push("/system/units")} style={styles.setUnitButton}><Text style={styles.setUnitButtonText}>Set unit now</Text></Pressable></View> : null}
+        <Field required label="Tenant name" value={form.name} onChangeText={(name) => updateForm({ name })} placeholder="Full name" />
         {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(shopName) => updateForm({ shopName })} placeholder="Enter shop name" /> : null}
-        <Field label="Mobile number" value={form.phoneNo} onChangeText={(phoneNo) => updateForm({ phoneNo: phoneNo.replace(/\D/g, "").slice(0, 10) })} keyboardType="phone-pad" placeholder="10-digit number" />
-        <FormDateField label="Joining date" value={form.joiningDate} onChange={(joiningDate) => updateForm({ joiningDate })} />
+        <Field required label="Mobile number" value={form.phoneNo} onChangeText={(phoneNo) => updateForm({ phoneNo: phoneNo.replace(/\D/g, "").slice(0, 10) })} keyboardType="phone-pad" placeholder="10-digit number" />
+        <FormDateField label="Joining date *" value={form.joiningDate} onChange={(joiningDate) => updateForm({ joiningDate })} />
         {!isResidentialRoom && !isShop && canteenEnabled ? <>
           <Text style={styles.label}>Canteen facility</Text>
           <View style={styles.segment}>
@@ -322,7 +330,7 @@ export default function TenantInviteScreen() {
           </View>
           {form.hasCanteen ? (
             <>
-              {!canteenSettings?.isConfigured ? <Text style={styles.error}>Canteen settings are not configured yet. Open More {">"} Canteen settings first.</Text> : null}
+              {!canteenSettings?.isConfigured ? <View style={styles.configWarning}><Text style={styles.configWarningText}>Meal service settings are not configured yet.</Text><Pressable onPress={() => router.push("/system/canteen-settings")} style={styles.configButton}><Text style={styles.configButtonText}>Set up meal service</Text></Pressable></View> : null}
               <Text style={styles.label}>Canteen billing plan</Text>
               <View style={styles.segment}>
                 {canteenPlans.map((plan) => (
@@ -345,24 +353,24 @@ export default function TenantInviteScreen() {
           </View>
         </View> : null}
         {isResidentialRoom || isShop ? <>
-          <Field label="Pincode" value={form.pincode} onChangeText={(pincode) => updateForm({ pincode: pincode.replace(/\D/g, "").slice(0, 6) })} keyboardType="number-pad" placeholder="6-digit pincode" />
+          <Field required label="Pincode" value={form.pincode} onChangeText={(pincode) => updateForm({ pincode: pincode.replace(/\D/g, "").slice(0, 6) })} keyboardType="number-pad" placeholder="6-digit pincode" />
           {pinLookupStatus === "loading" ? <Text style={styles.helperText}>Fetching city and state from PIN code...</Text> : null}
           {pinLookupStatus === "success" ? <Text style={styles.helperText}>City and state updated from PIN code. You can still edit them.</Text> : null}
           {pinLookupStatus === "error" ? <Text style={styles.error}>Could not fetch city/state for this PIN code. Please enter them manually.</Text> : null}
-          <Field label="City" value={form.city} onChangeText={(city) => updateForm({ city })} />
-          <Field label="State" value={form.state} onChangeText={(state) => updateForm({ state })} />
-          <Field label="Local Address" value={form.address} onChangeText={(address) => updateForm({ address })} placeholder="House, Street, Area" />
-          <Field label="House No" value={form.houseNo} onChangeText={(houseNo) => updateForm({ houseNo })} />
-          <Field label="Nearby Place" value={form.nearbyPlace} onChangeText={(nearbyPlace) => updateForm({ nearbyPlace })} />
+          <Field required label="City" value={form.city} onChangeText={(city) => updateForm({ city })} />
+          <Field required label="State" value={form.state} onChangeText={(state) => updateForm({ state })} />
+          <Field required label="Local Address" value={form.address} onChangeText={(address) => updateForm({ address })} placeholder="House, Street, Area" />
+          <Field required label="House No" value={form.houseNo} onChangeText={(houseNo) => updateForm({ houseNo })} />
+          <Field required label="Nearby Place" value={form.nearbyPlace} onChangeText={(nearbyPlace) => updateForm({ nearbyPlace })} />
           {isResidentialRoom ? <>
-            <Field label="No. of Family Members" value={form.familyMembers} onChangeText={(familyMembers) => updateForm({ familyMembers: familyMembers.replace(/\D/g, "").slice(0, 3) })} keyboardType="number-pad" placeholder="Enter family members count" />
-            <Field label="Company Address / College" value={form.companyAddress} onChangeText={(companyAddress) => updateForm({ companyAddress })} />
-            <FormDateField label="Date of Joining College / Company" value={form.dateOfJoiningCollege} onChange={(dateOfJoiningCollege) => updateForm({ dateOfJoiningCollege })} />
-          </> : <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(shopBusiness) => updateForm({ shopBusiness })} multiline placeholder="Example: Grocery, mobile repair, salon, tailoring..." />}
-          <FormDateField label="Date of Birth" value={form.dob} onChange={(dob) => updateForm({ dob })} maximumDate={new Date()} />
+            <Field required label="No. of Family Members" value={form.familyMembers} onChangeText={(familyMembers) => updateForm({ familyMembers: familyMembers.replace(/\D/g, "").slice(0, 3) })} keyboardType="number-pad" placeholder="Enter family members count" />
+            <Field required label="Company Address / College" value={form.companyAddress} onChangeText={(companyAddress) => updateForm({ companyAddress })} />
+            <FormDateField label="Date of Joining College / Company *" value={form.dateOfJoiningCollege} onChange={(dateOfJoiningCollege) => updateForm({ dateOfJoiningCollege })} />
+          </> : <Field required label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(shopBusiness) => updateForm({ shopBusiness })} multiline placeholder="Example: Grocery, mobile repair, salon, tailoring..." />}
+          <FormDateField label={isShop ? "Date of Birth" : "Date of Birth *"} value={form.dob} onChange={(dob) => updateForm({ dob })} maximumDate={new Date()} />
         </> : null}
         <View style={styles.rentRow}><Text style={styles.rentLabel}>Monthly rent</Text><Text style={styles.rentValue}>Rs. {selected?.bed?.price || 0}</Text></View>
-        <Field label="Deposit amount" value={form.depositAmount} onChangeText={(depositAmount) => updateForm({ depositAmount })} keyboardType="numeric" placeholder="Example: 10000" />
+        <Field required label="Deposit amount" value={form.depositAmount} onChangeText={(depositAmount) => updateForm({ depositAmount: depositAmount.replace(/[^\d.]/g, "") })} keyboardType="numeric" placeholder="Example: 10000" />
         <Text style={styles.label}>Payment cycle</Text>
         <View style={styles.segment}>
           {FIRST_RENT_OPTIONS.map((option) => (
@@ -392,12 +400,12 @@ export default function TenantInviteScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background }, loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, backgroundColor:"#f6f8f7" }, loading: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: { width: "100%", maxWidth: 680, alignSelf: "center", paddingHorizontal: 14, paddingTop: 12, flexDirection: "row", alignItems: "center" },
   iconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", marginRight: 4 },
   title: { color: colors.text, fontSize: 23, fontWeight: "700" }, subtitle: { marginTop: 2, color: colors.muted, fontSize: 12 },
   content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 40 },
-  label: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
+  label: { marginTop: 16, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" }, requiredMark: { color: colors.danger },
   helperText: { marginTop: 6, color: colors.muted, fontSize: 12 },
   cycleHelp: { marginTop: 8, padding: 10, borderRadius: 7, backgroundColor: colors.primarySoft },
   cycleHelpText: { color: colors.muted, fontSize: 11, lineHeight: 17 },
@@ -417,5 +425,15 @@ const styles = StyleSheet.create({
   segment: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, segmentButton: { minHeight: 42, flexGrow: 1, flexBasis: "45%", paddingHorizontal: 12, paddingVertical: 10, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, segmentActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft }, segmentText: { color: colors.muted, fontWeight: "600", textAlign: "center" }, segmentTextActive: { color: colors.primaryDark },
   typeSegment: { padding: 4, flexDirection: "row", gap: 4, borderRadius: 7, backgroundColor: colors.border }, typeButton: { flex: 1, minWidth: 0, minHeight: 68, paddingHorizontal: 3, paddingVertical: 5, alignItems: "center", justifyContent: "center", borderRadius: 5 }, typeText: { width: "100%", color: colors.muted, fontSize: 11, lineHeight: 14, fontWeight: "700", textAlign: "center" }, typeCount: { width: "100%", marginTop: 3, color: colors.subtle, fontSize: 10, fontWeight: "600", textAlign: "center" },
   error: { marginTop: 16, color: colors.danger }, shareButton: { height: 50, marginTop: 22, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 7, backgroundColor: colors.primary }, shareText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.5 },
+  unitSetupNotice: { marginTop: 14, padding: 13, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface },
+  unitSetupCopy: { flex: 1, minWidth: 0 },
+  unitSetupTitle: { color: colors.text, fontSize: 14, fontWeight: "800" },
+  unitSetupHint: { marginTop: 4, color: colors.muted, fontSize: 11, lineHeight: 16 },
+  setUnitButton: { minHeight: 40, paddingHorizontal: 11, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary },
+  setUnitButtonText: { color: colors.surface, fontSize: 12, fontWeight: "800" },
+  configWarning: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.warning, borderRadius: 8, backgroundColor: colors.warningSoft },
+  configWarningText: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  configButton: { alignSelf: "flex-start", marginTop: 9, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 7, backgroundColor: colors.primary },
+  configButtonText: { color: colors.surface, fontSize: 11, fontWeight: "800" },
   successBox: { marginTop: 18, padding: 13, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.successSoft, borderRadius: 7, backgroundColor: colors.successSoft }, successText: { marginLeft: 10 }, successTitle: { color: colors.success, fontWeight: "700" }, successMeta: { marginTop: 2, color: colors.success, fontSize: 12 }, doneButton: { height: 48, marginTop: 10, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, doneText: { color: colors.primary, fontWeight: "700" },
 });

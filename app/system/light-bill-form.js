@@ -100,14 +100,21 @@ function propertyGroupLabel(value) {
 function unitTitle(unit) {
   const type = normalizePropertyType(unit?.propertyType);
   const number = unit?.roomNo || "-";
-  if (type === "room") return `Room ${number}`;
-  if (type === "shop") return `Shop ${number}`;
-  return `Hostel room ${number}`;
+  const displayNumber = unit?.roomNo ? number : "Unit number not set";
+  if (type === "room") return `Room ${displayNumber}`;
+  if (type === "shop") return `Shop ${displayNumber}`;
+  return `Hostel room ${displayNumber}`;
+}
+
+function propertyDisplayName(name) {
+  return String(name || "").trim().toLowerCase() === "unassigned"
+    ? "Unit"
+    : name;
 }
 
 function unitMeta(unit) {
   const parts = [
-    unit?.category,
+    unit?.category && String(unit.category).toLowerCase() !== "unassigned" ? unit.category : "Unit details not set",
     unit?.hasWing && unit?.wingName ? `Wing ${unit.wingName}` : "",
     unit?.floorNo ? `Floor ${unit.floorNo}` : "",
     unit?.flatType,
@@ -143,6 +150,7 @@ export default function LightBillFormScreen() {
   const [meterNo, setMeterNo] = useState("");
   const [entryPreviousReading, setEntryPreviousReading] = useState(null);
   const [totalReading, setTotalReading] = useState("");
+  const [unitsUsed, setUnitsUsed] = useState("");
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("pending");
   const [billingMonth, setBillingMonth] = useState(() => {
@@ -207,6 +215,7 @@ export default function LightBillFormScreen() {
       setMeterNo(bill.meterNo || "");
       setEntryPreviousReading(bill.previousReading ?? null);
       setTotalReading(String(bill.totalReading ?? ""));
+      setUnitsUsed(String(bill.consumedUnits ?? Math.max(Number(bill.totalReading || 0) - Number(bill.previousReading || 0), 0)));
       setAmount(String(bill.amount ?? bill.salary ?? ""));
       setStatus(bill.status || "pending");
       setBillingMonth(bill.billingMonth || billingMonthFromDate(bill.date));
@@ -265,7 +274,8 @@ export default function LightBillFormScreen() {
     ? Number(entryPreviousReading)
     : Number(selectedUnit?.lastMeterReading || 0);
   const currentReading = Number(totalReading || 0);
-  const consumedUnits = meterMode && Number.isFinite(currentReading) && currentReading >= previousReading ? currentReading - previousReading : 0;
+  const readingUnits = Number.isFinite(currentReading) && currentReading >= previousReading ? currentReading - previousReading : 0;
+  const consumedUnits = meterMode ? (editing ? Number(unitsUsed || 0) : readingUnits) : 0;
   const roomMeterRateMode = activeMode === "room_meter_rate" || activeMode === "room_meter_split";
   const roomMeterActualBillMode = activeMode === "room_meter_actual_bill";
   const usesCalculatedMeterAmount = meterMode && !roomMeterActualBillMode;
@@ -343,6 +353,7 @@ export default function LightBillFormScreen() {
       if (meterMode && !meterNo.trim()) return "Enter the meter number.";
       if (meterMode && (!Number.isFinite(reading) || reading < 0)) return "Enter a valid meter reading.";
       if (meterMode && selectedUnit && Number(reading) < previousReading) return "Current reading cannot be less than previous reading.";
+      if (meterMode && editing && (!Number.isFinite(Number(unitsUsed)) || Number(unitsUsed) < 0)) return "Enter valid units consumed.";
     } else if (totalReading && (!Number.isFinite(reading) || reading < 0)) {
       return "Enter a valid meter reading.";
     }
@@ -362,7 +373,7 @@ export default function LightBillFormScreen() {
       return;
     }
 
-    const numericAmount = usesCalculatedMeterAmount ? Math.round(calculatedAmount) : Number(amount);
+    const numericAmount = editing ? Number(amount) : usesCalculatedMeterAmount ? Math.round(calculatedAmount) : Number(amount);
     const payload = {
       name: generatedName,
       type,
@@ -416,12 +427,12 @@ export default function LightBillFormScreen() {
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
         <Pressable onPress={() => router.replace("/system/light-bills")} style={styles.iconButton}>
           <ArrowLeft size={22} color={colors.text} />
         </Pressable>
-        <Text style={styles.title}>{title}</Text>
+        <View style={styles.headerCopy}><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>Record electricity charges</Text></View>
       </View>
 
       <Text style={styles.label}>Property type</Text>
@@ -473,11 +484,17 @@ export default function LightBillFormScreen() {
           <Text style={styles.label}>{propertyGroupLabel(propertyType)}</Text>
           <Pressable onPress={() => setShowProperties((value) => !value)} style={styles.select}>
             <View style={styles.selectText}>
-              <Text style={styles.selectTitle}>{selectedPropertyName || `Select ${propertyGroupLabel(propertyType).toLowerCase()}`}</Text>
+              <Text style={styles.selectTitle}>{selectedPropertyName ? propertyDisplayName(selectedPropertyName) : `Select ${propertyGroupLabel(propertyType).toLowerCase()}`}</Text>
               <Text style={styles.selectMeta}>{propertyOptions.length} available</Text>
             </View>
             <ChevronDown size={20} color={colors.muted} />
           </Pressable>
+
+          {String(selectedPropertyName || "").trim().toLowerCase() === "unassigned" ? (
+            <Pressable onPress={() => router.push("/system/units")} style={styles.setDetailsButton}>
+              <Text style={styles.setDetailsButtonText}>Set details</Text>
+            </Pressable>
+          ) : null}
 
           {showProperties ? (
             <View style={styles.options}>
@@ -488,7 +505,7 @@ export default function LightBillFormScreen() {
                 return (
                   <Pressable key={name} onPress={() => selectPropertyName(name)} style={[styles.option, active && styles.optionSelected]}>
                     <View style={styles.selectText}>
-                      <Text style={styles.optionTitle}>{name}</Text>
+                      <Text style={styles.optionTitle}>{propertyDisplayName(name)}</Text>
                       <Text style={styles.selectMeta}>{count} {propertyLabel(propertyType).toLowerCase()}{count === 1 ? "" : "s"}</Text>
                     </View>
                     {active ? <Check size={18} color={colors.primary} /> : null}
@@ -505,7 +522,7 @@ export default function LightBillFormScreen() {
               <Text style={styles.selectMeta}>
                 {selectedUnit
                   ? `${unitMeta(selectedUnit)} | Meter ${selectedUnit.meterNo || "not set"} | Last reading ${selectedUnit.lastMeterReading ?? "not set"}`
-                  : selectedPropertyName ? `${selectedPropertyName} units only` : `Select ${propertyGroupLabel(propertyType).toLowerCase()} first`}
+                  : selectedPropertyName ? `${propertyDisplayName(selectedPropertyName)} only` : `Select ${propertyGroupLabel(propertyType).toLowerCase()} first`}
               </Text>
             </View>
             <ChevronDown size={20} color={colors.muted} />
@@ -542,7 +559,18 @@ export default function LightBillFormScreen() {
               {selectedUnit ? <View style={styles.readOnly}><Text style={styles.readOnlyText}>{selectedUnit.lastMeterReading ?? "Not set"}</Text></View> : null}
 
               <Text style={styles.label}>Current reading</Text>
-              <TextInput value={totalReading} onChangeText={setTotalReading} keyboardType="numeric" placeholder="Example: 250" style={styles.input} />
+              <TextInput value={totalReading} onChangeText={(value) => {
+                setTotalReading(value);
+                if (editing && value !== "" && Number.isFinite(Number(value))) {
+                  setUnitsUsed(String(Math.max(Number(value) - previousReading, 0)));
+                }
+              }} keyboardType="numeric" placeholder="Example: 250" style={styles.input} />
+              {editing ? (
+                <>
+                  <Text style={styles.label}>Units consumed</Text>
+                  <TextInput value={unitsUsed} onChangeText={setUnitsUsed} keyboardType="numeric" placeholder="Example: 120" style={styles.input} />
+                </>
+              ) : null}
               <Text style={styles.helper}>Units consumed: {consumedUnits}{roomMeterRateMode ? ` | Rate Rs. ${ratePerUnit || 0}` : ""}</Text>
               {ROOM_METER_MODES.has(activeMode) && includedUnits > 0 ? (
                 <Text style={styles.helper}>Included units: {includedUnits} | Extra units: {extraUnits} | Tenant charge: Rs. {Math.round(tenantCharge).toLocaleString("en-IN")}</Text>
@@ -569,7 +597,7 @@ export default function LightBillFormScreen() {
       {roomMeterRateMode && calculatedAmount >= 0 ? <Text style={styles.helper}>Calculated meter amount: Rs. {Math.round(calculatedAmount).toLocaleString("en-IN")}</Text> : null}
       {ROOM_METER_MODES.has(activeMode) && includedUnits > 0 && meterMode ? <Text style={styles.helper}>The reading is saved even when it is within the included limit. In that case, Rs. 0 is added to rent.</Text> : null}
 
-      {!entryNotNeeded && !roomMeterRateMode ? (
+      {!entryNotNeeded && (!roomMeterRateMode || editing) ? (
         <>
           <Text style={styles.label}>{roomMeterActualBillMode ? "Actual bill amount" : "Bill amount"}</Text>
           <TextInput value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Example: 1500" style={styles.input} />
@@ -612,12 +640,14 @@ export default function LightBillFormScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: "#F6F8F7" },
   content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 40 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: { marginBottom: 18, flexDirection: "row", alignItems: "center", backgroundColor: colors.background },
+  header: { marginBottom: 18, flexDirection: "row", alignItems: "center", backgroundColor: "#F6F8F7" },
+  headerCopy: { flex: 1, marginLeft: 4 },
   iconButton: { width: 44, height: 44, marginRight: 8, alignItems: "center", justifyContent: "center" },
-  title: { flex: 1, color: colors.text, fontSize: 24, fontWeight: "700" },
+  title: { color: colors.text, fontSize: 24, fontWeight: "700" },
+  subtitle: { marginTop: 2, color: colors.muted, fontSize: 12 },
   scenarioBox: { marginTop: 14, padding: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface },
   scenarioBoxWarning: { borderColor: colors.warning, backgroundColor: colors.warningSoft || colors.surfaceSoft },
   scenarioLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
@@ -625,6 +655,8 @@ const styles = StyleSheet.create({
   scenarioText: { marginTop: 5, color: colors.muted, fontSize: 12, fontWeight: "700", lineHeight: 17 },
   settingsLink: { alignSelf: "flex-start", marginTop: 10, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.primary },
   settingsLinkText: { color: colors.surface, fontSize: 12, fontWeight: "900" },
+  setDetailsButton: { alignSelf: "flex-start", marginTop: 8, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8, backgroundColor: colors.primary },
+  setDetailsButtonText: { color: colors.surface, fontSize: 12, fontWeight: "900" },
   label: { marginTop: 15, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 },
   monthPicker: { height: 50, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },

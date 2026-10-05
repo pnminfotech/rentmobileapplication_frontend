@@ -169,7 +169,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
       <TextInput
         value={category}
         onChangeText={setCategory}
-        placeholder="Example: Boys Hostel"
+        placeholder="Boys Hostel / Girls Hostel / 1 BHK / 2 BHK / Shop / etc."
         style={styles.input}
       />
 
@@ -177,7 +177,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
       <TextInput
         value={floorNo}
         onChangeText={setFloorNo}
-        placeholder="Example: 1"
+        placeholder="1 / 2 / 3"
         style={styles.input}
       />
 
@@ -185,7 +185,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
       <TextInput
         value={roomNo}
         onChangeText={setRoomNo}
-        placeholder="Example: 101"
+        placeholder=" 101 / 201 / 301"
         style={styles.input}
       />
 
@@ -206,7 +206,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
           <TextInput
             value={wingName}
             onChangeText={setWingName}
-            placeholder="Example: A"
+            placeholder="A / B / C / etc."
             style={styles.input}
           />
         </>
@@ -218,7 +218,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
           <TextInput
             value={flatType}
             onChangeText={setFlatType}
-            placeholder="Example: 1 RK or 1 BHK"
+            placeholder="1 RK / 1 BHK"
             style={styles.input}
           />
         </>
@@ -230,7 +230,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
       value={bedCount}
       onChangeText={setBedCount}
       keyboardType="number-pad"
-      placeholder="Example: 3"
+      placeholder="3 "
       style={styles.input}
     />
 
@@ -238,7 +238,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
     <TextInput
       value={bedCategory}
       onChangeText={setBedCategory}
-      placeholder="Example: Standard"
+      placeholder=" Standard"
       style={styles.input}
     />
   </>
@@ -252,7 +252,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
   value={monthlyPrice}
   onChangeText={setMonthlyPrice}
   keyboardType="numeric"
-  placeholder="Example: 5000"
+  placeholder="5000"
   style={styles.input}
 />
       {error ? <Text style={styles.error}>{error}</Text> : null}

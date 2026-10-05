@@ -211,9 +211,8 @@ export default function SystemTabsLayout() {
           /* PAGE */
 
           sceneStyle: {
-            // Android reserves the status-bar area itself. Do not add a second
-            // navigator inset above every system page.
-            paddingTop: 0,
+            // Keep every system page below the device status bar consistently.
+            paddingTop: insets.top,
 
             backgroundColor:
               systemColors.screen,
@@ -688,11 +687,6 @@ export default function SystemTabsLayout() {
           name="payments"
           options={{
             href: null,
-
-            tabBarStyle: {
-              display:
-                "none",
-            },
           }}
         />
 
@@ -724,11 +718,6 @@ export default function SystemTabsLayout() {
           name="staff-expenses"
           options={{
             href: null,
-
-            tabBarStyle: {
-              display:
-                "none",
-            },
           }}
         />
 
@@ -748,11 +737,6 @@ export default function SystemTabsLayout() {
           name="expenses"
           options={{
             href: null,
-
-            tabBarStyle: {
-              display:
-                "none",
-            },
           }}
         />
 
