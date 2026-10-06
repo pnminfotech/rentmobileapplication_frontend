@@ -9,6 +9,7 @@ import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { stackedPropertyLabel } from "../../src/utils/unitLabels";
 import { systemColors as colors } from "../../src/theme/systemTheme";
+import SecurityPinModal from "../../src/components/SecurityPinModal";
 
 const SUMMARY_FILTERS = [
   { label: "List month", value: "month" },
@@ -206,6 +207,7 @@ export default function LightBillsScreen() {
   const [showWingFilter, setShowWingFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [openActionsId, setOpenActionsId] = useState("");
   const [error, setError] = useState("");
 
@@ -321,23 +323,15 @@ export default function LightBillsScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: async () => {
-          try {
-            setDeletingId(String(bill._id));
-            await deleteLightBill(bill._id);
-            await loadBills();
-          } catch (err) {
-            Alert.alert("Unable to delete", err.response?.data?.message || "Please try again.");
-          } finally {
-            setDeletingId("");
-          }
-        },
+        onPress: () => setPendingDelete(bill),
       },
     ]);
   }
+  async function deleteWithPin(pin) { const bill = pendingDelete; if (!bill) return; try { setDeletingId(String(bill._id)); await deleteLightBill(bill._id, pin); setPendingDelete(null); await loadBills(); } catch (err) { Alert.alert("Unable to delete", err.response?.data?.message || "Please try again."); } finally { setDeletingId(""); } }
 
   return (
     <View style={styles.screen}>
+      <SecurityPinModal visible={Boolean(pendingDelete)} title="Delete light bill" message="Enter your security PIN to delete this light bill." loading={Boolean(deletingId)} onClose={() => setPendingDelete(null)} onConfirm={deleteWithPin} />
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.headerText}>

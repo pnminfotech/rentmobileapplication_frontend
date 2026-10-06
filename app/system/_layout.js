@@ -802,6 +802,13 @@ export default function SystemTabsLayout() {
         />
 
         <Tabs.Screen
+          name="security"
+          options={{
+            href: null,
+          }}
+        />
+
+        <Tabs.Screen
           name="wallet"
           options={{
             href: null,

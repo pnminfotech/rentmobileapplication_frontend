@@ -276,6 +276,9 @@ export default function TenantFormScreen() {
         <View style={styles.unitDetailsPanel}>
           <Text style={styles.panelTitle}>Set unit details first</Text>
           <Text style={styles.panelHint}>This unit is already added, but room or unit details are not set yet. Set them here first, then save the tenant.</Text>
+          <Pressable onPress={() => router.push({ pathname: "/system/units", params: { openUnitId: selected?.unit?._id } })} style={styles.setUnitButton}>
+            <Text style={styles.setUnitButtonText}>Set unit now</Text>
+          </Pressable>
 
           <Text style={styles.label}>{detailLabels.category}</Text>
           <TextInput value={unitDraft.category} onChangeText={(value) => updateDraft("category", value)} placeholder={`Enter ${detailLabels.category.toLowerCase()}`} style={styles.input} />
@@ -368,6 +371,8 @@ const styles = StyleSheet.create({
   unitDetailsPanel: { marginTop: 16, padding: 13, borderWidth: 1, borderColor: colors.primarySoft, borderRadius: 8, backgroundColor: colors.surface },
   panelTitle: { color: colors.text, fontSize: 15, fontWeight: "800" },
   panelHint: { marginTop: 5, color: colors.muted, fontSize: 12, lineHeight: 17 },
+  setUnitButton: { alignSelf: "flex-start", marginTop: 12, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, backgroundColor: colors.primary },
+  setUnitButtonText: { color: colors.surface, fontSize: 13, fontWeight: "800" },
   typeSegment: { padding: 4, flexDirection: "row", gap: 4, borderRadius: 7, backgroundColor: colors.border },
   typeButton: { flex: 1, minWidth: 0, minHeight: 68, paddingHorizontal: 3, paddingVertical: 5, alignItems: "center", justifyContent: "center", borderRadius: 5 },
   typeText: { width: "100%", color: colors.muted, fontSize: 11, lineHeight: 14, fontWeight: "700", textAlign: "center" },

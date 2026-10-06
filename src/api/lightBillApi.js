@@ -25,7 +25,7 @@ export async function updateLightBill(id, payload) {
   return data;
 }
 
-export async function deleteLightBill(id) {
-  const { data } = await api.delete(`/light-bill/${id}`);
+export async function deleteLightBill(id, securityPin) {
+  const { data } = await api.delete(`/light-bill/${id}`, { data: { securityPin } });
   return data;
 }

@@ -13,6 +13,7 @@ import { ASSIGNMENT_TYPES, filterVacanciesByType, formatVacancyLabel, formatVaca
 import { allowedUnitTypes, firstAllowedType } from "../../src/utils/subscriptionAccess";
 import { hasCanteenFeature } from "../../src/utils/featureAccess";
 import { systemColors as colors } from "../../src/theme/systemTheme";
+import UnitDetailsSetupModal from "../../src/components/UnitDetailsSetupModal";
 
 const FIRST_RENT_OPTIONS = [
   { value: "NOT_PAID", label: "Normal cycle" },
@@ -88,12 +89,14 @@ export default function TenantInviteScreen() {
   const router = useRouter();
   const createInFlight = useRef(false);
   const [vacancies, setVacancies] = useState([]);
+  const [allUnits, setAllUnits] = useState([]);
   const [unitAccess, setUnitAccess] = useState(null);
   const [canteenEnabled, setCanteenEnabled] = useState(false);
   const [canteenSettings, setCanteenSettings] = useState(null);
   const [assignmentType, setAssignmentType] = useState("bed");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showUnits, setShowUnits] = useState(false);
+  const [showUnitSetup, setShowUnitSetup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generatedLink, setGeneratedLink] = useState("");
@@ -172,6 +175,7 @@ export default function TenantInviteScreen() {
   const loadData = useCallback(async () => {
     try {
       const [units, tenants, dashboardData, settingsData] = await Promise.all([getRooms(), getTenants(), getSystemDashboard(), getCanteenSettings().catch(() => null)]);
+      setAllUnits(Array.isArray(units) ? units : []);
       setVacancies(buildVacancies(Array.isArray(units) ? units : [], Array.isArray(tenants) ? tenants : []));
       setUnitAccess(dashboardData?.units || dashboardData);
       setCanteenEnabled(hasCanteenFeature(dashboardData));
@@ -313,8 +317,8 @@ export default function TenantInviteScreen() {
         })}</View>
         <Text style={styles.label}>Vacant unit</Text>
         <Pressable onPress={() => setShowUnits((current) => !current)} disabled={!filteredVacancies.length} style={[styles.select, !filteredVacancies.length && styles.disabled]}><Text style={styles.selectText}>{unitLabel}</Text><ChevronDown size={19} color={colors.muted} /></Pressable>
-        {showUnits ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => { setSelectedIndex(index); setShowUnits(false); setGeneratedLink(""); }} style={[styles.option, index === selectedIndex && styles.optionActive]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
-        {needsUnitDetails ? <View style={styles.unitSetupNotice}><View style={styles.unitSetupCopy}><Text style={styles.unitSetupTitle}>Unit details not set yet</Text><Text style={styles.unitSetupHint}>Set property, floor, unit number and rent before sharing this form.</Text></View><Pressable onPress={() => router.push("/system/units")} style={styles.setUnitButton}><Text style={styles.setUnitButtonText}>Set unit now</Text></Pressable></View> : null}
+        {showUnits ? <View style={styles.options}>{groupedVacancies.map((group) => <View key={group.propertyName}><Text style={styles.optionGroupTitle}>{group.propertyName}</Text>{group.vacancies.map(({ unit, bed }) => { const index = filteredVacancies.findIndex((vacancy) => String(vacancy.unit._id) === String(unit._id) && String(vacancy.bed?.bedNo || "") === String(bed?.bedNo || "")); return <Pressable key={`${unit._id}-${bed.bedNo}`} onPress={() => { setSelectedIndex(index); setShowUnits(false); setGeneratedLink(""); if (unit.isPlaceholder) setShowUnitSetup(true); }} style={[styles.option, index === selectedIndex && styles.optionActive]}><View style={styles.optionText}><Text style={styles.optionTitle}>{unitTypeLabel(unit)}</Text><Text style={styles.optionMeta}>{formatVacancyMeta(unit, bed)}</Text></View>{index === selectedIndex ? <Check size={18} color={colors.primary} /> : null}</Pressable>; })}</View>)}</View> : null}
+        {needsUnitDetails ? <View style={styles.unitSetupNotice}><View style={styles.unitSetupCopy}><Text style={styles.unitSetupTitle}>Unit details not set yet</Text><Text style={styles.unitSetupHint}>Set property, floor, unit number and rent before sharing this form.</Text></View><Pressable onPress={() => setShowUnitSetup(true)} style={styles.setUnitButton}><Text style={styles.setUnitButtonText}>Set unit now</Text></Pressable></View> : null}
         <Field required label="Tenant name" value={form.name} onChangeText={(name) => updateForm({ name })} placeholder="Full name" />
         {isShop ? <Field label="Shop name" value={form.shopName} onChangeText={(shopName) => updateForm({ shopName })} placeholder="Enter shop name" /> : null}
         <Field required label="Mobile number" value={form.phoneNo} onChangeText={(phoneNo) => updateForm({ phoneNo: phoneNo.replace(/\D/g, "").slice(0, 10) })} keyboardType="phone-pad" placeholder="10-digit number" />
@@ -395,6 +399,7 @@ export default function TenantInviteScreen() {
         <Pressable onPress={() => generatedLink ? shareAgain() : createAndShare()} disabled={saving || !selected} style={[styles.shareButton, (saving || !selected) && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <><Share2 size={19} color={colors.surface} /><Text style={styles.shareText}>{generatedLink ? "Share link again" : "Create and share link"}</Text></>}</Pressable>
         {generatedLink ? <Pressable onPress={() => router.replace("/system/tenants")} style={styles.doneButton}><Text style={styles.doneText}>Done</Text></Pressable> : null}
       </ScrollView>
+      <UnitDetailsSetupModal visible={showUnitSetup && needsUnitDetails} unit={selected?.unit} bed={selected?.bed} savedUnits={allUnits} onClose={() => setShowUnitSetup(false)} onSaved={async () => { setShowUnitSetup(false); await loadData(); }} />
     </View>
   );
 }

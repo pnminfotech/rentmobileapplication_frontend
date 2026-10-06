@@ -651,14 +651,14 @@ export default function TenantDetailsScreen() {
   }
 
   async function confirmDelete() {
-    if (!deletePassword.trim()) return Alert.alert("Password required", "Enter your password to delete this tenant.");
+    if (!/^\d{4,8}$/.test(deletePassword.trim())) return Alert.alert("Security PIN required", "Enter your 4 to 8 digit security PIN to delete this tenant.");
     try {
       setDeleting(true);
       await deleteTenant(id, deletePassword);
       setShowDeleteModal(false);
       Alert.alert("Tenant deleted", "The tenant has been deleted successfully.", [{ text: "OK", onPress: () => router.replace(returnTo) }]);
     } catch (err) {
-      Alert.alert("Unable to delete tenant", err.response?.data?.message || err.message || "Please check the password and try again.");
+      Alert.alert("Unable to delete tenant", err.response?.data?.message || err.message || "Please check the security PIN and try again.");
     } finally {
       setDeleting(false);
     }
@@ -1791,8 +1791,8 @@ export default function TenantDetailsScreen() {
         <View style={styles.deleteOverlay}>
           <View style={styles.deleteModal}>
             <Text style={styles.deleteTitle}>Confirm deletion</Text>
-            <Text style={styles.deleteHint}>Enter your password to permanently delete {tenant.name}.</Text>
-            <TextInput value={deletePassword} onChangeText={setDeletePassword} secureTextEntry placeholder="Password" style={styles.deleteInput} />
+            <Text style={styles.deleteHint}>Enter your security PIN to permanently delete {tenant.name}.</Text>
+            <TextInput value={deletePassword} onChangeText={(value) => setDeletePassword(value.replace(/\D/g, "").slice(0, 8))} keyboardType="number-pad" secureTextEntry placeholder="Security PIN" style={styles.deleteInput} />
             <View style={styles.deleteActions}>
               <Pressable onPress={() => { setShowDeleteModal(false); setDeletePassword(""); }} style={styles.deleteCancel}><Text style={styles.deleteCancelText}>Cancel</Text></Pressable>
               <Pressable onPress={confirmDelete} disabled={deleting} style={styles.deleteConfirm}>{deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.deleteConfirmText}>Delete tenant</Text>}</Pressable>

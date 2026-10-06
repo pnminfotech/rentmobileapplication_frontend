@@ -80,23 +80,23 @@ export async function getOrganizations() {
   return data;
 }
 
-export async function updateOrganizationStatus(organizationId, status) {
-  const { data } = await api.patch(`/saas/admin/organizations/${organizationId}/status`, { status });
+export async function updateOrganizationStatus(organizationId, status, securityPin) {
+  const { data } = await api.patch(`/saas/admin/organizations/${organizationId}/status`, { status, securityPin });
   return data;
 }
 
-export async function activateSubscription(subscriptionId) {
-  const { data } = await api.post(`/saas/admin/subscriptions/${subscriptionId}/activate`);
+export async function getOrganizationVacantUnits(organizationId) {
+  const { data } = await api.get(`/saas/admin/organizations/${organizationId}/vacant-units`);
   return data;
 }
 
-export async function renewOrganizationSubscription(organizationId, payload = {}) {
-  const { data } = await api.post(`/saas/admin/organizations/${organizationId}/renew`, payload);
+export async function removeOrganizationVacantUnit(organizationId, unitId, payload) {
+  const { data } = await api.delete(`/saas/admin/organizations/${organizationId}/vacant-units/${unitId}`, { data: payload });
   return data;
 }
 
-export async function approveOrganizationUpgrade(organizationId, payload = {}) {
-  const { data } = await api.post(`/saas/admin/organizations/${organizationId}/upgrade/approve`, payload);
+export async function activateSubscription(subscriptionId, securityPin) {
+  const { data } = await api.post(`/saas/admin/subscriptions/${subscriptionId}/activate`, { securityPin });
   return data;
 }
 
@@ -125,8 +125,8 @@ export async function updateSubscriptionPlan(planId, payload) {
   return data;
 }
 
-export async function deleteSubscriptionPlan(planId) {
-  const { data } = await api.delete(`/saas/admin/plans/${planId}`);
+export async function deleteSubscriptionPlan(planId, securityPin) {
+  const { data } = await api.delete(`/saas/admin/plans/${planId}`, { data: { securityPin } });
   return data;
 }
 
@@ -145,8 +145,38 @@ export async function updateReferralCode(referralId, payload) {
   return data;
 }
 
-export async function deleteReferralCode(referralId) {
-  const { data } = await api.delete(`/saas/admin/referrals/${referralId}`);
+export async function deleteReferralCode(referralId, securityPin) {
+  const { data } = await api.delete(`/saas/admin/referrals/${referralId}`, { data: { securityPin } });
+  return data;
+}
+
+export async function getSecurityPinStatus() {
+  const { data } = await api.get("/saas/admin/security/pin-status");
+  return data;
+}
+
+export async function getSystemSecurityPinStatus() {
+  const { data } = await api.get("/saas/security/pin-status");
+  return data;
+}
+
+export async function saveSystemSecurityPin(payload) {
+  const { data } = await api.post("/saas/security/pin", payload);
+  return data;
+}
+
+export async function resetSystemSecurityPin(payload) {
+  const { data } = await api.post("/saas/security/pin/reset", payload);
+  return data;
+}
+
+export async function saveSecurityPin(payload) {
+  const { data } = await api.post("/saas/admin/security/pin", payload);
+  return data;
+}
+
+export async function resetSecurityPin(payload) {
+  const { data } = await api.post("/saas/admin/security/pin/reset", payload);
   return data;
 }
 

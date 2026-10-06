@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   BedDouble, Building2, ChevronRight,
   DoorOpen, MapPin, Plus, Search, Store,Check,
@@ -424,6 +424,8 @@ function BuildingCard({
 
 export default function UnitsModernScreen() {
   const router = useRouter();
+  const { openUnitId } = useLocalSearchParams();
+  const openedUnitRef = useRef("");
   const responsive = useResponsive();
   const { unitTypes, firstUnitType } = useSystemAccess();
   const visibleTypes = useMemo(
@@ -477,6 +479,14 @@ const [showMeterDetails, setShowMeterDetails] = useState(false);
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => {
+    const targetId = String(openUnitId || "");
+    if (!targetId || openedUnitRef.current === targetId || !units.length) return;
+    const unit = units.find((item) => String(item?._id) === targetId);
+    if (!unit) return;
+    openedUnitRef.current = targetId;
+    openUnitDetails(unit);
+  }, [openUnitId, units]);
 function openRenameProperty(building) {
   setRenameTarget(building);
   setPropertyName(building?.name || "");
@@ -516,7 +526,7 @@ function updateUnitDetailsDraft(key, value) {
       if (!text) next[key] = `${key === "roomNo" ? "Unit number" : key === "floorNo" ? "Floor" : "Property name"} is required.`;
       else delete next[key];
       const draft = { ...unitDetailsDraft, [key]: value };
-      const duplicateUnit = draft.category.trim() && draft.floorNo.trim() && draft.roomNo.trim() && units.some((unit) => String(unit?._id || "") !== String(unitDetailsTarget?._id || "") && !unit?.isPlaceholder && normalizeKey(unit.category) === normalizeKey(draft.category) && normalizeKey(unit.floorNo) === normalizeKey(draft.floorNo) && normalizeKey(unit.roomNo) === normalizeKey(draft.roomNo));
+      const duplicateUnit = targetType !== "bed" && draft.category.trim() && draft.floorNo.trim() && draft.roomNo.trim() && units.some((unit) => String(unit?._id || "") !== String(unitDetailsTarget?._id || "") && !unit?.isPlaceholder && normalizeKey(unit.category) === normalizeKey(draft.category) && normalizeKey(unit.floorNo) === normalizeKey(draft.floorNo) && normalizeKey(unit.roomNo) === normalizeKey(draft.roomNo));
       if (duplicateUnit) next.roomNo = "This unit number already exists on this floor.";
       else if (key !== "roomNo" || text) delete next.roomNo;
     }
@@ -529,7 +539,10 @@ function updateUnitDetailsDraft(key, value) {
       else delete next.flatType;
     }
     if (key === "bedNo") {
-      const duplicate = targetType === "bed" && (unitDetailsTarget?.beds || []).some((bed) => String(bed.bedNo || "").trim().toLowerCase() !== String(unitDetailsTarget?.beds?.[0]?.bedNo || "").trim().toLowerCase() && String(bed.bedNo || "").trim().toLowerCase() === text.toLowerCase());
+      const draft = { ...unitDetailsDraft, [key]: value };
+      const localDuplicate = (unitDetailsTarget?.beds || []).some((bed) => String(bed.bedNo || "").trim().toLowerCase() !== String(unitDetailsTarget?.beds?.[0]?.bedNo || "").trim().toLowerCase() && String(bed.bedNo || "").trim().toLowerCase() === text.toLowerCase());
+      const roomDuplicate = targetType === "bed" && units.some((unit) => String(unit?._id || "") !== String(unitDetailsTarget?._id || "") && !unit?.isPlaceholder && normalizeKey(unit.category) === normalizeKey(draft.category) && normalizeKey(unit.floorNo) === normalizeKey(draft.floorNo) && normalizeKey(unit.roomNo) === normalizeKey(draft.roomNo) && (unit.beds || []).some((bed) => normalizeKey(bed.bedNo) === normalizeKey(text)));
+      const duplicate = localDuplicate || roomDuplicate;
       if (!text) next.bedNo = "Bed number is required.";
       else if (duplicate) next.bedNo = "This bed number already exists in this room.";
       else delete next.bedNo;

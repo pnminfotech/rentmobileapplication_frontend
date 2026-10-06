@@ -8,6 +8,7 @@ import { deleteExpense, getExpenses } from "../../src/api/expenseApi";
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { systemColors as colors } from "../../src/theme/systemTheme";
+import SecurityPinModal from "../../src/components/SecurityPinModal";
 
 const STATUS_FILTERS = [
   { label: "All", value: "all" },
@@ -98,6 +99,7 @@ export default function ExpensesScreen() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [error, setError] = useState("");
 
   const loadItems = useCallback(async () => {
@@ -159,23 +161,26 @@ export default function ExpensesScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: async () => {
-          try {
-            setDeletingId(String(item._id));
-            await deleteExpense(item._id);
-            await loadItems();
-          } catch (err) {
-            Alert.alert("Unable to delete", err.response?.data?.message || "Please try again.");
-          } finally {
-            setDeletingId("");
-          }
-        },
+        onPress: () => setPendingDelete(item),
       },
     ]);
+  }
+  async function deleteWithPin(pin) {
+    const item = pendingDelete;
+    if (!item) return;
+    try {
+      setDeletingId(String(item._id));
+      await deleteExpense(item._id, pin);
+      setPendingDelete(null);
+      await loadItems();
+    } catch (err) {
+      Alert.alert("Unable to delete", err.response?.data?.message || "Please try again.");
+    } finally { setDeletingId(""); }
   }
 
   return (
     <View style={styles.screen}>
+      <SecurityPinModal visible={Boolean(pendingDelete)} title="Delete expense" message="Enter your security PIN to delete this expense." loading={Boolean(deletingId)} onClose={() => setPendingDelete(null)} onConfirm={deleteWithPin} />
       <View style={styles.content}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>

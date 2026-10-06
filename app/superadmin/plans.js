@@ -29,6 +29,7 @@ import {
   updateSubscriptionPlan,
 } from "../../src/api/saasApi";
 import { useResponsive } from "../../src/utils/responsive";
+import SecurityPinModal from "../../src/components/SecurityPinModal";
 
 const COLORS = {
   // Kept in sync with the Super Admin dashboard.
@@ -225,6 +226,7 @@ export default function PlansScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionId, setActionId] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
@@ -339,11 +341,12 @@ export default function PlansScreen() {
     }
   }
 
-  async function removePlan(plan) {
+  async function removePlan(plan, securityPin) {
     try {
       setActionId(String(plan._id));
-      const result = await deleteSubscriptionPlan(plan._id);
+      const result = await deleteSubscriptionPlan(plan._id, securityPin);
       await loadPlans();
+      setPendingDelete(null);
       if (result?.deactivated) {
         setError(result.message);
       }
@@ -360,7 +363,7 @@ export default function PlansScreen() {
       `${plan.name} will be permanently removed from subscription plan templates.`,
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => removePlan(plan) },
+        { text: "Continue", style: "destructive", onPress: () => setPendingDelete(plan) },
       ]
     );
   }
@@ -454,7 +457,8 @@ export default function PlansScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, contentInsets]} showsVerticalScrollIndicator={false}>
+    <View style={styles.screen}>
+    <ScrollView contentContainerStyle={[styles.content, contentInsets]} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.menuButton}><ArrowLeft size={24} color={COLORS.text} /></Pressable>
         <View style={styles.headerText}>
@@ -507,6 +511,8 @@ export default function PlansScreen() {
         />
       ))}
     </ScrollView>
+    <SecurityPinModal visible={Boolean(pendingDelete)} title="Delete subscription plan" message="Enter your security PIN to permanently delete this plan." loading={Boolean(actionId)} onClose={() => setPendingDelete(null)} onConfirm={(pin) => removePlan(pendingDelete, pin)} />
+    </View>
   );
 }
 

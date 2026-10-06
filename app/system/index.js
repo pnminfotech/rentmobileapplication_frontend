@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View,
 } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
@@ -252,6 +252,7 @@ export default function SystemAdminScreen() {
   );
   const [showMonthFilter, setShowMonthFilter] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [vacancyPickerOpen, setVacancyPickerOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -382,17 +383,7 @@ export default function SystemAdminScreen() {
       router.push({ pathname: "/system/tenants", params: { type: activeFilter, view: "vacant" } });
       return;
     }
-    Alert.alert(
-      "View vacant units",
-      "Select a property type.",
-      [
-        ...availableTypes.map((item) => ({
-          text: item.label,
-          onPress: () => router.push({ pathname: "/system/tenants", params: { type: item.value, view: "vacant" } }),
-        })),
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+    setVacancyPickerOpen(true);
   };
   const metrics = [
     {
@@ -425,7 +416,7 @@ export default function SystemAdminScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding, paddingTop: 16 }]}
+        contentContainerStyle={[styles.content, { paddingHorizontal: responsive.pagePadding, paddingTop: 4 }]}
         showsVerticalScrollIndicator={false}
         refreshing={refreshing}
         onRefresh={loadDashboard}
@@ -564,6 +555,16 @@ export default function SystemAdminScreen() {
           <Text style={styles.accessNote}>Available: {availableTypes.map((type) => type.label).join(", ")}</Text>
         </>
       )}
+
+      <Modal visible={vacancyPickerOpen} transparent animationType="fade" onRequestClose={() => setVacancyPickerOpen(false)}>
+        <View style={styles.vacancyOverlay}>
+          <View style={styles.vacancyPicker}>
+            <View style={styles.vacancyHeader}><View><Text style={styles.vacancyTitle}>View vacant units</Text><Text style={styles.vacancyHint}>Select a property type.</Text></View><Pressable onPress={() => setVacancyPickerOpen(false)} style={styles.vacancyClose} accessibilityLabel="Close vacant units"><X size={20} color={UI.text} /></Pressable></View>
+            {availableTypes.map((item) => <Pressable key={item.value} onPress={() => { setVacancyPickerOpen(false); router.push({ pathname: "/system/tenants", params: { type: item.value, view: "vacant" } }); }} style={styles.vacancyOption}><Text style={styles.vacancyOptionText}>{item.label}</Text><ChevronRight size={18} color={UI.primary} /></Pressable>)}
+            <Pressable onPress={() => setVacancyPickerOpen(false)} style={styles.vacancyCloseButton}><Text style={styles.vacancyCloseButtonText}>Close</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={drawerOpen} transparent animationType="fade" onRequestClose={() => setDrawerOpen(false)}>
         <View style={styles.drawerOverlay}>
@@ -722,6 +723,16 @@ const styles = StyleSheet.create({
   canteenText: { color: UI.primary, fontSize: 13, fontWeight: "800" },
   accessNote: { marginTop: 14, color: UI.muted, fontSize: 10, textAlign: "center" },
   error: { marginBottom: 12, padding: 12, borderRadius: 12, color: colors.danger, backgroundColor: colors.dangerSoft, fontSize: 13, fontWeight: "800" },
+  vacancyOverlay: { flex: 1, padding: 24, justifyContent: "center", backgroundColor: "rgba(17, 27, 42, 0.48)" },
+  vacancyPicker: { overflow: "hidden", borderRadius: 14, backgroundColor: UI.card },
+  vacancyHeader: { padding: 18, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10, borderBottomWidth: 1, borderBottomColor: UI.border },
+  vacancyTitle: { color: UI.text, fontSize: 20, fontWeight: "900" },
+  vacancyHint: { marginTop: 4, color: UI.muted, fontSize: 13 },
+  vacancyClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: UI.mint },
+  vacancyOption: { minHeight: 52, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: UI.border },
+  vacancyOptionText: { color: UI.primaryDark, fontSize: 14, fontWeight: "900" },
+  vacancyCloseButton: { minHeight: 46, margin: 14, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: UI.primary },
+  vacancyCloseButtonText: { color: "#FFF", fontWeight: "900" },
   drawerOverlay: { flex: 1, alignItems: "flex-end", backgroundColor: "rgba(17, 27, 42, 0.48)" },
   drawerPanel: { width: "86%", maxWidth: 360, height: "100%", paddingHorizontal: 14, backgroundColor: UI.screen, elevation: 18, shadowColor: "#111827", shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: -5, height: 0 } },
   drawerHeader: { minHeight: 62, flexDirection: "row", alignItems: "center", paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: UI.border },

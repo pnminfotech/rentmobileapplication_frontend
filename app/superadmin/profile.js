@@ -174,6 +174,12 @@ export default function SuperAdminProfileScreen() {
           onPress={sendPasswordReset}
         />
         <SettingRow
+          Icon={ShieldCheck}
+          title="Security PIN"
+          subtitle="Protect suspend, activate and delete actions"
+          onPress={() => router.push("/superadmin/security")}
+        />
+        <SettingRow
           Icon={Bell}
           title="Notification Preferences"
           subtitle="Coming soon"
@@ -207,7 +213,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { width: "100%", maxWidth: 430, alignSelf: "center", paddingTop: 8, paddingBottom: 42 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.bg },
-  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8, marginTop: 0 },
   backButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
   headerText: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
   eyebrow: { color: COLORS.orange, fontSize: 11, fontWeight: "900" },

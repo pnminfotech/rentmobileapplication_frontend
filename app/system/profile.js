@@ -186,6 +186,13 @@ export default function SystemProfileScreen() {
     try {
       setAction("upgrade");
       const result = await requestSubscriptionUpgrade({ units: unitsToAdd, useWallet: useWalletForUpgrade });
+      if (result?.trialUpgrade) {
+        setUpgradeUnits({ beds: "", rooms: "", shops: "" });
+        setShowUpgrade(false);
+        await load();
+        Alert.alert("Units added", "Your new units are ready to use. You can add or adjust units anytime during your free trial. When the trial ends, you can choose the units you want to keep before subscribing.");
+        return;
+      }
       const transactionId = result?.transaction?._id;
       if (!transactionId) throw new Error("Upgrade payment transaction was not created.");
       const payment = await createSaasPayment({ transactionId });
@@ -254,6 +261,7 @@ export default function SystemProfileScreen() {
   const organization = bootstrap?.organization || {};
   const subscription = bootstrap?.subscription || {};
   const units = subscription?.units || organization?.unitAllocation || {};
+  const isTrial = Number(subscription?.amount || 0) === 0 && !subscription?.planId && String(subscription?.status || "").toLowerCase() === "active";
   const purchasedUnitTypes = allowedUnitTypes(subscription);
   const initials = String(user.name || user.email || "AD").trim().slice(0, 2).toUpperCase();
   const walletBalance = Number(wallet?.balance || 0);
@@ -329,8 +337,8 @@ export default function SystemProfileScreen() {
           <View style={styles.upgradeHeading}>
             <Layers3 size={19} color={S.muted} />
             <View>
-              <Text style={styles.sectionTitle}>Upgrade package</Text>
-              <Text style={styles.helperText}>Buy extra beds, rooms, or shops for this account</Text>
+              <Text style={styles.sectionTitle}>{isTrial ? "Trial units" : "Upgrade package"}</Text>
+              <Text style={styles.helperText}>{isTrial ? "Add units freely during your trial. Before subscribing, you can decide which units you want to keep." : "Buy extra beds, rooms, or shops for this account"}</Text>
             </View>
           </View>
           <Pressable onPress={() => setShowUpgrade((value) => !value)} style={styles.smallAction}>
@@ -362,7 +370,7 @@ export default function SystemProfileScreen() {
                 </View>
               ))}
             </View>
-            <Pressable
+            {!isTrial ? <Pressable
               onPress={() => walletBalance > 0 && setUseWalletForUpgrade((value) => !value)}
               disabled={!walletBalance}
               style={[styles.walletRow, !walletBalance && styles.walletDisabled]}
@@ -379,10 +387,10 @@ export default function SystemProfileScreen() {
               <View style={[styles.toggle, useWalletForUpgrade && walletBalance > 0 && styles.toggleActive]}>
                 <View style={[styles.toggleKnob, useWalletForUpgrade && walletBalance > 0 && styles.toggleKnobActive]} />
               </View>
-            </Pressable>
+            </Pressable> : null}
             <Pressable onPress={submitUpgradePayment} disabled={action === "upgrade"} style={styles.upgradeButton}>
               {action === "upgrade" ? <ActivityIndicator size="small" color="#fff" /> : <CirclePlus size={18} color="#fff" />}
-              <Text style={styles.upgradeButtonText}>Make payment</Text>
+              <Text style={styles.upgradeButtonText}>{isTrial ? "Add trial units free" : "Make payment"}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -395,6 +403,12 @@ export default function SystemProfileScreen() {
           title="Change Password"
           subtitle={action === "password" ? "Sending reset link..." : "Send reset link to registered email"}
           onPress={sendPasswordReset}
+        />
+        <SettingRow
+          Icon={ShieldCheck}
+          title="Security PIN"
+          subtitle="Set or reset PIN for delete actions"
+          onPress={() => router.push("/system/security")}
         />
         <SettingRow
           Icon={HelpCircle}
@@ -422,9 +436,9 @@ export default function SystemProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F6F8F7" },
-  content: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 20, paddingTop: 3, paddingBottom: 20 },
+  content: { width: "100%", maxWidth: 430, alignSelf: "center", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F6F8F7" },
-  header: { minHeight: 52, flexDirection: "row", alignItems: "center", marginBottom: 7, marginTop: 35 },
+  header: { minHeight: 52, flexDirection: "row", alignItems: "center", marginBottom: 7 },
   backButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   headerText: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
   eyebrow: { color: S.muted, fontSize: 9, letterSpacing: 0, fontWeight: "800", textTransform: "uppercase" },

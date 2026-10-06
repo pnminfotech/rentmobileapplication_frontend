@@ -65,9 +65,12 @@ export function formatVacancyLabel(unit = {}, bed = {}) {
 }
 
 export function filterVacanciesByType(vacancies = [], propertyType = "bed") {
-  if (propertyType === "all") return vacancies;
-  const type = normalizePropertyType(propertyType);
-  return vacancies.filter(({ unit }) => normalizePropertyType(unit?.propertyType) === type);
+  const matching = propertyType === "all"
+    ? [...vacancies]
+    : vacancies.filter(({ unit }) => normalizePropertyType(unit?.propertyType) === normalizePropertyType(propertyType));
+  // Always offer usable, fully configured units first. Pending placeholders
+  // remain available at the bottom for the admin to finish setting up.
+  return matching.sort((left, right) => Number(Boolean(left?.unit?.isPlaceholder)) - Number(Boolean(right?.unit?.isPlaceholder)));
 }
 
 export function groupVacanciesByProperty(vacancies = []) {
@@ -80,7 +83,12 @@ export function groupVacanciesByProperty(vacancies = []) {
     groups.get(propertyName).push(vacancy);
   });
   return Array.from(groups.entries())
-    .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
+    .sort(([left, leftItems], [right, rightItems]) => {
+      const leftPending = Boolean(leftItems[0]?.unit?.isPlaceholder);
+      const rightPending = Boolean(rightItems[0]?.unit?.isPlaceholder);
+      if (leftPending !== rightPending) return leftPending ? 1 : -1;
+      return left.localeCompare(right, undefined, { numeric: true });
+    })
     .map(([propertyName, items]) => ({
       propertyName,
       vacancies: items.sort((a, b) => {

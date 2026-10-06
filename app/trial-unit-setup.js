@@ -107,22 +107,31 @@ export default function TrialUnitSetupScreen() {
 
   async function saveUnits() {
     if (!totalUnits) return setError("Enter at least one bed, room, or shop.");
+    if (canteenEnabled && !canteenSkipped) {
+      if (mealOption === "meal_package" && Number(packageAmount || 0) <= 0) {
+        return setError("Enter the monthly amount for the meal package.");
+      }
+      if (mealOption === "per_meal" && !Object.values(mealAmounts).some((amount) => Number(amount || 0) > 0)) {
+        return setError("Enter a price for at least one meal.");
+      }
+    }
     try {
       setSaving(true);
       setError("");
-      await saveOnboardingUnits({
-        units,
-        canteenEnabled: canteenEnabled && units.beds > 0,
-      });
       if (canteenEnabled && !canteenSkipped) {
-        await updateCanteenSettings({
+        const result = await updateCanteenSettings({
           activeModes: [mealOption],
           fullPackage: { monthlyAmount: 0, billingMethod: "fixed_monthly", includedMeals: [] },
           perMeal: mealOption === "per_meal" ? Object.fromEntries(Object.entries(mealAmounts).map(([key, value]) => [key, Number(value || 0)])) : { breakfast: 0, lunch: 0, dinner: 0 },
           mealPackage: { name: packageName, monthlyAmount: mealOption === "meal_package" ? Number(packageAmount || 0) : 0, billingMethod: "fixed_monthly", includedMeals },
           guestMeal: mealOption === "guest_meal" ? Object.fromEntries(Object.entries(mealAmounts).map(([key, value]) => [key, Number(value || 0)])) : { breakfast: 0, lunch: 0, dinner: 0 },
         });
+        if (!result?.settings?.isConfigured) throw new Error("Meal service could not be saved. Check the meal prices and try again.");
       }
+      await saveOnboardingUnits({
+        units,
+        canteenEnabled: canteenEnabled && units.beds > 0,
+      });
       Alert.alert("Units saved", canteenEnabled && !canteenSkipped ? "Your trial workspace is ready with the selected meal option." : "Your trial workspace is ready.", [
         { text: "Continue", onPress: () => router.replace("/system") },
       ]);
@@ -201,7 +210,6 @@ export default function TrialUnitSetupScreen() {
                 {[
                   ["per_meal", "Per-meal pricing", "Charge separately for breakfast, lunch and dinner"],
                   ["meal_package", "Meal package", "Create a monthly package for selected meals"],
-                  ["guest_meal", "Guest / extra meals", "Track meals served to guests or visitors"],
                 ].map(([value, title, description]) => (
                   <Pressable key={value} onPress={() => setMealOption(value)} style={[styles.optionRow, mealOption === value && styles.optionRowActive]}>
                     <View style={[styles.radio, mealOption === value && styles.radioActive]}>{mealOption === value ? <View style={styles.radioDot} /> : null}</View>

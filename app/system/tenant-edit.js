@@ -182,135 +182,143 @@ export default function TenantEditScreen() {
   const canteenPlans = (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal");
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
   const selectedCanteenMeta = selectedCanteenPlan === "meal_package"
-      ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0) }
+    ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0) }
     : selectedCanteenPlan === "meal_package"
       ? { amount: Number(canteenSettings?.mealPackage?.monthlyAmount || 0) }
       : { amount: 0 };
 
   return (
     <>
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
-      <View style={styles.header}><Pressable onPress={() => router.replace({ pathname: "/system/tenant-details", params: { id, returnTo } })} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View><Text style={styles.title}>Edit tenant</Text><Text style={styles.subtitle}>Update admission and profile details</Text></View></View>
-      <Text style={styles.sectionTitle}>Assignment</Text>
-      <View style={styles.assignment}><View style={styles.assignmentText}><Text style={styles.assignmentTitle}>{tenant.category || "Property"} | Floor {tenant.floorNo || "-"} | {formatTenantUnit(tenant)}</Text><Text style={styles.assignmentMeta}>Monthly rent: Rs. {tenant.baseRent || tenant.rentAmount || 0}</Text></View><Pressable accessibilityLabel="Shift tenant" onPress={() => router.push({ pathname: "/system/tenant-shift", params: { id, returnTo } })} style={styles.shiftButton}><MoveRight size={20} color={colors.primary} /></Pressable></View>
-
-      <Text style={styles.sectionTitle}>Personal</Text>
-      <Field label="Full name" value={form.name} onChangeText={(value) => setValue("name", value)} />
-      <Field label="Phone number" value={form.phoneNo} onChangeText={(value) => setValue("phoneNo", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
-      {!isShop ? <FormDateField label="Date of birth" value={form.dob} onChange={(value) => setValue("dob", value)} maximumDate={new Date()} /> : null}
-      <FormDateField label="Tenant joining date" value={form.joiningDate} onChange={(value) => setValue("joiningDate", value)} maximumDate={new Date()} disabled={Boolean(tenant?.joiningDateChangeUsed)} />
-      {tenant?.joiningDateChangeUsed ? <Text style={styles.dateChangeHint}>Joining date has already been changed once and is now locked.</Text> : null}
-
-      <Text style={styles.sectionTitle}>Financial</Text>
-      <Field label="Deposit amount" value={form.depositAmount} onChangeText={(value) => setValue("depositAmount", value.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" />
-      {!isResidentialRoom && !isShop && canteenEnabled ? <>
-        <Text style={styles.label}>Canteen facility</Text>
-        <View style={styles.toggle}>
-          {[[true, "Yes"], [false, "No"]].map(([value, label]) => (
-            <Pressable key={label} onPress={() => setValue("hasCanteen", value)} style={[styles.toggleOption, form.hasCanteen === value && styles.toggleSelected]}>
-              <Text style={[styles.toggleText, form.hasCanteen === value && styles.toggleTextSelected]}>{label}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <FormDateField label="Canteen status effective from" value={form.canteenStatusEffectiveFrom} onChange={(value) => setValue("canteenStatusEffectiveFrom", value)} />
-        {form.hasCanteen ? (
-          <>
-            {!canteenSettings?.isConfigured ? <Text style={styles.error}>Canteen settings are not configured yet. Open More {">"} Canteen settings first.</Text> : null}
-            <Text style={styles.label}>Canteen billing plan</Text>
-            <View style={styles.toggle}>
-              {canteenPlans.map((plan) => (
-                <Pressable key={plan} onPress={() => setValue("canteenPlanType", plan)} style={[styles.toggleOption, selectedCanteenPlan === plan && styles.toggleSelected]}>
-                  <Text style={[styles.toggleText, selectedCanteenPlan === plan && styles.toggleTextSelected]}>{CANTEEN_MODE_LABELS[plan] || plan}</Text>
-                </Pressable>
-              ))}
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={styles.header}><Pressable onPress={() => router.replace({ pathname: "/system/tenant-details", params: { id, returnTo } })} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable><View style={styles.headerText}><Text style={styles.title}>Edit tenant</Text><Text style={styles.subtitle}>Update admission and profile details</Text></View></View>
+        <Text style={styles.sectionTitle}>Room Details</Text>
+        <View style={styles.assignment}><View style={styles.assignmentText}><Text style={styles.assignmentTitle}>
+          {tenant.category || "Property"} | Floor {tenant.floorNo || "-"} | {formatTenantUnit(tenant)}</Text>
+          <Text style={styles.assignmentMeta}>Monthly rent: Rs. {tenant.baseRent || tenant.rentAmount || 0}
+            </Text></View>
+          {/* <Pressable accessibilityLabel="Shift tenant" onPress={() => router.push({ pathname: "/system/tenant-shift", params: { id, returnTo } })} style={styles.shiftButton}>
+            <MoveRight size={20} color={colors.primary} />
+            
+            </Pressable> */}
             </View>
-            {selectedCanteenPlan === "per_meal" ? (
-              <>
-                <Text style={styles.label}>Individual meal prices (optional)</Text>
-                <Text style={styles.helperText}>Leave blank to use common canteen prices.</Text>
-                {[["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"]].map(([key, label]) => (
-                  <Field key={key} label={`${label} price`} value={form.canteenMealPrices[key]} onChangeText={(value) => setValue("canteenMealPrices", { ...form.canteenMealPrices, [key]: value.replace(/[^\d.]/g, "") })} keyboardType="decimal-pad" placeholder={`Common ${label.toLowerCase()} price`} />
+
+        <Text style={styles.sectionTitle}>Personal</Text>
+        <Field label="Full name" value={form.name} onChangeText={(value) => setValue("name", value)} />
+        <Field label="Phone number" value={form.phoneNo} onChangeText={(value) => setValue("phoneNo", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
+        {!isShop ? <FormDateField label="Date of birth" value={form.dob} onChange={(value) => setValue("dob", value)} maximumDate={new Date()} /> : null}
+        <FormDateField label="Tenant joining date" value={form.joiningDate} onChange={(value) => setValue("joiningDate", value)} maximumDate={new Date()} disabled={Boolean(tenant?.joiningDateChangeUsed)} />
+        {tenant?.joiningDateChangeUsed ? <Text style={styles.dateChangeHint}>Joining date has already been changed once and is now locked.</Text> : null}
+
+        <Text style={styles.sectionTitle}>Financial</Text>
+        <Field label="Deposit amount" value={form.depositAmount} onChangeText={(value) => setValue("depositAmount", value.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" />
+        {!isResidentialRoom && !isShop && canteenEnabled ? <>
+          <Text style={styles.label}>Canteen facility</Text>
+          <View style={styles.toggle}>
+            {[[true, "Yes"], [false, "No"]].map(([value, label]) => (
+              <Pressable key={label} onPress={() => setValue("hasCanteen", value)} style={[styles.toggleOption, form.hasCanteen === value && styles.toggleSelected]}>
+                <Text style={[styles.toggleText, form.hasCanteen === value && styles.toggleTextSelected]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <FormDateField label="Canteen status effective from" value={form.canteenStatusEffectiveFrom} onChange={(value) => setValue("canteenStatusEffectiveFrom", value)} />
+          {form.hasCanteen ? (
+            <>
+              {!canteenSettings?.isConfigured ? <Text style={styles.error}>Canteen settings are not configured yet. Open More {">"} Canteen settings first.</Text> : null}
+              <Text style={styles.label}>Canteen billing plan</Text>
+              <View style={styles.toggle}>
+                {canteenPlans.map((plan) => (
+                  <Pressable key={plan} onPress={() => setValue("canteenPlanType", plan)} style={[styles.toggleOption, selectedCanteenPlan === plan && styles.toggleSelected]}>
+                    <Text style={[styles.toggleText, selectedCanteenPlan === plan && styles.toggleTextSelected]}>{CANTEEN_MODE_LABELS[plan] || plan}</Text>
+                  </Pressable>
                 ))}
-              </>
-            ) : (
-              <Field label="Individual monthly canteen amount (optional)" value={form.canteenMonthlyAmount} onChangeText={(value) => setValue("canteenMonthlyAmount", value.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" placeholder={`Common amount: ${selectedCanteenMeta.amount || 0}`} />
-            )}
-          </>
-        ) : null}
-      </> : null}
-      <Text style={styles.label}>Payment cycle</Text>
-      <Toggle value={form.firstRentStatus} onChange={(value) => setValue("firstRentStatus", value)} />
-      <View style={styles.cycleHelp}><Text style={styles.cycleHelpText}>• Normal cycle: rent becomes payable after the month completes.</Text><Text style={styles.cycleHelpText}>• Advance cycle: the joining month rent is paid at joining.</Text></View>
-      <Field label="First rent month" value={form.firstRentMonth} onChangeText={(value) => setValue("firstRentMonth", value)} placeholder="Example: Jun-26" autoCapitalize="words" />
+              </View>
+              {selectedCanteenPlan === "per_meal" ? (
+                <>
+                  <Text style={styles.label}>Individual meal prices (optional)</Text>
+                  <Text style={styles.helperText}>Leave blank to use common canteen prices.</Text>
+                  {[["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"]].map(([key, label]) => (
+                    <Field key={key} label={`${label} price`} value={form.canteenMealPrices[key]} onChangeText={(value) => setValue("canteenMealPrices", { ...form.canteenMealPrices, [key]: value.replace(/[^\d.]/g, "") })} keyboardType="decimal-pad" placeholder={`Common ${label.toLowerCase()} price`} />
+                  ))}
+                </>
+              ) : (
+                <Field label="Individual monthly canteen amount (optional)" value={form.canteenMonthlyAmount} onChangeText={(value) => setValue("canteenMonthlyAmount", value.replace(/[^\d.]/g, ""))} keyboardType="decimal-pad" placeholder={`Common amount: ${selectedCanteenMeta.amount || 0}`} />
+              )}
+            </>
+          ) : null}
+        </> : null}
+        <Text style={styles.label}>Payment cycle</Text>
+        <Toggle value={form.firstRentStatus} onChange={(value) => setValue("firstRentStatus", value)} />
+        <View style={styles.cycleHelp}><Text style={styles.cycleHelpText}>• Normal cycle: rent becomes payable after the month completes.</Text><Text style={styles.cycleHelpText}>• Advance cycle: the joining month rent is paid at joining.</Text></View>
+        <Field label="First rent month" value={form.firstRentMonth} onChangeText={(value) => setValue("firstRentMonth", value)} placeholder="Example: Jun-26" autoCapitalize="words" />
 
-      <Text style={styles.sectionTitle}>Address</Text>
-      <Field label="Pincode" value={form.pincode} onChangeText={(value) => setValue("pincode", value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" />
-      <Field label="City" value={form.city} onChangeText={(value) => setValue("city", value)} />
-      <Field label="State" value={form.state} onChangeText={(value) => setValue("state", value)} />
-      <Field label="Address" value={form.address} onChangeText={(value) => setValue("address", value)} multiline />
-      <Field label="House number" value={form.houseNo} onChangeText={(value) => setValue("houseNo", value)} />
-      <Field label="Nearby place" value={form.nearbyPlace} onChangeText={(value) => setValue("nearbyPlace", value)} />
+        <Text style={styles.sectionTitle}>Address</Text>
+        <Field label="Pincode" value={form.pincode} onChangeText={(value) => setValue("pincode", value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" />
+        <Field label="City" value={form.city} onChangeText={(value) => setValue("city", value)} />
+        <Field label="State" value={form.state} onChangeText={(value) => setValue("state", value)} />
+        <Field label="Address" value={form.address} onChangeText={(value) => setValue("address", value)} multiline />
+        <Field label="House number" value={form.houseNo} onChangeText={(value) => setValue("houseNo", value)} />
+        <Field label="Nearby place" value={form.nearbyPlace} onChangeText={(value) => setValue("nearbyPlace", value)} />
 
-      {!isResidentialRoom && !isShop ? <>
-        <Text style={styles.sectionTitle}>Emergency contacts</Text>
-        <RelationPicker label="First relation" value={form.relative1Relation} onChange={(value) => setValue("relative1Relation", value)} />
-        <Field label="First contact name" value={form.relative1Name} onChangeText={(value) => setValue("relative1Name", value)} />
-        <Field label="First contact phone" value={form.relative1Phone} onChangeText={(value) => setValue("relative1Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
-        <RelationPicker label="Second relation" value={form.relative2Relation} onChange={(value) => setValue("relative2Relation", value)} />
-        <Field label="Second contact name" value={form.relative2Name} onChangeText={(value) => setValue("relative2Name", value)} />
-        <Field label="Second contact phone" value={form.relative2Phone} onChangeText={(value) => setValue("relative2Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
-      </> : null}
+        {!isResidentialRoom && !isShop ? <>
+          <Text style={styles.sectionTitle}>Emergency contacts</Text>
+          <RelationPicker label="First relation" value={form.relative1Relation} onChange={(value) => setValue("relative1Relation", value)} />
+          <Field label="First contact name" value={form.relative1Name} onChangeText={(value) => setValue("relative1Name", value)} />
+          <Field label="First contact phone" value={form.relative1Phone} onChangeText={(value) => setValue("relative1Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
+          <RelationPicker label="Second relation" value={form.relative2Relation} onChange={(value) => setValue("relative2Relation", value)} />
+          <Field label="Second contact name" value={form.relative2Name} onChangeText={(value) => setValue("relative2Name", value)} />
+          <Field label="Second contact phone" value={form.relative2Phone} onChangeText={(value) => setValue("relative2Phone", value.replace(/\D/g, "").slice(0, 10))} keyboardType="phone-pad" />
+        </> : null}
 
-      {isResidentialRoom ? <>
-        <Text style={styles.sectionTitle}>Family and work</Text>
-        <Field label="No. of family members" value={form.familyMembers} onChangeText={(value) => setValue("familyMembers", value.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" />
-        <Field label="Company Address / College" value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline />
-        <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
-      </> : isShop ? <>
-        <Text style={styles.sectionTitle}>Shop details</Text>
-        <Field label="Shop name" value={form.shopName} onChangeText={(value) => setValue("shopName", value)} />
-        <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(value) => setValue("shopBusiness", value)} multiline />
-      </> : <>
-        <Text style={styles.sectionTitle}>Work or education</Text>
-        <Field label="Company or college" value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline />
-        <FormDateField label="Company or college joining date" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
-      </>}
+        {isResidentialRoom ? <>
+          <Text style={styles.sectionTitle}>Family and work</Text>
+          <Field label="No. of family members" value={form.familyMembers} onChangeText={(value) => setValue("familyMembers", value.replace(/\D/g, "").slice(0, 3))} keyboardType="number-pad" />
+          <Field label="Company Address / College" value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline />
+          <FormDateField label="Joining date at company/college" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
+        </> : isShop ? <>
+          <Text style={styles.sectionTitle}>Shop details</Text>
+          <Field label="Shop name" value={form.shopName} onChangeText={(value) => setValue("shopName", value)} />
+          <Field label="What are you selling/doing in shop" value={form.shopBusiness} onChangeText={(value) => setValue("shopBusiness", value)} multiline />
+        </> : <>
+          <Text style={styles.sectionTitle}>Work or education</Text>
+          <Field label="Company or college" value={form.companyAddress} onChangeText={(value) => setValue("companyAddress", value)} multiline />
+          <FormDateField label="Company or college joining date" value={form.dateOfJoiningCollege} onChange={(value) => setValue("dateOfJoiningCollege", value)} />
+        </>}
 
-      <Text style={styles.sectionTitle}>Documents</Text>
-      <Text style={styles.documentHint}>Adjust the crop after selecting or taking a photo. Tap Cancel to discard or Done/Choose to save it.</Text>
-      {documentList.map((document) => {
-        const uploaded = (tenant.documents || []).some((item) => item.relation === document.relation);
-        const selected = Boolean(documentUpdates[document.key]);
-        return <View key={document.key} style={styles.documentRow}><View style={styles.documentText}><Text style={styles.documentTitle}>{document.label}</Text><Text style={styles.documentMeta}>{selected ? "New image selected" : uploaded ? "Currently uploaded" : "Not uploaded"}</Text></View><Pressable onPress={() => chooseImage(document.key)} style={styles.documentButton}><Camera size={18} color={colors.primary} /><Text style={styles.documentButtonText}>{uploaded || selected ? "Replace" : "Choose"}</Text></Pressable></View>;
-      })}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable onPress={save} disabled={saving} style={[styles.saveButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveText}>Save all changes</Text>}</Pressable>
-    </ScrollView>
-    {cropRequest ? (
-      <WebImageCropper
-        sourceUri={cropRequest.uri}
-        sourceWidth={cropRequest.width}
-        sourceHeight={cropRequest.height}
-        aspect={cropRequest.aspect}
-        outputName={`${cropRequest.key}.jpg`}
-        onCancel={(cropError) => {
-          setCropRequest(null);
-          if (cropError) Alert.alert("Unable to crop image", cropError.message || "Please try again.");
-        }}
-        onConfirm={(image) => {
-          setDocumentUpdates((current) => ({ ...current, [cropRequest.key]: image }));
-          setCropRequest(null);
-        }}
-      />
-    ) : null}
+        <Text style={styles.sectionTitle}>Documents</Text>
+        <Text style={styles.documentHint}>Adjust the crop after selecting or taking a photo. Tap Cancel to discard or Done/Choose to save it.</Text>
+        {documentList.map((document) => {
+          const uploaded = (tenant.documents || []).some((item) => item.relation === document.relation);
+          const selected = Boolean(documentUpdates[document.key]);
+          return <View key={document.key} style={styles.documentRow}><View style={styles.documentText}><Text style={styles.documentTitle}>{document.label}</Text><Text style={styles.documentMeta}>{selected ? "New image selected" : uploaded ? "Currently uploaded" : "Not uploaded"}</Text></View><Pressable onPress={() => chooseImage(document.key)} style={styles.documentButton}><Camera size={18} color={colors.primary} /><Text style={styles.documentButtonText}>{uploaded || selected ? "Replace" : "Choose"}</Text></Pressable></View>;
+        })}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Pressable onPress={save} disabled={saving} style={[styles.saveButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveText}>Save all changes</Text>}</Pressable>
+      </ScrollView>
+      {cropRequest ? (
+        <WebImageCropper
+          sourceUri={cropRequest.uri}
+          sourceWidth={cropRequest.width}
+          sourceHeight={cropRequest.height}
+          aspect={cropRequest.aspect}
+          outputName={`${cropRequest.key}.jpg`}
+          onCancel={(cropError) => {
+            setCropRequest(null);
+            if (cropError) Alert.alert("Unable to crop image", cropError.message || "Please try again.");
+          }}
+          onConfirm={(image) => {
+            setDocumentUpdates((current) => ({ ...current, [cropRequest.key]: image }));
+            setCropRequest(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background }, content: { width: "100%", maxWidth: 640, alignSelf: "center", padding: 20, paddingBottom: 40 },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" }, header: { flexDirection: "row", alignItems: "center", marginBottom: 8, backgroundColor: colors.background },
-  iconButton: { width: 44, height: 44, marginRight: 8, alignItems: "center", justifyContent: "center" }, title: { color: colors.text, fontSize: 24, fontWeight: "700" }, subtitle: { marginTop: 3, color: colors.muted, fontSize: 12 },
+  screen: { flex: 1, backgroundColor: colors.background }, content: { width: "100%", maxWidth: 640, alignSelf: "center", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center" }, header: { minHeight: 58, flexDirection: "row", alignItems: "center", marginBottom: 8, backgroundColor: colors.background },
+  iconButton: { width: 44, height: 44, marginRight: 8, alignItems: "center", justifyContent: "center" }, headerText: { flex: 1, minWidth: 0 }, title: { color: colors.text, fontSize: 24, fontWeight: "700" }, subtitle: { marginTop: 3, color: colors.muted, fontSize: 12 },
   sectionTitle: { marginTop: 20, color: colors.text, fontSize: 17, fontWeight: "700" }, label: { marginTop: 14, marginBottom: 7, color: colors.muted, fontSize: 14, fontWeight: "600" },
   input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface, fontSize: 16 }, multiline: { height: 78, paddingTop: 13, textAlignVertical: "top" },
   select: { height: 50, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, selectValue: { flex: 1, color: colors.text, fontSize: 16 },

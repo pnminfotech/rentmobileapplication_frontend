@@ -181,6 +181,9 @@ export default function TenantAdmissionScreen() {
   const [savingUnitDetails, setSavingUnitDetails] = useState(false);
   const [unitDetailsError, setUnitDetailsError] = useState("");
   const [bedCategoryOpen, setBedCategoryOpen] = useState(false);
+  const [customBedCategories, setCustomBedCategories] = useState([]);
+  const [bedCategoryEditor, setBedCategoryEditor] = useState("");
+  const [bedCategoryName, setBedCategoryName] = useState("");
   const [showMeterDetails, setShowMeterDetails] = useState(false);
 
   useEffect(() => {
@@ -260,6 +263,23 @@ export default function TenantAdmissionScreen() {
     const values = (key) => Array.from(new Set(allUnits.filter((unit) => !unit?.isPlaceholder).map((unit) => String(unit?.[key] || "").trim()).filter(Boolean)));
     return { category: values("category"), floorNo: values("floorNo"), wingName: values("wingName"), flatType: values("flatType"), roomNo: values("roomNo") };
   }, [allUnits]);
+  const allBedCategoryOptions = useMemo(() => Array.from(new Set([
+    ...BED_CATEGORY_OPTIONS,
+    ...customBedCategories,
+    ...allUnits.flatMap((unit) => (unit?.beds || []).map((item) => String(item?.bedCategory || "").trim())).filter(Boolean),
+  ])), [allUnits, customBedCategories]);
+  const saveBedCategory = () => {
+    const nextName = bedCategoryName.trim();
+    if (!nextName) return;
+    const same = (value) => String(value || "").trim().toLowerCase();
+    setCustomBedCategories((current) => {
+      const withoutOld = bedCategoryEditor === "rename" ? current.filter((item) => same(item) !== same(unitDraft.bedCategory)) : current;
+      return withoutOld.some((item) => same(item) === same(nextName)) ? withoutOld : [...withoutOld, nextName];
+    });
+    updateUnitDraft("bedCategory", nextName);
+    setBedCategoryEditor("");
+    setBedCategoryName("");
+  };
   const detailLabels = useMemo(() => unitDetailLabels(assignmentType), [assignmentType]);
   const unitLabel = useMemo(() => selected ? `${formatVacancyTitle(selected.unit)} | ${formatVacancyMeta(selected.unit, selected.bed)}` : "No vacant unit available", [selected]);
   const canteenPlans = useMemo(() => (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal"), [canteenSettings]);
@@ -711,7 +731,7 @@ export default function TenantAdmissionScreen() {
             {assignmentType === "room" ? <SavedField required label="Flat type" value={unitDraft.flatType} options={savedUnitOptions.flatType} active={activeSavedField === "flatType"} onFocus={() => setActiveSavedField("flatType")} onChangeText={(value) => { updateUnitDraft("flatType", value); setActiveSavedField("flatType"); }} placeholder=" 1 RK or 1 BHK" /> : null}
             <SavedField required label={detailLabels.number} value={unitDraft.roomNo} options={savedUnitOptions.roomNo} active={activeSavedField === "roomNo"} onFocus={() => setActiveSavedField("roomNo")} onChangeText={(value) => { updateUnitDraft("roomNo", value); setActiveSavedField("roomNo"); }} placeholder={detailLabels.numberPlaceholder} />
             {showMeterDetails ? <><Field label="Meter number (optional)" value={unitDraft.meterNo} onChangeText={(value) => updateUnitDraft("meterNo", value)} placeholder=" MTR-101" /><Field label="Last meter reading (optional)" value={unitDraft.lastMeterReading} onChangeText={(value) => updateUnitDraft("lastMeterReading", value)} keyboardType="numeric" placeholder=" 250" /><Pressable onPress={() => { updateUnitDraft("meterNo", ""); updateUnitDraft("lastMeterReading", ""); setShowMeterDetails(false); }}><Text style={styles.skipMeterText}>Skip for now / add later</Text></Pressable></> : <Pressable onPress={() => setShowMeterDetails(true)} style={styles.addMeterButton}><Text style={styles.addMeterText}>Add meter details</Text></Pressable>}
-            {assignmentType === "bed" ? <><Text style={styles.fieldLabel}>Bed category<Text style={styles.requiredMark}> *</Text></Text><Pressable onPress={() => setBedCategoryOpen((value) => !value)} style={styles.categorySelect}><Text style={styles.categorySelectText}>{unitDraft.bedCategory || "Select bed category"}</Text><ChevronDown size={18} color={colors.muted} /></Pressable>{bedCategoryOpen ? <View style={styles.categoryOptions}>{BED_CATEGORY_OPTIONS.map((option) => <Pressable key={option} onPress={() => { updateUnitDraft("bedCategory", option); setBedCategoryOpen(false); }} style={styles.categoryOption}><Text style={styles.categoryOptionText}>{option}</Text></Pressable>)}</View> : null}</> : null}
+            {assignmentType === "bed" ? <><Text style={styles.fieldLabel}>Bed category<Text style={styles.requiredMark}> *</Text></Text><Pressable onPress={() => setBedCategoryOpen((value) => !value)} style={styles.categorySelect}><Text style={styles.categorySelectText}>{unitDraft.bedCategory || "Select bed category"}</Text><ChevronDown size={18} color={colors.muted} /></Pressable>{bedCategoryOpen ? <View style={styles.categoryOptions}>{allBedCategoryOptions.map((option) => <Pressable key={option} onPress={() => { updateUnitDraft("bedCategory", option); setBedCategoryOpen(false); }} style={styles.categoryOption}><Text style={styles.categoryOptionText}>{option}</Text></Pressable>)}</View> : null}<View style={styles.categoryActions}><Pressable onPress={() => { setBedCategoryEditor("add"); setBedCategoryName(""); setBedCategoryOpen(false); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>+ Add category</Text></Pressable><Pressable onPress={() => { setBedCategoryEditor("rename"); setBedCategoryName(unitDraft.bedCategory || ""); setBedCategoryOpen(false); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>Rename selected</Text></Pressable></View>{bedCategoryEditor ? <View style={styles.categoryEditor}><TextInput value={bedCategoryName} onChangeText={setBedCategoryName} placeholder="Enter category" placeholderTextColor={colors.muted} style={styles.categoryInput} /><Pressable onPress={saveBedCategory} style={styles.categorySave}><Text style={styles.categorySaveText}>Save</Text></Pressable></View> : null}</> : null}
             <Field required label={detailLabels.price} value={unitDraft.monthlyPrice} onChangeText={(value) => updateUnitDraft("monthlyPrice", value)} keyboardType="numeric" placeholder=" 5000" />
 
             {unitDetailsError ? <Text style={styles.unitDetailsError}>{unitDetailsError}</Text> : null}
@@ -804,6 +824,13 @@ const styles = StyleSheet.create({
   categoryOptions: { marginTop: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface },
   categoryOption: { minHeight: 44, paddingHorizontal: 13, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft },
   categoryOptionText: { color: colors.text, fontWeight: "600" },
+  categoryActions: { flexDirection: "row", gap: 8, marginTop: 8 },
+  categoryAction: { paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: colors.primary, borderRadius: 7, backgroundColor: colors.primarySoft },
+  categoryActionText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
+  categoryEditor: { flexDirection: "row", gap: 8, marginTop: 8 },
+  categoryInput: { flex: 1, minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 7, color: colors.text, backgroundColor: colors.surface },
+  categorySave: { minHeight: 46, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary },
+  categorySaveText: { color: colors.surface, fontSize: 12, fontWeight: "800" },
   addMeterButton: { minHeight: 42, marginTop: 16, paddingHorizontal: 13, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.primarySoft },
   addMeterText: { color: colors.primary, fontWeight: "800" },
   skipMeterText: { marginTop: 8, color: colors.primary, fontSize: 12, fontWeight: "700", textAlign: "right" },

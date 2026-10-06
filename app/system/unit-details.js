@@ -17,6 +17,7 @@ import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react-native";
 import { deleteBed, deleteUnit, getRooms, getUnit, updateBed, updateUnit } from "../../src/api/roomApi";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { systemColors as colors } from "../../src/theme/systemTheme";
+import SecurityPinModal from "../../src/components/SecurityPinModal";
 
 function normalizeNumericText(value) {
   return String(value || "").replace(/[^0-9.]/g, "");
@@ -44,6 +45,7 @@ export default function UnitDetailsScreen() {
   const [editingBedNo, setEditingBedNo] = useState("");
   const [updatingBedNo, setUpdatingBedNo] = useState("");
   const [deletingBedNo, setDeletingBedNo] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [unitEdits, setUnitEdits] = useState({});
   const [bedEdits, setBedEdits] = useState({});
   const [error, setError] = useState("");
@@ -204,19 +206,7 @@ export default function UnitDetailsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            try {
-              setDeletingBedNo(String(bed.bedNo));
-              const data = await deleteBed(unit._id, bed.bedNo);
-              setUnit(data.room);
-              setQuota(data.quota || quota);
-              setEditingBedNo("");
-            } catch (err) {
-              Alert.alert("Unable to delete bed", err.response?.data?.message || "Please try again.");
-            } finally {
-              setDeletingBedNo("");
-            }
-          },
+          onPress: () => setPendingDelete({ kind: "bed", bed }),
         },
       ]
     );
@@ -233,20 +223,22 @@ export default function UnitDetailsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            try {
-              setDeletingUnit(true);
-              await deleteUnit(unit._id);
-              router.replace({ pathname: "/system/units", params: { type: unit.propertyType || "bed" } });
-            } catch (err) {
-              Alert.alert("Unable to delete unit", err.response?.data?.message || "Please try again.");
-            } finally {
-              setDeletingUnit(false);
-            }
-          },
+          onPress: () => setPendingDelete({ kind: "unit" }),
         },
       ]
     );
+  }
+
+  async function deleteWithPin(pin) {
+    if (!pendingDelete) return;
+    try {
+      if (pendingDelete.kind === "bed") {
+        const bed = pendingDelete.bed; setDeletingBedNo(String(bed.bedNo));
+        const data = await deleteBed(unit._id, bed.bedNo, pin); setUnit(data.room); setQuota(data.quota || quota); setEditingBedNo("");
+      } else { setDeletingUnit(true); await deleteUnit(unit._id, pin); router.replace({ pathname: "/system/units", params: { type: unit.propertyType || "bed" } }); }
+      setPendingDelete(null);
+    } catch (err) { Alert.alert("Unable to delete", err.response?.data?.message || "Please try again."); }
+    finally { setDeletingBedNo(""); setDeletingUnit(false); }
   }
 
   if (loading) {
@@ -263,7 +255,8 @@ export default function UnitDetailsScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + 8, 20) }]} keyboardShouldPersistTaps="handled">
+    <View style={styles.screen}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + 8, 20) }]} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
         <Pressable onPress={() => router.replace("/system/units")} style={styles.iconButton}>
           <ArrowLeft size={22} color={colors.text} />
@@ -431,6 +424,8 @@ export default function UnitDetailsScreen() {
         </>
       ) : null}
     </ScrollView>
+    <SecurityPinModal visible={Boolean(pendingDelete)} title={pendingDelete?.kind === "bed" ? "Delete bed" : "Delete unit"} message="Enter your security PIN to confirm deletion." loading={Boolean(deletingUnit || deletingBedNo)} onClose={() => setPendingDelete(null)} onConfirm={deleteWithPin} />
+    </View>
   );
 }
 

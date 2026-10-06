@@ -4,14 +4,15 @@ import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { ArrowLeft, CheckCircle2, FileDown, RefreshCw, ShieldOff } from "lucide-react-native";
+import { ArrowLeft, CheckCircle2, FileDown, ShieldOff, Trash2 } from "lucide-react-native";
 import { colors } from "../../src/theme/colors";
+import SecurityPinModal from "../../src/components/SecurityPinModal";
 
 import {
-  approveOrganizationUpgrade,
   getBillingTransactions,
   getOrganizations,
-  renewOrganizationSubscription,
+  getOrganizationVacantUnits,
+  removeOrganizationVacantUnit,
   updateOrganizationStatus,
 } from "../../src/api/saasApi";
 
@@ -57,6 +58,15 @@ function formatDate(value) {
 function statusLabel(value) {
   const label = String(value || "unknown").replace(/_/g, " ");
   return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function supportUnitLabel(unit = {}) {
+  const raw = String(unit.label || "");
+  const isPending = Boolean(unit.isPlaceholder) || /\bunassigned\b/i.test(raw) || /\bUNASSIGNED-/i.test(raw);
+  if (!isPending) return raw;
+  return unit.kind === "bed" && unit.bedNo
+    ? `Unit | Bed ${unit.bedNo}`
+    : "Unit";
 }
 
 function csvCell(value) {
@@ -112,18 +122,23 @@ export default function OrganizationDetailScreen() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState("");
+  const [pendingStatus, setPendingStatus] = useState("");
+  const [vacantUnits, setVacantUnits] = useState([]);
+  const [pendingUnitRemoval, setPendingUnitRemoval] = useState(null);
   const [error, setError] = useState("");
 
   const loadData = useCallback(async () => {
     try {
       setError("");
-      const [organizations, txnData] = await Promise.all([
+      const [organizations, txnData, vacantData] = await Promise.all([
         getOrganizations(),
         getBillingTransactions({ limit: 100 }),
+        getOrganizationVacantUnits(id),
       ]);
       const current = (Array.isArray(organizations) ? organizations : []).find((item) => String(item._id) === String(id));
       setOrganization(current || null);
       setTransactions((Array.isArray(txnData) ? txnData : []).filter((txn) => String(txn.organizationId?._id || txn.organizationId) === String(id)));
+      setVacantUnits(Array.isArray(vacantData) ? vacantData : []);
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load organization.");
     } finally {
@@ -136,22 +151,13 @@ export default function OrganizationDetailScreen() {
   const subscription = organization?.subscription || {};
   const units = subscription.units || organization?.unitAllocation || {};
   const latestTransaction = useMemo(() => transactions[0] || null, [transactions]);
-  const pendingUpgrade = useMemo(
-    () =>
-      transactions.find(
-        (txn) =>
-          txn?.requestPayload?.action === "subscription_upgrade" &&
-          ["created", "pending"].includes(String(txn.status || ""))
-      ) || null,
-    [transactions]
-  );
-  const isExpired = organization?.status === "expired" || subscription.status === "expired";
 
-  async function changeStatus(status) {
+  async function changeStatus(status, securityPin) {
     try {
       setAction(status);
-      await updateOrganizationStatus(organization._id, status);
+      await updateOrganizationStatus(organization._id, status, securityPin);
       await loadData();
+      setPendingStatus("");
     } catch (err) {
       Alert.alert("Unable to update status", err.response?.data?.message || "Please try again.");
     } finally {
@@ -159,30 +165,20 @@ export default function OrganizationDetailScreen() {
     }
   }
 
-  async function renewOrg() {
+  async function removeVacantUnit(target, securityPin) {
     try {
-      setAction("renew");
-      await renewOrganizationSubscription(organization._id, {
-        durationMonths: subscription.durationMonths || 12,
-        units,
+      setAction(`remove-${target.id}`);
+      await removeOrganizationVacantUnit(organization._id, target.unitId, {
+        kind: target.kind,
+        bedNo: target.bedNo || "",
+        reason: "Customer requested a unit reduction through support",
+        securityPin,
       });
+      setPendingUnitRemoval(null);
       await loadData();
+      Alert.alert("Unit removed", "The vacant unit was removed and the customer's subscription count has been updated.");
     } catch (err) {
-      Alert.alert("Unable to renew", err.response?.data?.message || "Please try again.");
-    } finally {
-      setAction("");
-    }
-  }
-
-  async function approveUpgrade() {
-    if (!pendingUpgrade?._id) return;
-    try {
-      setAction("approve-upgrade");
-      await approveOrganizationUpgrade(organization._id, { transactionId: pendingUpgrade._id });
-      await loadData();
-      Alert.alert("Upgrade approved", "The organization package has been upgraded.");
-    } catch (err) {
-      Alert.alert("Unable to approve upgrade", err.response?.data?.message || "Please try again.");
+      Alert.alert("Unable to remove unit", err.response?.data?.message || "Please try again.");
     } finally {
       setAction("");
     }
@@ -252,7 +248,8 @@ export default function OrganizationDetailScreen() {
   if (!organization) return <View style={styles.loading}><Text style={styles.error}>{error || "Organization not found."}</Text><Pressable onPress={() => router.replace("/superadmin")}><Text style={styles.backText}>Go back</Text></Pressable></View>;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <View style={styles.screen}>
+    <ScrollView contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Pressable onPress={() => router.replace("/superadmin")} style={styles.iconButton}><ArrowLeft size={23} color={COLORS.text} /></Pressable>
         <View style={styles.headerText}>
@@ -273,48 +270,18 @@ export default function OrganizationDetailScreen() {
       </View>
 
       <View style={styles.actions}>
-        {organization.status !== "suspended" && isExpired ? (
-          <Pressable onPress={renewOrg} disabled={Boolean(action)} style={styles.actionButton}>
-            {action === "renew" ? <ActivityIndicator size="small" color={colors.surface} /> : <RefreshCw size={17} color={colors.surface} />}
-            <Text style={styles.actionText}>Renew subscription</Text>
-          </Pressable>
-        ) : null}
         {organization.status === "active" ? (
-          <Pressable onPress={() => changeStatus("suspended")} disabled={Boolean(action)} style={[styles.actionButton, styles.dangerButton]}>
+          <Pressable onPress={() => setPendingStatus("suspended")} disabled={Boolean(action)} style={[styles.actionButton, styles.dangerButton]}>
             {action === "suspended" ? <ActivityIndicator size="small" color={colors.surface} /> : <ShieldOff size={17} color={colors.surface} />}
             <Text style={styles.actionText}>Suspend</Text>
           </Pressable>
         ) : organization.status === "suspended" ? (
-          <Pressable onPress={() => changeStatus("active")} disabled={Boolean(action)} style={styles.actionButton}>
+          <Pressable onPress={() => setPendingStatus("active")} disabled={Boolean(action)} style={styles.actionButton}>
             {action === "active" ? <ActivityIndicator size="small" color={colors.surface} /> : <CheckCircle2 size={17} color={colors.surface} />}
             <Text style={styles.actionText}>Unsuspend account</Text>
           </Pressable>
         ) : null}
       </View>
-
-      {pendingUpgrade ? (
-        <View style={styles.upgradeCard}>
-          <View style={styles.upgradeTop}>
-            <View style={styles.upgradeCopy}>
-              <Text style={styles.upgradeTitle}>Package upgrade requested</Text>
-              <Text style={styles.upgradeMeta}>
-                Add {pendingUpgrade.requestPayload?.addedUnits?.beds || 0} beds, {pendingUpgrade.requestPayload?.addedUnits?.rooms || 0} rooms, {pendingUpgrade.requestPayload?.addedUnits?.shops || 0} shops
-              </Text>
-            </View>
-            <Text style={styles.upgradeAmount}>{money(pendingUpgrade.amount)}</Text>
-          </View>
-          <TransactionPricingRows transaction={pendingUpgrade} />
-          <View style={styles.upgradeUnitGrid}>
-            <View style={styles.upgradeUnitBox}><Text style={styles.upgradeUnitValue}>{pendingUpgrade.requestPayload?.newUnits?.beds || 0}</Text><Text style={styles.upgradeUnitLabel}>Total beds</Text></View>
-            <View style={styles.upgradeUnitBox}><Text style={styles.upgradeUnitValue}>{pendingUpgrade.requestPayload?.newUnits?.rooms || 0}</Text><Text style={styles.upgradeUnitLabel}>Total rooms</Text></View>
-            <View style={styles.upgradeUnitBox}><Text style={styles.upgradeUnitValue}>{pendingUpgrade.requestPayload?.newUnits?.shops || 0}</Text><Text style={styles.upgradeUnitLabel}>Total shops</Text></View>
-          </View>
-          <Pressable onPress={approveUpgrade} disabled={Boolean(action)} style={styles.approveButton}>
-            {action === "approve-upgrade" ? <ActivityIndicator size="small" color={colors.surface} /> : <CheckCircle2 size={17} color={colors.surface} />}
-            <Text style={styles.actionText}>Approve upgrade</Text>
-          </Pressable>
-        </View>
-      ) : null}
 
       <Section title="Business information">
         <Row label="Business name" value={organization.name} />
@@ -334,6 +301,16 @@ export default function OrganizationDetailScreen() {
           <View style={styles.unitBox}><Text style={styles.unitValue}>{units.rooms || 0}</Text><Text style={styles.unitLabel}>Rooms</Text></View>
           <View style={styles.unitBox}><Text style={styles.unitValue}>{units.shops || 0}</Text><Text style={styles.unitLabel}>Shops</Text></View>
         </View>
+      </Section>
+
+      <Section title="Support: reduce vacant units">
+        <Text style={styles.supportHint}>Use this only after a customer asks support to reduce units. Occupied units are not shown and cannot be removed.</Text>
+        {!vacantUnits.length ? <Text style={styles.empty}>No vacant units available for removal.</Text> : vacantUnits.map((unit) => (
+          <View key={unit.id} style={styles.vacantRow}>
+            <View style={styles.vacantCopy}><Text style={styles.vacantTitle}>{supportUnitLabel(unit)}</Text><Text style={styles.vacantMeta}>{unit.propertyType === "bed" ? "Vacant bed" : `Vacant ${unit.propertyType === "shop" ? "shop" : "room"}`}</Text></View>
+            <Pressable onPress={() => setPendingUnitRemoval(unit)} disabled={Boolean(action)} style={styles.removeButton}><Trash2 size={15} color={COLORS.red} /><Text style={styles.removeButtonText}>Remove</Text></Pressable>
+          </View>
+        ))}
       </Section>
 
       <Section title="Subscription">
@@ -385,6 +362,23 @@ export default function OrganizationDetailScreen() {
         })}
       </Section>
     </ScrollView>
+    <SecurityPinModal
+      visible={Boolean(pendingStatus)}
+      title={pendingStatus === "active" ? "Reactivate account" : "Suspend account"}
+      message="Enter your security PIN to confirm this account change."
+      loading={Boolean(action)}
+      onClose={() => setPendingStatus("")}
+      onConfirm={(pin) => changeStatus(pendingStatus, pin)}
+    />
+    <SecurityPinModal
+      visible={Boolean(pendingUnitRemoval)}
+      title="Remove vacant unit"
+      message="This permanently removes the selected vacant unit and reduces the customer's subscription count. Enter your security PIN to continue."
+      loading={Boolean(pendingUnitRemoval && action === `remove-${pendingUnitRemoval.id}`)}
+      onClose={() => setPendingUnitRemoval(null)}
+      onConfirm={(pin) => removeVacantUnit(pendingUnitRemoval, pin)}
+    />
+    </View>
   );
 }
 
@@ -432,6 +426,13 @@ const styles = StyleSheet.create({
   unitBox: { flex: 1, minHeight: 72, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: COLORS.burgundySoft },
   unitValue: { color: COLORS.burgundy, fontSize: 22, fontWeight: "900" },
   unitLabel: { marginTop: 4, color: COLORS.muted, fontSize: 12, fontWeight: "800" },
+  supportHint: { marginBottom: 8, color: COLORS.muted, fontSize: 12, lineHeight: 18, fontWeight: "700" },
+  vacantRow: { minHeight: 60, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: 1, borderBottomColor: COLORS.soft },
+  vacantCopy: { flex: 1, minWidth: 0 },
+  vacantTitle: { color: COLORS.text, fontSize: 12.5, fontWeight: "900" },
+  vacantMeta: { marginTop: 3, color: COLORS.green, fontSize: 11, fontWeight: "800" },
+  removeButton: { minHeight: 36, paddingHorizontal: 9, flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: COLORS.red, borderRadius: 9, backgroundColor: COLORS.redSoft },
+  removeButtonText: { color: COLORS.red, fontSize: 11, fontWeight: "900" },
   transactionRow: { minHeight: 58, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: COLORS.soft },
   transactionCopy: { flex: 1, minWidth: 0, paddingRight: 10 },
   transactionTitle: { color: COLORS.text, fontWeight: "900" },

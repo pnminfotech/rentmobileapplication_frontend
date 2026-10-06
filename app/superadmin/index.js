@@ -51,13 +51,13 @@ import {
   getBillingTransactions,
   getOrganizations,
   getSuperAdminDashboard,
-  renewOrganizationSubscription,
   updateOrganizationStatus,
 } from "../../src/api/saasApi";
 import { getUnreadNotificationCount } from "../../src/api/notificationApi";
 import { clearAuthSession } from "../../src/storage/authStorage";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/utils/responsive";
+import SecurityPinModal from "../../src/components/SecurityPinModal";
 
 const COLORS = {
   // Base — matching System Admin
@@ -549,11 +549,10 @@ function TransactionRow({ transaction, featured = false }) {
   );
 }
 
-function OrganizationCard({ org, actionId, onOpen, onRenew, onToggleStatus }) {
+function OrganizationCard({ org, actionId, onOpen, onToggleStatus }) {
   const subscription = org.subscription || {};
   const units = subscription.units || org.unitAllocation || {};
   const isExpired = org.status === "expired" || subscription.status === "expired";
-  const canRenew = org.status !== "suspended" && isExpired;
   const tone = org.status === "active" ? "active" : org.status === "suspended" ? "suspended" : isExpired ? "expired" : "pending";
   const color = tone === "suspended" ? COLORS.red : COLORS.blue;
   const bg = tone === "suspended" ? COLORS.redSoft : COLORS.blueSoft;
@@ -612,14 +611,6 @@ function OrganizationCard({ org, actionId, onOpen, onRenew, onToggleStatus }) {
           <Text style={styles.subscriptionDate}>Ends {formatDate(subscription.endDate)}</Text>
         </View>
 
-        {canRenew ? (
-          <Pressable disabled={Boolean(actionId)} onPress={onRenew} style={styles.renewButton}>
-            {actionId === `${org._id}-renew`
-              ? <ActivityIndicator size="small" color={COLORS.blue} />
-              : <Text style={styles.renewText}>Renew</Text>}
-          </Pressable>
-        ) : null}
-
       </View>
 
       {org.status === "active" || org.status === "suspended" ? (
@@ -648,6 +639,7 @@ export default function SuperAdminScreen() {
   const [organizationView, setOrganizationView] = useState("trial");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [pendingStatusChange, setPendingStatusChange] = useState(null);
   const [actionId, setActionId] = useState("");
   const [error, setError] = useState("");
 
@@ -688,28 +680,13 @@ export default function SuperAdminScreen() {
     router.push(pathname);
   }
 
-  async function renewOrg(org) {
-    const subscription = org.subscription || {};
-    try {
-      setActionId(`${org._id}-renew`);
-      await renewOrganizationSubscription(org._id, {
-        durationMonths: subscription.durationMonths || 12,
-        units: subscription.units || org.unitAllocation || {},
-      });
-      await loadData();
-    } catch (err) {
-      Alert.alert("Unable to renew", err.response?.data?.message || "Please try again.");
-    } finally {
-      setActionId("");
-    }
-  }
-
-  async function changeStatus(org) {
+  async function changeStatus(org, securityPin) {
     const nextStatus = org.status === "suspended" ? "active" : "suspended";
     try {
       setActionId(`${org._id}-${nextStatus}`);
-      await updateOrganizationStatus(org._id, nextStatus);
+      await updateOrganizationStatus(org._id, nextStatus, securityPin);
       await loadData();
+      setPendingStatusChange(null);
     } catch (err) {
       Alert.alert("Unable to update status", err.response?.data?.message || "Please try again.");
     } finally {
@@ -857,15 +834,12 @@ export default function SuperAdminScreen() {
 
     {activeTab === "organizations" ? (
       <View style={styles.headerActions}>
-        <Pressable style={styles.topIconButton}>
-          <Search size={21} color={COLORS.text} />
-        </Pressable>
-
+       
         <Pressable
           onPress={() => router.push("/superadmin/plans")}
           style={styles.topAddButton}
         >
-          <Plus size={23} color={colors.surface} />
+          <Plus size={23} color={colors.surface} /><Text style={styles.topAddButtontext}>Plans</Text>
         </Pressable>
       </View>
     ) : (
@@ -1376,8 +1350,7 @@ export default function SuperAdminScreen() {
                   org={org}
                   actionId={actionId}
                   onOpen={() => router.push({ pathname: "/superadmin/organization-detail", params: { id: org._id } })}
-                  onRenew={() => renewOrg(org)}
-                  onToggleStatus={() => changeStatus(org)}
+                  onToggleStatus={() => setPendingStatusChange(org)}
                 />
               ))}
             </View>
@@ -1447,6 +1420,14 @@ export default function SuperAdminScreen() {
               </View>
               <ChevronRight size={25} color={COLORS.blue} />
             </Pressable>
+            <Pressable onPress={() => router.push("/superadmin/security")} style={styles.moreRow}>
+              <View style={styles.moreIconBox}><Shield size={27} color={COLORS.blue} /></View>
+              <View style={styles.moreCopy}>
+                <Text style={styles.moreText}>Security PIN</Text>
+                <Text style={styles.moreSubText}>Protect sensitive account actions</Text>
+              </View>
+              <ChevronRight size={25} color={COLORS.blue} />
+            </Pressable>
             <Pressable onPress={logout} style={[styles.moreRow, styles.moreRowLast]}>
               <View style={[styles.moreIconBox, styles.moreIconDanger]}><LogOut size={28} color={COLORS.red} /></View>
               <View style={styles.moreCopy}>
@@ -1458,6 +1439,14 @@ export default function SuperAdminScreen() {
           </View>
         ) : null}
       </ScrollView>
+      <SecurityPinModal
+        visible={Boolean(pendingStatusChange)}
+        title={pendingStatusChange?.status === "suspended" ? "Reactivate account" : "Suspend account"}
+        message="Enter your security PIN to confirm this account change."
+        loading={Boolean(actionId)}
+        onClose={() => setPendingStatusChange(null)}
+        onConfirm={(pin) => changeStatus(pendingStatusChange, pin)}
+      />
 
      
 
@@ -1671,7 +1660,7 @@ const styles = StyleSheet.create({
   },
 
   topAddButton: {
-    width: 40,
+    // width: 40,
     height: 40,
 
     alignItems: "center",
@@ -1679,6 +1668,10 @@ const styles = StyleSheet.create({
 
     borderRadius: 12,
     backgroundColor: COLORS.blue,
+  display: "flex",
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    padding: 11,
   },
 
   badge: {
@@ -3763,7 +3756,7 @@ const styles = StyleSheet.create({
 
     left: 0,
     right: 0,
-    bottom: 0,
+    bottom: -11,
 
     width: "100%",
 
@@ -3996,4 +3989,9 @@ const styles = StyleSheet.create({
   sidebarItemTextDanger: {
     color: COLORS.red,
   },
+  topAddButtontext:{
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  }
 });

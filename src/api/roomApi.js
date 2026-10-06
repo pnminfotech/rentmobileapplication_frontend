@@ -23,8 +23,8 @@ export async function updateBed(roomId, bedNo, payload) {
   return data;
 }
 
-export async function deleteBed(roomId, bedNo) {
-  const { data } = await api.delete(`/rooms/${roomId}/bed/${encodeURIComponent(bedNo)}`);
+export async function deleteBed(roomId, bedNo, securityPin) {
+  const { data } = await api.delete(`/rooms/${roomId}/bed/${encodeURIComponent(bedNo)}`, { data: { securityPin } });
   return data;
 }
 
@@ -48,8 +48,8 @@ export async function updateUnit(roomId, payload) {
   return data;
 }
 
-export async function deleteUnit(roomId) {
-  const { data } = await api.delete(`/rooms/${roomId}`);
+export async function deleteUnit(roomId, securityPin) {
+  const { data } = await api.delete(`/rooms/${roomId}`, { data: { securityPin } });
   return data;
 }
 

@@ -492,11 +492,18 @@ export default function TenantsScreen() {
       const dueInfo = dueMap.get(String(tenant._id));
       const overdue = Number(dueInfo?.totalDue || 0);
       
-      // Only include current month's balance if its rent cycle has started
-      const cycleStartDate = cycleStartForMonth(tenant, new Date());
-      const cycleHasStarted = cycleStartDate <= new Date();
+      // An advance-cycle tenant pays at the beginning of the cycle. A normal-cycle
+      // tenant only becomes due once that full cycle has ended, so an upcoming
+      // Oct 6 to Nov 6 cycle must not show as due on Oct 6.
+      const today = new Date();
+      const cycleStartDate = cycleStartForMonth(tenant, today);
+      const cycleEndDate = cycleStartForMonth(tenant, shiftMonth(today, 1));
+      const isAdvanceCycle = String(tenant.firstRentStatus || "").trim() === "ADVANCE_PAID";
+      const cycleIsDue = isAdvanceCycle
+        ? cycleStartDate <= today
+        : cycleEndDate <= today;
       const dueMonths = Array.isArray(dueInfo?.dueMonths) ? dueInfo.dueMonths : [];
-      const currentDue = cycleHasStarted ? balance : 0;
+      const currentDue = cycleIsDue ? balance : 0;
       const currentAlreadyIncluded = dueMonths.some((month) => month.month === key);
       const totalDue = overdue + (currentAlreadyIncluded ? 0 : currentDue);
       const docStatus = documentStatusForTenant(tenant);

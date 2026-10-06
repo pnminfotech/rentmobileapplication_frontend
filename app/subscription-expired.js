@@ -19,6 +19,9 @@ import { clearAuthSession } from "../src/storage/authStorage";
 import { colors } from "../src/theme/colors";
 import { useResponsive } from "../src/utils/responsive";
 
+// Replace this number with the production customer-support WhatsApp/call number.
+const SUPPORT_PHONE = "+919999999999";
+
 function money(value) {
   return `Rs. ${Number(value || 0).toLocaleString("en-IN")}`;
 }
@@ -145,6 +148,17 @@ export default function SubscriptionExpiredScreen() {
   async function logout() {
     await clearAuthSession();
     router.replace("/login");
+  }
+
+  async function contactSupport(channel) {
+    const plainPhone = SUPPORT_PHONE.replace(/\D/g, "");
+    const message = encodeURIComponent(`Hello, I need to reduce my units before renewing ${bootstrap?.organization?.name || "my subscription"}. Current units: ${units.beds || 0} beds, ${units.rooms || 0} rooms, ${units.shops || 0} shops.`);
+    const url = channel === "whatsapp" ? `https://wa.me/${plainPhone}?text=${message}` : `tel:${SUPPORT_PHONE}`;
+    try {
+      await Linking.openURL(url);
+    } catch (_error) {
+      Alert.alert("Contact support", `Please call or WhatsApp ${SUPPORT_PHONE}.`);
+    }
   }
 
   async function verifyRenewalPayment(transactionId) {
@@ -360,6 +374,15 @@ export default function SubscriptionExpiredScreen() {
           <UnitBox label="Shops" value={units.shops} style={{ width: responsive.isTiny ? "100%" : "31.5%" }} />
         </View>
 
+        {!pendingPayment ? <View style={styles.supportCard}>
+          <Text style={styles.supportTitle}>Need fewer units?</Text>
+          <Text style={styles.supportText}>Tell support which vacant beds, rooms, or shops should be removed. Your payable amount will update after the change.</Text>
+          <View style={styles.supportActions}>
+            <Pressable onPress={() => contactSupport("whatsapp")} style={styles.supportButton}><Text style={styles.supportButtonText}>WhatsApp support</Text></Pressable>
+            <Pressable onPress={() => contactSupport("call")} style={styles.supportButton}><Text style={styles.supportButtonText}>Call support</Text></Pressable>
+          </View>
+        </View> : null}
+
         <Pressable onPress={renewNow} disabled={renewing || (!pendingPayment && !selectedPlan)} style={[styles.primaryButton, (renewing || (!pendingPayment && !selectedPlan)) && styles.disabled]}>
           {renewing ? <ActivityIndicator color={colors.surface} /> : <><RefreshCw size={18} color={colors.surface} /><Text style={styles.primaryText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{pageCopy.buttonText}</Text></>}
         </Pressable>
@@ -400,6 +423,12 @@ const styles = StyleSheet.create({
   unitBox: { minHeight: 72, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: colors.surfaceSoft },
   unitValue: { color: colors.primary, fontSize: 22, fontWeight: "800" },
   unitLabel: { marginTop: 4, color: colors.muted, fontSize: 12, fontWeight: "700" },
+  supportCard: { marginTop: 16, padding: 12, borderWidth: 1, borderColor: colors.primarySoft, borderRadius: 8, backgroundColor: colors.primarySoft },
+  supportTitle: { color: colors.text, fontSize: 14, fontWeight: "900" },
+  supportText: { marginTop: 4, color: colors.muted, fontSize: 12, lineHeight: 18 },
+  supportActions: { marginTop: 10, flexDirection: "row", gap: 8 },
+  supportButton: { flex: 1, minHeight: 40, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.primary, borderRadius: 7, backgroundColor: colors.surface },
+  supportButtonText: { color: colors.primary, fontSize: 12, fontWeight: "900" },
   walletRow: { marginTop: 16, minHeight: 64, padding: 11, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surfaceSoft },
   walletDisabled: { opacity: 0.62 },
   walletIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: colors.primarySoft },

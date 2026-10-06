@@ -89,9 +89,9 @@ export async function archiveTenant(tenantId) {
   return data;
 }
 
-export async function deleteTenant(tenantId, password) {
+export async function deleteTenant(tenantId, securityPin) {
   const id = encodeURIComponent(String(tenantId));
-  const payload = { password: String(password).trim() };
+  const payload = { securityPin: String(securityPin).trim() };
 
   try {
     const { data } = await api.post(`/forms/${id}/delete`, payload);

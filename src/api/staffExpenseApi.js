@@ -15,7 +15,7 @@ export async function updateStaffExpense(id, payload) {
   return data;
 }
 
-export async function deleteStaffExpense(id) {
-  const { data } = await api.delete(`/staff-expenses/${id}`);
+export async function deleteStaffExpense(id, securityPin) {
+  const { data } = await api.delete(`/staff-expenses/${id}`, { data: { securityPin } });
   return data;
 }
