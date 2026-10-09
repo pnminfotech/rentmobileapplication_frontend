@@ -14,7 +14,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { ArrowLeft, Check, Plus } from "lucide-react-native";
 
-import { createRoom, getRooms } from "../../src/api/roomApi";
+import { createRoom, getBedCategories, getRooms, updateBedCategories } from "../../src/api/roomApi";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { stackedPropertyLabel } from "../../src/utils/unitLabels";
 import { systemColors as colors } from "../../src/theme/systemTheme";
@@ -77,7 +77,7 @@ export default function UnitFormScreen() {
   const [monthlyPrice, setMonthlyPrice] = useState("");
   const [bedCount, setBedCount] = useState("1");
   const [bedCategory, setBedCategory] = useState("Standard");
-  const [bedCategories, setBedCategories] = useState(["Standard", "Single", "Double", "Bunk"]);
+  const [bedCategories, setBedCategories] = useState(["Standard", "Single",  "Bunk"]);
   const [bedRoomMode, setBedRoomMode] = useState("new");
   const [units, setUnits] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -87,8 +87,9 @@ export default function UnitFormScreen() {
   const loadUnits = useCallback(async () => {
     try {
       setListLoading(true);
-      const data = await getRooms();
+      const [data, categories] = await Promise.all([getRooms(), getBedCategories().catch(() => [])]);
       setUnits(Array.isArray(data) ? data : []);
+      if (categories.length) setBedCategories(categories);
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load existing units.");
     } finally {
@@ -229,6 +230,17 @@ export default function UnitFormScreen() {
     router.push({ pathname: "/system/unit-details", params: { id: unit._id } });
   }
 
+  async function persistBedCategory(name, renameFrom = "") {
+    const next = [...bedCategories.filter((item) => !renameFrom || normalizeKey(item) !== normalizeKey(renameFrom)), name];
+    try {
+      const saved = await updateBedCategories(next, renameFrom, renameFrom ? name : "");
+      setBedCategories(saved.length ? saved : next);
+      setBedCategory(name);
+    } catch (err) {
+      Alert.alert("Unable to save bed category", err.response?.data?.message || "Please try again.");
+    }
+  }
+
   function OptionList({ options, selectedValue, onSelect, emptyText }) {
     if (listLoading) {
       return <Text style={styles.optionHelper}>Loading saved options...</Text>;
@@ -311,6 +323,10 @@ export default function UnitFormScreen() {
     try {
       setLoading(true);
       setError("");
+      if (propertyType === "bed" && !bedCategories.some((item) => normalizeKey(item) === normalizeKey(bedCategory))) {
+        const savedCategories = await updateBedCategories([...bedCategories, bedCategory.trim() || "Standard"]);
+        if (savedCategories.length) setBedCategories(savedCategories);
+      }
       await createRoom({
         propertyType,
         category: category.trim(),
@@ -478,8 +494,8 @@ export default function UnitFormScreen() {
               <Text style={styles.label}>Bed category</Text>
               <OptionList options={bedCategories} selectedValue={bedCategory} onSelect={setBedCategory} emptyText="No bed categories yet." />
               <View style={styles.categoryActions}>
-                <Pressable onPress={() => Alert.prompt("Add bed category", "Enter a category name", (value) => { const name = String(value || "").trim(); if (name && !bedCategories.some((item) => normalizeKey(item) === normalizeKey(name))) { setBedCategories((current) => [...current, name]); setBedCategory(name); } })} style={styles.categoryAction}><Text style={styles.categoryActionText}>+ Add category</Text></Pressable>
-                <Pressable onPress={() => Alert.prompt("Rename bed category", "Enter the new name", (value) => { const name = String(value || "").trim(); if (name && bedCategory) { setBedCategories((current) => current.map((item) => item === bedCategory ? name : item)); setBedCategory(name); } })} style={styles.categoryAction}><Text style={styles.categoryActionText}>Rename selected</Text></Pressable>
+                <Pressable onPress={() => Alert.prompt("Add bed category", "Enter a category name", (value) => { const name = String(value || "").trim(); if (name && !bedCategories.some((item) => normalizeKey(item) === normalizeKey(name))) persistBedCategory(name); })} style={styles.categoryAction}><Text style={styles.categoryActionText}>+ Add category</Text></Pressable>
+                <Pressable onPress={() => Alert.prompt("Rename bed category", "Enter the new name", (value) => { const name = String(value || "").trim(); if (name && bedCategory) persistBedCategory(name, bedCategory); })} style={styles.categoryAction}><Text style={styles.categoryActionText}>Rename selected</Text></Pressable>
               </View>
             </>
           ) : null}

@@ -49,6 +49,7 @@ export default function RoomFormScreen() {
 const [monthlyPrice, setMonthlyPrice] = useState("");
 const [bedCount, setBedCount] = useState("1");
 const [bedCategory, setBedCategory] = useState("Standard");
+  const [roomCategory, setRoomCategory] = useState("");
  async function saveRoom() {
   const price = Number(monthlyPrice);
   const numberOfBeds = Number(bedCount);
@@ -88,6 +89,7 @@ const [bedCategory, setBedCategory] = useState("Standard");
     const room = await createRoom({
       propertyType,
       category: category.trim(),
+      roomCategory: propertyType === "bed" ? roomCategory.trim() : "",
       floorNo: floorNo.trim(),
       roomNo: roomNo.trim(),
       hasWing,
@@ -188,6 +190,11 @@ const [bedCategory, setBedCategory] = useState("Standard");
         placeholder=" 101 / 201 / 301"
         style={styles.input}
       />
+
+      {propertyType === "bed" ? <>
+        <Text style={styles.label}>Room category</Text>
+        <TextInput value={roomCategory} onChangeText={setRoomCategory} placeholder="Example: Premium / Economy" style={styles.input} />
+      </> : null}
 
       <View style={styles.switchRow}>
         <Text style={styles.labelNoMargin}>Has wing</Text>

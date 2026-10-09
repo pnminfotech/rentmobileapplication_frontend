@@ -68,6 +68,7 @@ export default function UnitDetailsScreen() {
       const primaryBed = loadedUnit?.beds?.[0] || {};
       setUnitEdits({
         category: loadedUnit?.category || "",
+        roomCategory: loadedUnit?.roomCategory || "",
         floorNo: loadedUnit?.floorNo || "",
         roomNo: loadedUnit?.roomNo || "",
         wingName: loadedUnit?.wingName || "",
@@ -138,6 +139,7 @@ export default function UnitDetailsScreen() {
       setUpdatingUnit(true);
       const updatedUnit = await updateUnit(unit._id, {
         category: unitEdits.category,
+        roomCategory: isBedUnit ? unitEdits.roomCategory : undefined,
         floorNo: unitEdits.floorNo,
         roomNo: unitEdits.roomNo,
         hasWing: Boolean(String(unitEdits.wingName || "").trim()),
@@ -320,6 +322,10 @@ export default function UnitDetailsScreen() {
             <TextInput value={unitEdits.floorNo} onChangeText={(value) => setUnitEdit("floorNo", value)} style={styles.input} />
             <Text style={styles.inputLabel}>{isShop ? "Shop number" : "Room number"}</Text>
             <TextInput value={unitEdits.roomNo} onChangeText={(value) => setUnitEdit("roomNo", value)} style={styles.input} />
+            {isBedUnit ? <>
+              <Text style={styles.inputLabel}>Room category</Text>
+              <TextInput value={unitEdits.roomCategory} onChangeText={(value) => setUnitEdit("roomCategory", value)} placeholder="Example: Premium" style={styles.input} />
+            </> : null}
             {!isBedUnit && !isShop ? (
               <>
                 <Text style={styles.inputLabel}>Flat / room type</Text>
@@ -341,6 +347,7 @@ export default function UnitDetailsScreen() {
           <>
             {!isBedUnit ? <Text style={styles.unitPrice}>Rs. {beds[0]?.price ?? 0} /month</Text> : null}
             {unit.flatType ? <Text style={styles.unitMeta}>{unit.flatType}</Text> : null}
+            {isBedUnit && unit.roomCategory ? <Text style={styles.unitMeta}>Room category: {unit.roomCategory}</Text> : null}
             <Text style={styles.unitMeta}>Meter no: {unit.meterNo || "Not set"}</Text>
             <Text style={styles.unitMeta}>Last reading: {unit.lastMeterReading ?? "Not set"}</Text>
           </>

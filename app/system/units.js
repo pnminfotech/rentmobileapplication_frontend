@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -23,11 +22,10 @@ import {
   getRooms,
   getUnitUsage,
   renameProperty,
-  updateBed,
-  updateUnit,
 } from "../../src/api/roomApi";
 import { getTenants } from "../../src/api/tenantApi";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
+import UnitDetailsSetupModal from "../../src/components/UnitDetailsSetupModal";
 import { systemColors } from "../../src/theme/systemTheme";
 import { useResponsive } from "../../src/utils/responsive";
 
@@ -49,82 +47,6 @@ const TYPE_LABELS = {
   room: "Residential",
   shop: "Commercial",
 };
-
-function blankUnitDraft(unit, type) {
-  const bed = Array.isArray(unit?.beds) ? unit.beds[0] : null;
-  const emptyIfUnassigned = (value) => /^unassigned$/i.test(String(value || "").trim()) ? "" : String(value || "");
-  return {
-    category: unit?.isPlaceholder ? "" : emptyIfUnassigned(unit?.category),
-    floorNo: unit?.isPlaceholder ? "" : String(unit?.floorNo || ""),
-    wingName: unit?.isPlaceholder ? "" : String(unit?.wingName || ""),
-    flatType: unit?.isPlaceholder ? "" : normalizeFlatType(unit?.flatType),
-    roomNo: unit?.isPlaceholder ? "" : String(unit?.roomNo || ""),
-    meterNo: unit?.isPlaceholder ? "" : String(unit?.meterNo || ""),
-    lastMeterReading:
-      unit?.lastMeterReading === undefined || unit?.lastMeterReading === null
-        ? ""
-        : String(unit.lastMeterReading),
-    bedCategory:
-      type === "shop"
-        ? "Shop"
-        : type === "room"
-          ? "Rental Room"
-          : emptyIfUnassigned(bed?.bedCategory),
-    bedNo: type === "bed" ? String(bed?.bedNo || "") : "",
-    monthlyPrice: bed?.price === undefined || bed?.price === null ? "" : String(bed.price),
-  };
-}
-
-function unitDetailLabels(type) {
-  if (type === "shop") {
-    return {
-      category: "Property name",
-      number: "Shop number",
-      numberPlaceholder: " S-01",
-      price: "Monthly shop rent",
-    };
-  }
-  if (type === "room") {
-    return {
-      category: "Building or property name",
-      number: "Room or flat number",
-      numberPlaceholder: " 101 / A-101",
-      price: "Monthly room rent",
-    };
-  }
-  return {
-    category: "Building / hostel name",
-    number: "Room number",
-    numberPlaceholder: " 101/201/301",
-    price: "Monthly bed rent",
-  };
-}
-
-function normalizeIdentifier(value) {
-  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
-}
-
-function normalizeKey(value) {
-  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-function normalizeFlatType(value) {
-  const text = String(value || "").trim().replace(/\s+/g, " ");
-  const match = text.match(/^(\d+)\s*(rk|bhk)$/i);
-  if (match) return `${match[1]} ${match[2].toUpperCase()}`;
-  return text.replace(/\b(rk|bhk)\b/gi, (part) => part.toUpperCase());
-}
-
-function uniqueValues(items, selector) {
-  const seen = new Set();
-  return items.reduce((list, item) => {
-    const value = String(selector(item) || "").trim();
-    const key = normalizeKey(value);
-    if (!value || seen.has(key)) return list;
-    seen.add(key);
-    return [...list, value];
-  }, []);
-}
 
 function activeTenant(tenant) {
   if (!tenant?.leaveDate) return true;
@@ -320,23 +242,6 @@ function RoomRow({ room, type, onPress, last, index }) {
   );
 }
 
-function SavedOptionChips({ options, selectedValue, onSelect, emptyText, visible }) {
-  if (!options.length) {
-    return emptyText ? <Text style={styles.optionHelper}>{emptyText}</Text> : null;
-  }
-
-  return visible ? (
-    <View style={styles.savedDropdownWrap}>
-      <View style={styles.savedDropdownMenu}>
-        {options.map((option) => {
-          const selected = normalizeKey(option) === normalizeKey(selectedValue);
-          return <Pressable key={option} onPressIn={() => { Keyboard.dismiss(); onSelect(option); }} style={[styles.savedDropdownItem, selected && styles.savedDropdownItemActive]}><Text style={[styles.savedDropdownItemText, selected && styles.savedDropdownItemTextActive]}>{option}</Text>{selected ? <Check size={14} color={UI.primaryDark} /> : null}</Pressable>;
-        })}
-      </View>
-    </View>
-  ) : null;
-}
-
 function BuildingCard({
   building,
   type,
@@ -444,20 +349,10 @@ export default function UnitsModernScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-const [renameTarget, setRenameTarget] = useState(null);
-const [propertyName, setPropertyName] = useState("");
-const [renaming, setRenaming] = useState(false);
-const [unitDetailsTarget, setUnitDetailsTarget] = useState(null);
-const [unitDetailsDraft, setUnitDetailsDraft] = useState(blankUnitDraft(null, type));
-const [bedCategoryOptions, setBedCategoryOptions] = useState(["Standard", "Single", "Double", "Bunk"]);
-const [bedCategoryOpen, setBedCategoryOpen] = useState(false);
-const [customBedCategory, setCustomBedCategory] = useState("");
-const [bedCategoryEditor, setBedCategoryEditor] = useState("");
-const [activeSavedField, setActiveSavedField] = useState("");
-const [savingUnitDetails, setSavingUnitDetails] = useState(false);
-const [unitDetailsError, setUnitDetailsError] = useState("");
-const [unitDetailErrors, setUnitDetailErrors] = useState({});
-const [showMeterDetails, setShowMeterDetails] = useState(false);
+  const [renameTarget, setRenameTarget] = useState(null);
+  const [propertyName, setPropertyName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [unitDetailsTarget, setUnitDetailsTarget] = useState(null);
   const load = useCallback(async () => {
     try {
       setRefreshing(true);
@@ -501,137 +396,10 @@ function closeRenameProperty() {
 
 function openUnitDetails(unit) {
   setUnitDetailsTarget(unit);
-  const draft = blankUnitDraft(unit, unit.propertyType || type);
-  setUnitDetailsDraft(draft);
-  setShowMeterDetails(Boolean(draft.meterNo || draft.lastMeterReading));
-  setUnitDetailErrors({});
-  setUnitDetailsError("");
-  setUnitDetailErrors({});
 }
 
 function closeUnitDetails() {
-  if (savingUnitDetails) return;
   setUnitDetailsTarget(null);
-  setUnitDetailsDraft(blankUnitDraft(null, type));
-  setUnitDetailsError("");
-}
-
-function updateUnitDetailsDraft(key, value) {
-  setUnitDetailsDraft((current) => ({ ...current, [key]: value }));
-  setUnitDetailErrors((current) => {
-    const next = { ...current };
-    const text = String(value || "").trim();
-    const targetType = unitDetailsTarget?.propertyType || type;
-    if (["category", "floorNo", "roomNo"].includes(key)) {
-      if (!text) next[key] = `${key === "roomNo" ? "Unit number" : key === "floorNo" ? "Floor" : "Property name"} is required.`;
-      else delete next[key];
-      const draft = { ...unitDetailsDraft, [key]: value };
-      const duplicateUnit = targetType !== "bed" && draft.category.trim() && draft.floorNo.trim() && draft.roomNo.trim() && units.some((unit) => String(unit?._id || "") !== String(unitDetailsTarget?._id || "") && !unit?.isPlaceholder && normalizeKey(unit.category) === normalizeKey(draft.category) && normalizeKey(unit.floorNo) === normalizeKey(draft.floorNo) && normalizeKey(unit.roomNo) === normalizeKey(draft.roomNo));
-      if (duplicateUnit) next.roomNo = "This unit number already exists on this floor.";
-      else if (key !== "roomNo" || text) delete next.roomNo;
-    }
-    if (key === "bedCategory") {
-      if (!text) next.bedCategory = "Bed category is required.";
-      else delete next.bedCategory;
-    }
-    if (key === "flatType") {
-      if (targetType === "room" && !text) next.flatType = "Flat type is required.";
-      else delete next.flatType;
-    }
-    if (key === "bedNo") {
-      const draft = { ...unitDetailsDraft, [key]: value };
-      const localDuplicate = (unitDetailsTarget?.beds || []).some((bed) => String(bed.bedNo || "").trim().toLowerCase() !== String(unitDetailsTarget?.beds?.[0]?.bedNo || "").trim().toLowerCase() && String(bed.bedNo || "").trim().toLowerCase() === text.toLowerCase());
-      const roomDuplicate = targetType === "bed" && units.some((unit) => String(unit?._id || "") !== String(unitDetailsTarget?._id || "") && !unit?.isPlaceholder && normalizeKey(unit.category) === normalizeKey(draft.category) && normalizeKey(unit.floorNo) === normalizeKey(draft.floorNo) && normalizeKey(unit.roomNo) === normalizeKey(draft.roomNo) && (unit.beds || []).some((bed) => normalizeKey(bed.bedNo) === normalizeKey(text)));
-      const duplicate = localDuplicate || roomDuplicate;
-      if (!text) next.bedNo = "Bed number is required.";
-      else if (duplicate) next.bedNo = "This bed number already exists in this room.";
-      else delete next.bedNo;
-    }
-    if (key === "monthlyPrice") {
-      if (text && (!Number.isFinite(Number(text)) || Number(text) <= 0)) next.monthlyPrice = "Enter a monthly rent greater than ₹0.";
-      else delete next.monthlyPrice;
-    }
-    if (key === "lastMeterReading") {
-      if (text && (!Number.isFinite(Number(text)) || Number(text) < 0)) next.lastMeterReading = "Enter a valid meter reading.";
-      else delete next.lastMeterReading;
-    }
-    return next;
-  });
-}
-
-async function saveUnitDetails() {
-  if (!unitDetailsTarget?._id) return;
-  const targetType = unitDetailsTarget.propertyType || type;
-  const firstBed = Array.isArray(unitDetailsTarget.beds) ? unitDetailsTarget.beds[0] : null;
-  const bedNo = firstBed?.bedNo || "1";
-  const labels = unitDetailLabels(targetType);
-  const monthlyPrice = Number(unitDetailsDraft.monthlyPrice);
-  const meterReading =
-    unitDetailsDraft.lastMeterReading === ""
-      ? null
-      : Number(unitDetailsDraft.lastMeterReading);
-
-  const nextErrors = {};
-  if (!unitDetailsDraft.category.trim()) nextErrors.category = `${labels.category} is required.`;
-  if (!unitDetailsDraft.floorNo.trim()) nextErrors.floorNo = "Floor is required.";
-  if (!unitDetailsDraft.roomNo.trim()) nextErrors.roomNo = `${labels.number} is required.`;
-  if (targetType === "bed" && !unitDetailsDraft.bedCategory.trim()) nextErrors.bedCategory = "Bed category is required.";
-  if (targetType === "bed" && !unitDetailsDraft.bedNo.trim()) nextErrors.bedNo = "Bed number is required.";
-  if (targetType === "bed" && unitDetailsDraft.bedNo.trim() && (unitDetailsTarget?.beds || []).some((bed) => String(bed.bedNo || "").trim().toLowerCase() !== String(firstBed?.bedNo || "").trim().toLowerCase() && String(bed.bedNo || "").trim().toLowerCase() === unitDetailsDraft.bedNo.trim().toLowerCase())) nextErrors.bedNo = "This bed number already exists in this room.";
-  if (targetType === "room" && !unitDetailsDraft.flatType.trim()) nextErrors.flatType = "Flat type is required.";
-  if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) nextErrors.monthlyPrice = "Enter a monthly rent greater than ₹0.";
-  if (Object.keys(nextErrors).length) {
-    setUnitDetailErrors(nextErrors);
-    setUnitDetailsError("Please correct the highlighted fields.");
-    return;
-  }
-
-  if (
-    unitDetailsDraft.lastMeterReading !== "" &&
-    (!Number.isFinite(meterReading) || meterReading < 0)
-  ) {
-    setUnitDetailsError("Enter a valid last meter reading.");
-    return;
-  }
-
-  try {
-    setSavingUnitDetails(true);
-    setUnitDetailsError("");
-    setUnitDetailErrors({});
-
-    await updateBed(unitDetailsTarget._id, bedNo, {
-      price: monthlyPrice,
-      newBedNo: targetType === "bed" ? unitDetailsDraft.bedNo.trim() : undefined,
-      bedCategory:
-        targetType === "shop"
-          ? "Shop"
-          : targetType === "room"
-            ? "Rental Room"
-            : unitDetailsDraft.bedCategory.trim() || "Standard",
-    });
-
-    await updateUnit(unitDetailsTarget._id, {
-      category: unitDetailsDraft.category.trim(),
-      floorNo: unitDetailsDraft.floorNo.trim(),
-      roomNo: normalizeIdentifier(unitDetailsDraft.roomNo),
-      hasWing: Boolean(unitDetailsDraft.wingName.trim()),
-      wingName: unitDetailsDraft.wingName.trim(),
-      flatType: targetType === "bed" ? "" : normalizeFlatType(unitDetailsDraft.flatType),
-      meterNo: normalizeIdentifier(unitDetailsDraft.meterNo),
-      lastMeterReading: meterReading,
-    });
-
-    closeUnitDetails();
-    await load();
-  } catch (err) {
-    setUnitDetailsError(
-      err.response?.data?.message ||
-        err.message ||
-        "Unable to save unit details."
-    );
-  } finally {
-    setSavingUnitDetails(false);
-  }
 }
 
 async function savePropertyName() {
@@ -726,53 +494,6 @@ async function savePropertyName() {
       })
       .filter((section) => section.buildings.length);
   }, [filteredUnits, tenants, type, visibleTypes]);
-  const savedLocationUnits = useMemo(
-    () => units.filter((unit) => !unit.isPlaceholder),
-    [units]
-  );
-  const savedPropertyOptions = useMemo(
-    () => uniqueValues(savedLocationUnits, (unit) => unit.category),
-    [savedLocationUnits]
-  );
-  const existingBedCategoryOptions = useMemo(() => uniqueValues(
-    savedLocationUnits.flatMap((item) => Array.isArray(item.beds) ? item.beds : []),
-    (bed) => bed.bedCategory
-  ), [savedLocationUnits]);
-  const allBedCategoryOptions = useMemo(
-    () => uniqueValues([...bedCategoryOptions, ...existingBedCategoryOptions], (value) => value),
-    [bedCategoryOptions, existingBedCategoryOptions]
-  );
-  const savedFloorOptions = useMemo(() => {
-    const categoryKey = normalizeKey(unitDetailsDraft.category);
-    return uniqueValues(
-      savedLocationUnits.filter((unit) => !categoryKey || normalizeKey(unit.category) === categoryKey),
-      (unit) => unit.floorNo
-    );
-  }, [savedLocationUnits, unitDetailsDraft.category]);
-  const savedWingOptions = useMemo(() => {
-    const categoryKey = normalizeKey(unitDetailsDraft.category);
-    const floorKey = normalizeKey(unitDetailsDraft.floorNo);
-    return uniqueValues(
-      savedLocationUnits.filter((unit) => {
-        if (categoryKey && normalizeKey(unit.category) !== categoryKey) return false;
-        if (floorKey && normalizeKey(unit.floorNo) !== floorKey) return false;
-        return Boolean(unit.wingName);
-      }),
-      (unit) => unit.wingName
-    );
-  }, [savedLocationUnits, unitDetailsDraft.category, unitDetailsDraft.floorNo]);
-  const savedFlatTypeOptions = useMemo(() => {
-    const categoryKey = normalizeKey(unitDetailsDraft.category);
-    const floorKey = normalizeKey(unitDetailsDraft.floorNo);
-    return uniqueValues(
-      savedLocationUnits.filter((unit) => {
-        if (categoryKey && normalizeKey(unit.category) !== categoryKey) return false;
-        if (floorKey && normalizeKey(unit.floorNo) !== floorKey) return false;
-        return Boolean(unit.flatType);
-      }),
-      (unit) => normalizeFlatType(unit.flatType)
-    );
-  }, [savedLocationUnits, unitDetailsDraft.category, unitDetailsDraft.floorNo]);
   const stats = useMemo(() => filteredUnits.reduce((sum, unit) => {
     const value = unitOccupancy(unit, tenants);
     return { total: sum.total + value.total, occupied: sum.occupied + value.occupied, vacant: sum.vacant + value.vacant };
@@ -997,235 +718,7 @@ async function savePropertyName() {
 
   </View>
 </Modal>
-      <Modal
-        visible={Boolean(unitDetailsTarget)}
-        transparent
-        animationType="fade"
-        onRequestClose={closeUnitDetails}
-      >
-        <View style={styles.renameOverlay}>
-
-          <View style={styles.renameModal}>
-            <View style={styles.renameHeader}>
-              <View style={styles.renameHeaderIcon}>
-                <DoorOpen size={19} color={UI.primaryDark} />
-              </View>
-
-              <View style={styles.renameHeaderCopy}>
-                <Text style={styles.renameTitle}>Set unit details</Text>
-                <Text style={styles.renameSubtitle}>
-                  Add the property, floor and unit number before assigning tenants.
-                </Text>
-              </View>
-
-              <Pressable onPress={closeUnitDetails} style={styles.renameClose}>
-                <X size={18} color={UI.primaryDark} />
-              </Pressable>
-            </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="always"
-              style={styles.unitDetailsScroll}
-            >
-              {(() => {
-                const targetType = unitDetailsTarget?.propertyType || type;
-                const labels = unitDetailLabels(targetType);
-                return (
-                  <>
-                    <Text style={styles.renameLabel}>{labels.category} <Text style={styles.requiredMark}>*</Text></Text>
-                    <TextInput
-                      value={unitDetailsDraft.category}
-                      onChangeText={(value) => updateUnitDetailsDraft("category", value)}
-                      onFocus={() => setActiveSavedField("category")}
-                      placeholder={`Enter ${labels.category.toLowerCase()}`}
-                      placeholderTextColor="#98A2B3"
-                      style={styles.renameInput}
-                      editable={!savingUnitDetails}
-                    />
-                    {unitDetailErrors.category ? <Text style={styles.fieldError}>{unitDetailErrors.category}</Text> : null}
-                    <SavedOptionChips
-                      options={savedPropertyOptions}
-                      selectedValue={unitDetailsDraft.category}
-                      onSelect={(value) => {
-                        updateUnitDetailsDraft("category", value);
-                        setActiveSavedField("");
-                        updateUnitDetailsDraft("floorNo", "");
-                        updateUnitDetailsDraft("wingName", "");
-                        updateUnitDetailsDraft("flatType", "");
-                      }}
-                      visible={activeSavedField === "category"}
-                    />
-
-                    <Text style={styles.renameLabel}>Floor <Text style={styles.requiredMark}>*</Text></Text>
-                    <TextInput
-                      value={unitDetailsDraft.floorNo}
-                      onChangeText={(value) => updateUnitDetailsDraft("floorNo", value)}
-                      onFocus={() => setActiveSavedField("floorNo")}
-                      placeholder=" Ground / 1"
-                      placeholderTextColor="#98A2B3"
-                      style={styles.renameInput}
-                      editable={!savingUnitDetails}
-                    />
-                    {unitDetailErrors.floorNo ? <Text style={styles.fieldError}>{unitDetailErrors.floorNo}</Text> : null}
-                    <SavedOptionChips
-                      options={savedFloorOptions}
-                      selectedValue={unitDetailsDraft.floorNo}
-                      onSelect={(value) => {
-                        updateUnitDetailsDraft("floorNo", value);
-                        setActiveSavedField("");
-                        updateUnitDetailsDraft("wingName", "");
-                        updateUnitDetailsDraft("flatType", "");
-                      }}
-                      visible={activeSavedField === "floorNo"}
-                    />
-
-                    <Text style={styles.renameLabel}>Wing / block</Text>
-                    <TextInput
-                      value={unitDetailsDraft.wingName}
-                      onChangeText={(value) => updateUnitDetailsDraft("wingName", value)}
-                      onFocus={() => setActiveSavedField("wingName")}
-                      placeholder="building / hostel name"
-                      placeholderTextColor="#98A2B3"
-                      style={styles.renameInput}
-                      editable={!savingUnitDetails}
-                    />
-                    <SavedOptionChips
-                      options={savedWingOptions}
-                      selectedValue={unitDetailsDraft.wingName}
-                      onSelect={(value) => { updateUnitDetailsDraft("wingName", value); setActiveSavedField(""); }}
-                      visible={activeSavedField === "wingName"}
-                    />
-
-                    {targetType === "room" ? (
-                      <>
-                        <Text style={styles.renameLabel}>Flat type <Text style={styles.requiredMark}>*</Text></Text>
-                        <TextInput
-                          value={unitDetailsDraft.flatType}
-                          onChangeText={(value) => updateUnitDetailsDraft("flatType", normalizeFlatType(value))}
-                          onFocus={() => setActiveSavedField("flatType")}
-                          placeholder=" 1 RK / 1 BHK"
-                          placeholderTextColor="#98A2B3"
-                          style={styles.renameInput}
-                          editable={!savingUnitDetails}
-                        />
-                        <SavedOptionChips
-                          options={savedFlatTypeOptions}
-                          selectedValue={unitDetailsDraft.flatType}
-                          onSelect={(value) => { updateUnitDetailsDraft("flatType", value); setActiveSavedField(""); }}
-                          visible={activeSavedField === "flatType"}
-                        />
-                        {unitDetailErrors.flatType ? <Text style={styles.fieldError}>{unitDetailErrors.flatType}</Text> : null}
-                      </>
-                    ) : null}
-
-                    <Text style={styles.renameLabel}>{labels.number} <Text style={styles.requiredMark}>*</Text></Text>
-                    <TextInput
-                      value={unitDetailsDraft.roomNo}
-                      onChangeText={(value) => updateUnitDetailsDraft("roomNo", value)}
-                      placeholder={labels.numberPlaceholder}
-                      placeholderTextColor="#98A2B3"
-                      style={styles.renameInput}
-                      editable={!savingUnitDetails}
-                    />
-                    {unitDetailErrors.roomNo ? <Text style={styles.fieldError}>{unitDetailErrors.roomNo}</Text> : null}
-
-                    {showMeterDetails ? <>
-                    <Text style={styles.renameLabel}>Meter number <Text style={styles.optionalText}>(optional)</Text></Text>
-                    <TextInput
-                      value={unitDetailsDraft.meterNo}
-                      onChangeText={(value) => updateUnitDetailsDraft("meterNo", value)}
-                      placeholder=" MTR-101"
-                      placeholderTextColor="#98A2B3"
-                      style={styles.renameInput}
-                      editable={!savingUnitDetails}
-                    />
-
-                    <Text style={styles.renameLabel}>Last meter reading <Text style={styles.optionalText}>(optional)</Text></Text>
-                    <TextInput
-                      value={unitDetailsDraft.lastMeterReading}
-                      onChangeText={(value) =>
-                        updateUnitDetailsDraft("lastMeterReading", value.replace(/[^\d.]/g, ""))
-                      }
-                      keyboardType="numeric"
-                      placeholder="250"
-                      placeholderTextColor="#98A2B3"
-                      style={styles.renameInput}
-                      editable={!savingUnitDetails}
-                    />
-                    <Pressable onPress={() => { updateUnitDetailsDraft("meterNo", ""); updateUnitDetailsDraft("lastMeterReading", ""); setShowMeterDetails(false); }} style={styles.skipMeterButton}><Text style={styles.skipMeterText}>Skip for now / add later</Text></Pressable>
-                    </> : <Pressable onPress={() => setShowMeterDetails(true)} style={styles.addMeterButton}><Text style={styles.addMeterText}>+ Add meter details</Text></Pressable>}
-
-                    {targetType === "bed" ? (
-                      <>
-                        <Text style={styles.renameLabel}>Bed number <Text style={styles.requiredMark}>*</Text></Text>
-                        <TextInput value={unitDetailsDraft.bedNo} onChangeText={(value) => updateUnitDetailsDraft("bedNo", value)} placeholder="Example: B1" placeholderTextColor="#98A2B3" style={styles.renameInput} editable={!savingUnitDetails} />
-                        {unitDetailErrors.bedNo ? <Text style={styles.fieldError}>{unitDetailErrors.bedNo}</Text> : null}
-                        <Text style={styles.renameLabel}>Bed category <Text style={styles.requiredMark}>*</Text></Text>
-                        <Pressable onPress={() => setBedCategoryOpen((value) => !value)} style={styles.categoryDropdownButton}>
-                          <Text style={styles.categoryDropdownText}>{unitDetailsDraft.bedCategory || "Select bed category"}</Text>
-                          <Text style={styles.categoryDropdownChevron}>{bedCategoryOpen ? "▲" : "▼"}</Text>
-                        </Pressable>
-                        {bedCategoryOpen ? <View style={styles.categoryMenu}>{allBedCategoryOptions.map((option) => <Pressable key={option} onPress={() => { updateUnitDetailsDraft("bedCategory", option); setBedCategoryOpen(false); }} style={[styles.categoryMenuItem, normalizeKey(option) === normalizeKey(unitDetailsDraft.bedCategory) && styles.categoryMenuItemSelected]}><Text style={[styles.categoryMenuText, normalizeKey(option) === normalizeKey(unitDetailsDraft.bedCategory) && styles.categoryMenuTextSelected]}>{option}</Text></Pressable>)}</View> : null}
-                        <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-                          <Pressable onPress={() => { setBedCategoryEditor("add"); setCustomBedCategory(""); setBedCategoryOpen(false); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>+ Add category</Text></Pressable>
-                          <Pressable onPress={() => { setBedCategoryEditor("rename"); setCustomBedCategory(unitDetailsDraft.bedCategory); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>Rename category</Text></Pressable>
-                        </View>
-                        {bedCategoryEditor ? <View style={styles.customCategoryRow}><TextInput value={customBedCategory} onChangeText={setCustomBedCategory} placeholder="Enter category" placeholderTextColor="#98A2B3" style={[styles.renameInput, styles.customCategoryInput]} /><Pressable onPress={() => { const name = customBedCategory.trim(); if (!name) return; setBedCategoryOptions((current) => bedCategoryEditor === "rename" ? [...current.filter((item) => normalizeKey(item) !== normalizeKey(unitDetailsDraft.bedCategory)), name] : current.some((item) => normalizeKey(item) === normalizeKey(name)) ? current : [...current, name]); updateUnitDetailsDraft("bedCategory", name); setCustomBedCategory(""); setBedCategoryEditor(""); }} style={styles.customCategorySave}><Text style={styles.customCategorySaveText}>Save</Text></Pressable></View> : null}
-                        {unitDetailErrors.bedCategory ? <Text style={styles.fieldError}>{unitDetailErrors.bedCategory}</Text> : null}
-                      </>
-                    ) : null}
-
-                    <Text style={styles.renameLabel}>{labels.price} <Text style={styles.requiredMark}>*</Text></Text>
-                      <TextInput
-                      value={unitDetailsDraft.monthlyPrice}
-                      onChangeText={(value) =>
-                        updateUnitDetailsDraft("monthlyPrice", value.replace(/[^\d.]/g, ""))
-                      }
-                        onFocus={() => {
-                          if (unitDetailsDraft.monthlyPrice === "0") updateUnitDetailsDraft("monthlyPrice", "");
-                        }}
-                      keyboardType="numeric"
-                      placeholder="5000"
-                      placeholderTextColor="#98A2B3"
-                      style={styles.renameInput}
-                      editable={!savingUnitDetails}
-                    />
-                    {unitDetailErrors.monthlyPrice ? <Text style={styles.fieldError}>{unitDetailErrors.monthlyPrice}</Text> : null}
-                  </>
-                );
-              })()}
-            </ScrollView>
-
-            {unitDetailsError ? <Text style={styles.unitDetailsError}>{unitDetailsError}</Text> : null}
-
-            <View style={styles.renameActions}>
-              <Pressable
-                disabled={savingUnitDetails}
-                onPress={closeUnitDetails}
-                style={styles.renameCancel}
-              >
-                <Text style={styles.renameCancelText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                disabled={savingUnitDetails}
-                onPress={saveUnitDetails}
-                style={[styles.renameSave, savingUnitDetails && styles.disabledAction]}
-              >
-                {savingUnitDetails ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <>
-                    <Check size={16} color="#FFF" />
-                    <Text style={styles.renameSaveText}>Save details</Text>
-                  </>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <UnitDetailsSetupModal visible={Boolean(unitDetailsTarget)} unit={unitDetailsTarget} bed={unitDetailsTarget?.beds?.[0]} savedUnits={units} onClose={closeUnitDetails} onSaved={async () => { setUnitDetailsTarget(null); await load(); }} />
     </ScrollView>
   );
 }

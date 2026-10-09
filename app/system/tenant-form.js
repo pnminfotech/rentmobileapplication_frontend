@@ -5,7 +5,8 @@ import { useRouter } from "expo-router";
 import { ArrowLeft, Check, ChevronDown } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
-import { getRooms, updateBed, updateUnit } from "../../src/api/roomApi";
+import UnitDetailsSetupModal from "../../src/components/UnitDetailsSetupModal";
+import { getRooms } from "../../src/api/roomApi";
 import { createTenant, getTenants } from "../../src/api/tenantApi";
 import { useSystemAccess } from "../../src/context/SystemAccessContext";
 import { ASSIGNMENT_TYPES, filterVacanciesByType, formatVacancyMeta, formatVacancyTitle, groupVacanciesByProperty, stackedPropertyLabel } from "../../src/utils/unitLabels";
@@ -13,49 +14,6 @@ import { systemColors as colors } from "../../src/theme/systemTheme";
 
 function todayValue() {
   return toDateValue();
-}
-
-function normalizeIdentifier(value) {
-  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
-}
-
-function emptyUnitDraft(type = "bed") {
-  return {
-    category: "",
-    floorNo: "",
-    roomNo: "",
-    wingName: "",
-    flatType: "",
-    meterNo: "",
-    lastMeterReading: "",
-    monthlyPrice: "",
-    bedCategory: type === "bed" ? "Standard" : "",
-  };
-}
-
-function unitDetailLabels(type) {
-  if (type === "shop") {
-    return {
-      category: "Market or building",
-      number: "Shop number",
-      numberPlaceholder: " S-12",
-      price: "Monthly shop rent",
-    };
-  }
-  if (type === "room") {
-    return {
-      category: "Property or building",
-      number: "Room or unit number",
-      numberPlaceholder: " A-101",
-      price: "Monthly room rent",
-    };
-  }
-  return {
-    category: "Hostel or building",
-    number: "Room number",
-    numberPlaceholder: " 101",
-    price: "Monthly price per bed",
-  };
 }
 
 function isActive(tenant) {
@@ -94,6 +52,7 @@ export default function TenantFormScreen() {
     [unitTypes]
   );
   const [vacancies, setVacancies] = useState([]);
+  const [units, setUnits] = useState([]);
   const [assignmentType, setAssignmentType] = useState(firstUnitType);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showUnits, setShowUnits] = useState(false);
@@ -103,7 +62,7 @@ export default function TenantFormScreen() {
   const [deposit, setDeposit] = useState("");
   const [address, setAddress] = useState("");
   const [hasCanteen, setHasCanteen] = useState(false);
-  const [unitDraft, setUnitDraft] = useState(() => emptyUnitDraft(firstUnitType));
+  const [showUnitSetup, setShowUnitSetup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -114,6 +73,7 @@ export default function TenantFormScreen() {
       const [units, tenants] = await Promise.all([getRooms(), getTenants()]);
       const allowedUnits = (Array.isArray(units) ? units : [])
         .filter((unit) => isUnitTypeAllowed(unit.propertyType || "bed"));
+      setUnits(Array.isArray(units) ? units : []);
       setVacancies(buildVacancies(allowedUnits, Array.isArray(tenants) ? tenants : []));
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load vacant units.");
@@ -130,32 +90,30 @@ export default function TenantFormScreen() {
   const groupedVacancies = useMemo(() => groupVacanciesByProperty(filteredVacancies), [filteredVacancies]);
   const selected = filteredVacancies[selectedIndex];
   const needsUnitDetails = Boolean(selected?.unit?.isPlaceholder);
-  const draftRent = Number(unitDraft.monthlyPrice || 0);
-  const rent = needsUnitDetails ? draftRent : Number(selected?.bed?.price || 0);
-  const detailLabels = useMemo(() => unitDetailLabels(assignmentType), [assignmentType]);
+  const rent = Number(selected?.bed?.price || 0);
   const selectionLabel = useMemo(() => {
     if (!selected) return "Select a vacant unit";
     return `${formatVacancyTitle(selected.unit)} | ${formatVacancyMeta(selected.unit, selected.bed)}`;
   }, [selected]);
 
-  function updateDraft(key, value) {
-    setUnitDraft((current) => ({ ...current, [key]: value }));
-  }
-
   function selectAssignmentType(value) {
     setAssignmentType(value);
     setSelectedIndex(0);
     setShowUnits(false);
-    setUnitDraft(emptyUnitDraft(value));
+    setShowUnitSetup(false);
     setError("");
   }
 
   function selectVacancy(index) {
     setSelectedIndex(index);
     setShowUnits(false);
-    setUnitDraft(emptyUnitDraft(assignmentType));
+    setShowUnitSetup(false);
     setError("");
   }
+
+  useEffect(() => {
+    if (needsUnitDetails) setShowUnitSetup(true);
+  }, [needsUnitDetails, selected?.unit?._id, selected?.bed?.bedNo]);
 
   async function saveTenant() {
     const depositAmount = Number(deposit);
@@ -165,59 +123,14 @@ export default function TenantFormScreen() {
     if (!Number.isFinite(depositAmount) || depositAmount < 0) return setError("Enter a valid deposit amount.");
     if (!selected) return setError("Select a vacant unit.");
 
-    const unitRent = Number(unitDraft.monthlyPrice);
-    const meterReading =
-      unitDraft.lastMeterReading === "" ? null : Number(unitDraft.lastMeterReading);
-    if (needsUnitDetails) {
-      if (!unitDraft.category.trim() || !unitDraft.floorNo.trim() || !unitDraft.roomNo.trim()) {
-        return setError(`${detailLabels.category}, floor and ${detailLabels.number.toLowerCase()} are required.`);
-      }
-      if (assignmentType === "room" && !unitDraft.flatType.trim()) {
-        return setError("Enter the flat type.");
-      }
-      if (!Number.isFinite(unitRent) || unitRent <= 0) {
-        return setError("Enter a valid monthly rent.");
-      }
-      if (unitDraft.lastMeterReading !== "" && (!Number.isFinite(meterReading) || meterReading < 0)) {
-        return setError("Enter a valid last meter reading.");
-      }
-    }
+    if (needsUnitDetails) return setError("Set the unit details before saving this tenant.");
 
     try {
       setSaving(true);
       setError("");
       let unitForTenant = selected.unit;
       let bedForTenant = selected.bed;
-      let rentForTenant = rent;
-
-      if (needsUnitDetails) {
-        await updateBed(selected.unit._id, selected.bed.bedNo, {
-          price: unitRent,
-          bedCategory:
-            assignmentType === "shop"
-              ? "Shop"
-              : assignmentType === "room"
-                ? "Rental Room"
-                : unitDraft.bedCategory.trim() || "Standard",
-        });
-        const updatedUnit = await updateUnit(selected.unit._id, {
-          category: unitDraft.category.trim(),
-          floorNo: unitDraft.floorNo.trim(),
-          roomNo: normalizeIdentifier(unitDraft.roomNo),
-          hasWing: Boolean(unitDraft.wingName.trim()),
-          wingName: unitDraft.wingName.trim(),
-          flatType: assignmentType === "room" ? unitDraft.flatType.trim() : "",
-          meterNo: normalizeIdentifier(unitDraft.meterNo),
-          lastMeterReading: meterReading,
-        });
-        unitForTenant = updatedUnit;
-        bedForTenant = {
-          ...selected.bed,
-          price: unitRent,
-          bedCategory: unitDraft.bedCategory.trim() || selected.bed.bedCategory,
-        };
-        rentForTenant = unitRent;
-      }
+      const rentForTenant = rent;
 
       await createTenant({
         name: name.trim(),
@@ -272,50 +185,7 @@ export default function TenantFormScreen() {
         </View>
       ) : null}
 
-      {needsUnitDetails ? (
-        <View style={styles.unitDetailsPanel}>
-          <Text style={styles.panelTitle}>Set unit details first</Text>
-          <Text style={styles.panelHint}>This unit is already added, but room or unit details are not set yet. Set them here first, then save the tenant.</Text>
-          <Pressable onPress={() => router.push({ pathname: "/system/units", params: { openUnitId: selected?.unit?._id } })} style={styles.setUnitButton}>
-            <Text style={styles.setUnitButtonText}>Set unit now</Text>
-          </Pressable>
-
-          <Text style={styles.label}>{detailLabels.category}</Text>
-          <TextInput value={unitDraft.category} onChangeText={(value) => updateDraft("category", value)} placeholder={`Enter ${detailLabels.category.toLowerCase()}`} style={styles.input} />
-
-          <Text style={styles.label}>Floor</Text>
-          <TextInput value={unitDraft.floorNo} onChangeText={(value) => updateDraft("floorNo", value)} placeholder=" Ground / 1" style={styles.input} />
-
-          <Text style={styles.label}>Wing or block (optional)</Text>
-          <TextInput value={unitDraft.wingName} onChangeText={(value) => updateDraft("wingName", value)} placeholder=" A" style={styles.input} />
-
-          {assignmentType === "room" ? (
-            <>
-              <Text style={styles.label}>Flat type</Text>
-              <TextInput value={unitDraft.flatType} onChangeText={(value) => updateDraft("flatType", value)} placeholder=" 1 RK / 1 BHK" style={styles.input} />
-            </>
-          ) : null}
-
-          <Text style={styles.label}>{detailLabels.number}</Text>
-          <TextInput value={unitDraft.roomNo} onChangeText={(value) => updateDraft("roomNo", value)} placeholder={detailLabels.numberPlaceholder} style={styles.input} />
-
-          <Text style={styles.label}>Meter number (optional)</Text>
-          <TextInput value={unitDraft.meterNo} onChangeText={(value) => updateDraft("meterNo", value)} placeholder=" MTR-101" style={styles.input} />
-
-          <Text style={styles.label}>Last meter reading (optional)</Text>
-          <TextInput value={unitDraft.lastMeterReading} onChangeText={(value) => updateDraft("lastMeterReading", value)} keyboardType="numeric" placeholder=" 250" style={styles.input} />
-
-          {assignmentType === "bed" ? (
-            <>
-              <Text style={styles.label}>Bed category</Text>
-              <TextInput value={unitDraft.bedCategory} onChangeText={(value) => updateDraft("bedCategory", value)} placeholder=" Standard" style={styles.input} />
-            </>
-          ) : null}
-
-          <Text style={styles.label}>{detailLabels.price}</Text>
-          <TextInput value={unitDraft.monthlyPrice} onChangeText={(value) => updateDraft("monthlyPrice", value)} keyboardType="numeric" placeholder=" 5000" style={styles.input} />
-        </View>
-      ) : null}
+      {needsUnitDetails ? <View style={styles.unitDetailsPanel}><Text style={styles.panelTitle}>Unit details need to be set</Text><Text style={styles.panelHint}>Complete the unit details before saving this tenant.</Text><Pressable onPress={() => setShowUnitSetup(true)} style={styles.setUnitButton}><Text style={styles.setUnitButtonText}>Set unit details</Text></Pressable></View> : null}
 
       <Text style={styles.label}>Full name</Text>
       <TextInput value={name} onChangeText={setName} placeholder="Tenant name" style={styles.input} />
@@ -340,9 +210,14 @@ export default function TenantFormScreen() {
       <TextInput value={address} onChangeText={setAddress} placeholder="Tenant address" multiline style={[styles.input, styles.addressInput]} />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable onPress={saveTenant} disabled={saving || !selected} style={[styles.saveButton, (saving || !selected) && styles.disabled]}>
+      <Pressable onPress={saveTenant} disabled={saving || !selected || needsUnitDetails} style={[styles.saveButton, (saving || !selected || needsUnitDetails) && styles.disabled]}>
         {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveButtonText}>Save tenant</Text>}
       </Pressable>
+      <UnitDetailsSetupModal visible={showUnitSetup && needsUnitDetails} unit={selected?.unit} bed={selected?.bed} savedUnits={units} onClose={() => setShowUnitSetup(false)} onSaved={({ unit, bed }) => {
+        setUnits((current) => [...current.filter((item) => String(item._id) !== String(selected?.unit?._id) && String(item._id) !== String(unit._id)), unit]);
+        setVacancies((current) => current.map((item) => String(item.unit?._id) === String(unit._id) && String(item.bed?.bedNo || "") === String(selected?.bed?.bedNo || "") ? { unit, bed } : item));
+        setShowUnitSetup(false);
+      }} />
     </ScrollView>
   );
 }

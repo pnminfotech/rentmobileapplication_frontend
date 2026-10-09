@@ -234,11 +234,13 @@ export default function RentFormScreen() {
   if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color={colors.primary} /></View>;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" stickyHeaderIndices={[0]}>
+    <View style={styles.screen}>
       <View style={styles.header}>
         <Pressable onPress={goBack} style={styles.iconButton}><ArrowLeft size={22} color={colors.text} /></Pressable>
-        <View><Text style={styles.title}>Add rent</Text><Text style={styles.subtitle}>{tenant?.name} | {formatTenantUnit(tenant || {})}</Text></View>
+        <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Add rent</Text>
       </View>
+      <Text style={styles.subtitle} numberOfLines={1}>{tenant?.name} | {formatTenantUnit(tenant || {})}</Text>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
       <View style={[styles.duePanel, !due.totalDue && styles.duePanelClear]}>
         <View style={styles.dueHeader}>
@@ -350,18 +352,19 @@ export default function RentFormScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable onPress={saveRent} disabled={saving} style={[styles.saveButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveText}>Record payment</Text>}</Pressable>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { width: "100%", maxWidth: 620, alignSelf: "center", padding: 20, paddingBottom: 40 },
+  content: { width: "100%", maxWidth: 620, alignSelf: "center", paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: { marginBottom: 10, flexDirection: "row", alignItems: "center", backgroundColor: colors.background },
+  header: { width: "100%", minHeight: 58, paddingHorizontal: 20, flexDirection: "row", flexWrap: "nowrap", alignItems: "center", backgroundColor: colors.background },
   iconButton: { width: 44, height: 44, marginRight: 8, alignItems: "center", justifyContent: "center" },
   title: { color: colors.text, fontSize: 25, fontWeight: "700" },
-  subtitle: { marginTop: 3, color: colors.muted, fontSize: 12 },
+  subtitle: { marginHorizontal: 20, marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12 },
   duePanel: { marginTop: 8, padding: 12, borderWidth: 1, borderColor: colors.dangerSoft, borderRadius: 7, backgroundColor: colors.dangerSoft },
   duePanelClear: { borderColor: colors.successSoft, backgroundColor: colors.successSoft },
   dueHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },

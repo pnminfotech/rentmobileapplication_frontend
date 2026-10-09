@@ -5,6 +5,21 @@ export async function getRooms() {
   return data;
 }
 
+export async function getBedCategories() {
+  const { data } = await api.get("/rooms/bed-categories");
+  return Array.isArray(data?.categories) ? data.categories : [];
+}
+
+export async function getRoomCategories() {
+  const { data } = await api.get("/rooms/room-categories");
+  return Array.isArray(data?.categories) ? data.categories : [];
+}
+
+export async function updateBedCategories(categories, renameFrom = "", renameTo = "") {
+  const { data } = await api.put("/rooms/bed-categories", { categories, renameFrom, renameTo });
+  return Array.isArray(data?.categories) ? data.categories : [];
+}
+
 export async function createRoom(payload) {
   const { data } = await api.post("/rooms", payload);
   return data;

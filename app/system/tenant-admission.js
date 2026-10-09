@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { ArrowLeft, Camera, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react-native";
 
 import FormDateField from "../../src/components/FormDateField";
+import UnitDetailsSetupModal from "../../src/components/UnitDetailsSetupModal";
 import WebImageCropper from "../../src/components/WebImageCropper";
 import { getSystemDashboard } from "../../src/api/saasApi";
 import { getCanteenSettings } from "../../src/api/canteenApi";
-import { getRooms, updateBed, updateUnit } from "../../src/api/roomApi";
-import { createTenantWithDocuments, getTenants } from "../../src/api/tenantApi";
+import { getRooms } from "../../src/api/roomApi";
+import { getTenants, uploadTenantDocuments } from "../../src/api/tenantApi";
 import { ASSIGNMENT_TYPES, filterVacanciesByType, formatVacancyMeta, formatVacancyTitle, groupVacanciesByProperty, stackedPropertyLabel } from "../../src/utils/unitLabels";
 import { allowedUnitTypes, firstAllowedType } from "../../src/utils/subscriptionAccess";
 import { hasCanteenFeature } from "../../src/utils/featureAccess";
@@ -22,7 +23,6 @@ const CANTEEN_MODE_LABELS = {
   per_meal: "Per meal pricing",
   meal_package: "Meal package monthly",
 };
-const BED_CATEGORY_OPTIONS = ["Standard", "Single", "Double", "Bunk"];
 let preferredAssignmentType = "bed";
 
 async function lookupIndianPincode(pincode) {
@@ -62,49 +62,6 @@ function blankDocuments() {
   return { selfAadhar: [], parentAadhar: [], photo: [] };
 }
 
-function normalizeIdentifier(value) {
-  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
-}
-
-function blankUnitDraft(type = "bed") {
-  return {
-    category: "",
-    floorNo: "",
-    roomNo: "",
-    wingName: "",
-    flatType: "",
-    meterNo: "",
-    lastMeterReading: "",
-    monthlyPrice: "",
-    bedCategory: type === "bed" ? "Standard" : "",
-  };
-}
-
-function unitDetailLabels(type) {
-  if (type === "shop") {
-    return {
-      category: "Market or building",
-      number: "Shop number",
-      numberPlaceholder: " S-12",
-      price: "Monthly shop rent",
-    };
-  }
-  if (type === "room") {
-    return {
-      category: "Property or building",
-      number: "Room or unit number",
-      numberPlaceholder: " A-101",
-      price: "Monthly room rent",
-    };
-  }
-  return {
-    category: "Hostel or building",
-    number: "Room number",
-    numberPlaceholder: " 101",
-    price: "Monthly price per bed",
-  };
-}
-
 function activeTenant(tenant) {
   if (!tenant.leaveDate) return true;
   const date = new Date(tenant.leaveDate);
@@ -130,15 +87,6 @@ function buildVacancies(units, tenants) {
 
 function Field({ label, required = false, ...props }) {
   return <><Text style={styles.label}>{label}{required ? <Text style={styles.requiredMark}> *</Text> : null}</Text><TextInput style={[styles.input, props.multiline && styles.multiline]} {...props} /></>;
-}
-
-function SavedField({ label, required = false, value, options, active, onFocus, onChangeText, placeholder }) {
-  const visibleOptions = options.filter((option) => normalizeIdentifier(option).includes(normalizeIdentifier(value)));
-  return <>
-    <Text style={styles.label}>{label}{required ? <Text style={styles.requiredMark}> *</Text> : null}</Text>
-    <TextInput value={value} onFocus={onFocus} onChangeText={onChangeText} placeholder={placeholder} style={styles.input} />
-    {active && visibleOptions.length ? <View style={styles.savedOptions}>{visibleOptions.slice(0, 8).map((option) => <Pressable key={option} onPress={() => onChangeText(option)} style={styles.savedOption}><Text style={styles.savedOptionText}>{option}</Text></Pressable>)}</View> : null}
-  </>;
 }
 
 function RelationPicker({ label, value, onChange }) {
@@ -176,16 +124,7 @@ export default function TenantAdmissionScreen() {
   const [form, setForm] = useState(blankForm);
   const [documents, setDocuments] = useState(blankDocuments);
   const [cropRequest, setCropRequest] = useState(null);
-  const [unitDraft, setUnitDraft] = useState(() => blankUnitDraft(initialAssignmentType));
   const [showUnitDetailsModal, setShowUnitDetailsModal] = useState(false);
-  const [savingUnitDetails, setSavingUnitDetails] = useState(false);
-  const [unitDetailsError, setUnitDetailsError] = useState("");
-  const [bedCategoryOpen, setBedCategoryOpen] = useState(false);
-  const [customBedCategories, setCustomBedCategories] = useState([]);
-  const [bedCategoryEditor, setBedCategoryEditor] = useState("");
-  const [bedCategoryName, setBedCategoryName] = useState("");
-  const [showMeterDetails, setShowMeterDetails] = useState(false);
-
   useEffect(() => {
     preferredAssignmentType = assignmentType;
   }, [assignmentType]);
@@ -258,29 +197,6 @@ export default function TenantAdmissionScreen() {
   const isResidentialRoom = assignmentType === "room";
   const isShop = assignmentType === "shop";
   const needsUnitDetails = Boolean(selected?.unit?.isPlaceholder);
-  const [activeSavedField, setActiveSavedField] = useState("");
-  const savedUnitOptions = useMemo(() => {
-    const values = (key) => Array.from(new Set(allUnits.filter((unit) => !unit?.isPlaceholder).map((unit) => String(unit?.[key] || "").trim()).filter(Boolean)));
-    return { category: values("category"), floorNo: values("floorNo"), wingName: values("wingName"), flatType: values("flatType"), roomNo: values("roomNo") };
-  }, [allUnits]);
-  const allBedCategoryOptions = useMemo(() => Array.from(new Set([
-    ...BED_CATEGORY_OPTIONS,
-    ...customBedCategories,
-    ...allUnits.flatMap((unit) => (unit?.beds || []).map((item) => String(item?.bedCategory || "").trim())).filter(Boolean),
-  ])), [allUnits, customBedCategories]);
-  const saveBedCategory = () => {
-    const nextName = bedCategoryName.trim();
-    if (!nextName) return;
-    const same = (value) => String(value || "").trim().toLowerCase();
-    setCustomBedCategories((current) => {
-      const withoutOld = bedCategoryEditor === "rename" ? current.filter((item) => same(item) !== same(unitDraft.bedCategory)) : current;
-      return withoutOld.some((item) => same(item) === same(nextName)) ? withoutOld : [...withoutOld, nextName];
-    });
-    updateUnitDraft("bedCategory", nextName);
-    setBedCategoryEditor("");
-    setBedCategoryName("");
-  };
-  const detailLabels = useMemo(() => unitDetailLabels(assignmentType), [assignmentType]);
   const unitLabel = useMemo(() => selected ? `${formatVacancyTitle(selected.unit)} | ${formatVacancyMeta(selected.unit, selected.bed)}` : "No vacant unit available", [selected]);
   const canteenPlans = useMemo(() => (canteenSettings?.activeModes || []).filter((mode) => mode !== "guest_meal"), [canteenSettings]);
   const selectedCanteenPlan = form.canteenPlanType || canteenPlans[0] || "";
@@ -291,8 +207,7 @@ export default function TenantAdmissionScreen() {
 
   useEffect(() => {
     if (needsUnitDetails) {
-      setUnitDetailsError("");
-      setError("");
+            setError("");
       setShowUnitDetailsModal(true);
     }
   }, [needsUnitDetails, selected?.unit?._id, selected?.bed?.bedNo]);
@@ -395,110 +310,19 @@ export default function TenantAdmissionScreen() {
     setError(""); setStep((current) => current + 1);
   }
 
-  function updateUnitDraft(key, value) {
-    setUnitDraft((current) => ({ ...current, [key]: value }));
-    setUnitDetailsError("");
-  }
-
   function selectAssignmentType(value) {
     setAssignmentType(value);
     setSelectedIndex(0);
     setShowUnits(false);
-    setUnitDraft(blankUnitDraft(value));
     setShowUnitDetailsModal(false);
-    setBedCategoryOpen(false);
-    setShowMeterDetails(false);
     setError("");
   }
 
   function selectVacancy(index) {
     setSelectedIndex(index);
     setShowUnits(false);
-    setUnitDraft(blankUnitDraft(assignmentType));
     setShowUnitDetailsModal(false);
-    setBedCategoryOpen(false);
-    setShowMeterDetails(false);
     setError("");
-  }
-
-  async function saveSelectedUnitDetails() {
-    if (!selected?.unit?._id || !selected?.bed?.bedNo) return;
-    const fail = (message) => { setUnitDetailsError(message); setError(message); };
-    const monthlyPrice = Number(unitDraft.monthlyPrice);
-    const meterReading = unitDraft.lastMeterReading === "" ? null : Number(unitDraft.lastMeterReading);
-
-    if (!unitDraft.category.trim() || !unitDraft.floorNo.trim() || !unitDraft.roomNo.trim()) {
-      fail(`${detailLabels.category}, floor and ${detailLabels.number.toLowerCase()} are required.`);
-      return;
-    }
-    if (assignmentType === "room" && !unitDraft.flatType.trim()) {
-      fail("Enter the flat type.");
-      return;
-    }
-    if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
-      fail("Enter a valid monthly rent.");
-      return;
-    }
-    if (unitDraft.lastMeterReading !== "" && (!Number.isFinite(meterReading) || meterReading < 0)) {
-      fail("Enter a valid last meter reading.");
-      return;
-    }
-
-    try {
-      setSavingUnitDetails(true);
-      setUnitDetailsError("");
-      setError("");
-      await updateBed(selected.unit._id, selected.bed.bedNo, {
-        price: monthlyPrice,
-        bedCategory:
-          assignmentType === "shop"
-            ? "Shop"
-            : assignmentType === "room"
-              ? "Rental Room"
-              : unitDraft.bedCategory.trim() || "Standard",
-      });
-      const updatedUnit = await updateUnit(selected.unit._id, {
-        category: unitDraft.category.trim(),
-        floorNo: unitDraft.floorNo.trim(),
-        roomNo: normalizeIdentifier(unitDraft.roomNo),
-        hasWing: Boolean(unitDraft.wingName.trim()),
-        wingName: unitDraft.wingName.trim(),
-        flatType: assignmentType === "room" ? unitDraft.flatType.trim() : "",
-        meterNo: normalizeIdentifier(unitDraft.meterNo),
-        lastMeterReading: meterReading,
-      });
-      setAllUnits((current) => current.map((unit) => String(unit._id) === String(updatedUnit._id) ? updatedUnit : unit));
-
-      setVacancies((current) => current.map((vacancy) => {
-        if (
-          String(vacancy.unit?._id) !== String(selected.unit._id) ||
-          String(vacancy.bed?.bedNo || "") !== String(selected.bed.bedNo || "")
-        ) {
-          return vacancy;
-        }
-        return {
-          unit: updatedUnit,
-          bed: {
-            ...vacancy.bed,
-            price: monthlyPrice,
-            bedCategory:
-              assignmentType === "shop"
-                ? "Shop"
-                : assignmentType === "room"
-                  ? "Rental Room"
-                  : unitDraft.bedCategory.trim() || "Standard",
-          },
-        };
-      }));
-      setUnitDraft(blankUnitDraft(assignmentType));
-      setShowUnitDetailsModal(false);
-    } catch (err) {
-      const message = err.response?.data?.message || "Unable to save unit details. Check the required fields and try again.";
-      setUnitDetailsError(message);
-      setError(message);
-    } finally {
-      setSavingUnitDetails(false);
-    }
   }
 
   async function submit() {
@@ -506,7 +330,11 @@ export default function TenantAdmissionScreen() {
     if (message) return setError(message);
     try {
       setSaving(true); setError("");
-      await createTenantWithDocuments({
+      await uploadTenantDocuments([
+        ...documents.selfAadhar.map((document) => ({ ...document, relation: "Self Aadhaar Card" })),
+        ...(isShop ? [] : documents.parentAadhar.map((document) => ({ ...document, relation: isResidentialRoom ? "Partner Aadhaar Card" : "Parent Aadhaar Card" }))),
+        ...documents.photo.map((document) => ({ ...document, relation: isResidentialRoom || isShop ? "Tenant Photograph (Selfie)" : "Tenant Photo" })),
+      ], {
         ...form,
         roomId: selected.unit._id, propertyType: assignmentType, category: selected.unit.category || "", hasWing: Boolean(selected.unit.hasWing && selected.unit.wingName), wingName: selected.unit.wingName || "", floorNo: selected.unit.floorNo || "",
         roomNo: selected.unit.roomNo || "", bedNo: selected.bed.bedNo || "", baseRent: Number(selected.bed.price || 0),
@@ -523,11 +351,7 @@ export default function TenantAdmissionScreen() {
         canteenIncludedMeals: assignmentType === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenMeta.meals : [],
         shopName: form.shopName.trim(),
         shopBusiness: form.shopBusiness.trim(),
-      }, [
-        ...documents.selfAadhar.map((document) => ({ ...document, relation: "Self Aadhaar Card" })),
-        ...(isShop ? [] : documents.parentAadhar.map((document) => ({ ...document, relation: isResidentialRoom ? "Partner Aadhaar Card" : "Parent Aadhaar Card" }))),
-        ...documents.photo.map((document) => ({ ...document, relation: isResidentialRoom || isShop ? "Tenant Photograph (Selfie)" : "Tenant Photo" })),
-      ]);
+      });
       setForm(blankForm());
       setDocuments(blankDocuments());
       setStep(0);
@@ -567,7 +391,7 @@ export default function TenantAdmissionScreen() {
                 <Text style={styles.unitSetupTitle}>Unit details not set yet</Text>
                 <Text style={styles.unitSetupHint}>Set property, floor, unit number and rent before continuing.</Text>
               </View>
-              <Pressable onPress={() => { setError(""); setUnitDetailsError(""); setShowUnitDetailsModal(true); }} style={styles.setUnitButton}>
+              <Pressable onPress={() => { setError(""); setShowUnitDetailsModal(true); }} style={styles.setUnitButton}>
                 <Text style={styles.setUnitButtonText}>Set unit now</Text>
               </Pressable>
             </View>
@@ -698,51 +522,11 @@ export default function TenantAdmissionScreen() {
         {step < STEPS.length - 1 ? <Pressable onPress={nextStep} style={styles.nextButton}><Text style={styles.nextText}>Continue</Text><ChevronRight size={20} color={colors.surface} /></Pressable> : <Pressable onPress={submit} disabled={saving} style={[styles.nextButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.nextText}>Save tenant</Text>}</Pressable>}
       </View>
     </KeyboardAvoidingView>
-    <Modal
-      visible={showUnitDetailsModal && needsUnitDetails}
-      transparent
-      animationType="fade"
-      onRequestClose={() => {
-        if (!savingUnitDetails) setShowUnitDetailsModal(false);
-      }}
-    >
-      <View style={styles.modalOverlay}>
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={() => {
-            if (!savingUnitDetails) setShowUnitDetailsModal(false);
-          }}
-        />
-        <View style={styles.unitModal}>
-          <View style={styles.unitModalHeader}>
-            <View style={styles.unitModalTitleWrap}>
-              <Text style={styles.unitModalTitle}>Set unit details</Text>
-              <Text style={styles.unitModalSubtitle}>This unit is already added. Complete these details once before tenant admission.</Text>
-            </View>
-            <Pressable disabled={savingUnitDetails} onPress={() => setShowUnitDetailsModal(false)} style={styles.modalCloseButton}>
-              <Text style={styles.modalCloseText}>Close</Text>
-            </Pressable>
-          </View>
-
-          <ScrollView contentContainerStyle={styles.unitModalBody} keyboardShouldPersistTaps="handled">
-            <SavedField required label={detailLabels.category} value={unitDraft.category} options={savedUnitOptions.category} active={activeSavedField === "category"} onFocus={() => setActiveSavedField("category")} onChangeText={(value) => { updateUnitDraft("category", value); setActiveSavedField("category"); }} placeholder={`Enter ${detailLabels.category.toLowerCase()}`} />
-            <SavedField required label="Floor" value={unitDraft.floorNo} options={savedUnitOptions.floorNo} active={activeSavedField === "floorNo"} onFocus={() => setActiveSavedField("floorNo")} onChangeText={(value) => { updateUnitDraft("floorNo", value); setActiveSavedField("floorNo"); }} placeholder=" Ground or 1" />
-            <SavedField label="Wing or block (optional)" value={unitDraft.wingName} options={savedUnitOptions.wingName} active={activeSavedField === "wingName"} onFocus={() => setActiveSavedField("wingName")} onChangeText={(value) => { updateUnitDraft("wingName", value); setActiveSavedField("wingName"); }} placeholder=" A" />
-            {assignmentType === "room" ? <SavedField required label="Flat type" value={unitDraft.flatType} options={savedUnitOptions.flatType} active={activeSavedField === "flatType"} onFocus={() => setActiveSavedField("flatType")} onChangeText={(value) => { updateUnitDraft("flatType", value); setActiveSavedField("flatType"); }} placeholder=" 1 RK or 1 BHK" /> : null}
-            <SavedField required label={detailLabels.number} value={unitDraft.roomNo} options={savedUnitOptions.roomNo} active={activeSavedField === "roomNo"} onFocus={() => setActiveSavedField("roomNo")} onChangeText={(value) => { updateUnitDraft("roomNo", value); setActiveSavedField("roomNo"); }} placeholder={detailLabels.numberPlaceholder} />
-            {showMeterDetails ? <><Field label="Meter number (optional)" value={unitDraft.meterNo} onChangeText={(value) => updateUnitDraft("meterNo", value)} placeholder=" MTR-101" /><Field label="Last meter reading (optional)" value={unitDraft.lastMeterReading} onChangeText={(value) => updateUnitDraft("lastMeterReading", value)} keyboardType="numeric" placeholder=" 250" /><Pressable onPress={() => { updateUnitDraft("meterNo", ""); updateUnitDraft("lastMeterReading", ""); setShowMeterDetails(false); }}><Text style={styles.skipMeterText}>Skip for now / add later</Text></Pressable></> : <Pressable onPress={() => setShowMeterDetails(true)} style={styles.addMeterButton}><Text style={styles.addMeterText}>Add meter details</Text></Pressable>}
-            {assignmentType === "bed" ? <><Text style={styles.fieldLabel}>Bed category<Text style={styles.requiredMark}> *</Text></Text><Pressable onPress={() => setBedCategoryOpen((value) => !value)} style={styles.categorySelect}><Text style={styles.categorySelectText}>{unitDraft.bedCategory || "Select bed category"}</Text><ChevronDown size={18} color={colors.muted} /></Pressable>{bedCategoryOpen ? <View style={styles.categoryOptions}>{allBedCategoryOptions.map((option) => <Pressable key={option} onPress={() => { updateUnitDraft("bedCategory", option); setBedCategoryOpen(false); }} style={styles.categoryOption}><Text style={styles.categoryOptionText}>{option}</Text></Pressable>)}</View> : null}<View style={styles.categoryActions}><Pressable onPress={() => { setBedCategoryEditor("add"); setBedCategoryName(""); setBedCategoryOpen(false); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>+ Add category</Text></Pressable><Pressable onPress={() => { setBedCategoryEditor("rename"); setBedCategoryName(unitDraft.bedCategory || ""); setBedCategoryOpen(false); }} style={styles.categoryAction}><Text style={styles.categoryActionText}>Rename selected</Text></Pressable></View>{bedCategoryEditor ? <View style={styles.categoryEditor}><TextInput value={bedCategoryName} onChangeText={setBedCategoryName} placeholder="Enter category" placeholderTextColor={colors.muted} style={styles.categoryInput} /><Pressable onPress={saveBedCategory} style={styles.categorySave}><Text style={styles.categorySaveText}>Save</Text></Pressable></View> : null}</> : null}
-            <Field required label={detailLabels.price} value={unitDraft.monthlyPrice} onChangeText={(value) => updateUnitDraft("monthlyPrice", value)} keyboardType="numeric" placeholder=" 5000" />
-
-            {unitDetailsError ? <Text style={styles.unitDetailsError}>{unitDetailsError}</Text> : null}
-
-            <Pressable onPress={saveSelectedUnitDetails} disabled={savingUnitDetails} style={[styles.saveUnitButton, savingUnitDetails && styles.disabled]}>
-              {savingUnitDetails ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveUnitButtonText}>Save unit details</Text>}
-            </Pressable>
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    <UnitDetailsSetupModal visible={showUnitDetailsModal && needsUnitDetails} unit={selected?.unit} bed={selected?.bed} savedUnits={allUnits} onClose={() => setShowUnitDetailsModal(false)} onSaved={({ unit, bed }) => {
+      setAllUnits((current) => [...current.filter((item) => String(item._id) !== String(selected?.unit?._id) && String(item._id) !== String(unit._id)), unit]);
+      setVacancies((current) => current.map((item) => String(item.unit?._id) === String(unit._id) && String(item.bed?.bedNo || "") === String(selected?.bed?.bedNo || "") ? { unit, bed } : item));
+      setShowUnitDetailsModal(false);
+    }} />
     {cropRequest ? (
       <WebImageCropper
         sourceUri={cropRequest.uri}
@@ -808,7 +592,6 @@ const styles = StyleSheet.create({
   setUnitButton: { minHeight: 42, paddingHorizontal: 13, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary },
   setUnitButtonText: { color: colors.surface, fontSize: 13, fontWeight: "800" },
   modalOverlay: { flex: 1, padding: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(17, 27, 42, 0.42)" },
-  unitModal: { width: "100%", maxWidth: 620, maxHeight: "88%", overflow: "hidden", borderRadius: 10, backgroundColor: colors.surface },
   unitModalHeader: { padding: 16, flexDirection: "row", alignItems: "flex-start", borderBottomWidth: 1, borderBottomColor: colors.border },
   unitModalTitleWrap: { flex: 1, minWidth: 0, paddingRight: 10 },
   unitModalTitle: { color: colors.text, fontSize: 18, fontWeight: "800" },

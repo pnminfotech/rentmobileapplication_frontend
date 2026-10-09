@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { loginSaas } from "../src/api/saasApi";
+import { loginSaas, resendSaasLoginEmailCode, verifySaasLoginEmailCode } from "../src/api/saasApi";
 import { colors } from "../src/theme/colors";
 
 export default function LoginScreen() {
@@ -20,7 +20,11 @@ export default function LoginScreen() {
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [challengeId, setChallengeId] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
 
   useEffect(() => {
     if (params.registered !== "trial") return;
@@ -55,8 +59,17 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       setError("");
+      setNotice("");
 
       const data = await loginSaas(loginId.trim(), password);
+
+      if (data.requiresEmailCode) {
+        setChallengeId(data.challengeId);
+        setMaskedEmail(data.email || "your registered email");
+        setVerificationCode("");
+        setPassword("");
+        return;
+      }
 
       if (data.user.role === "superadmin") {
         router.replace("/superadmin");
@@ -73,6 +86,41 @@ export default function LoginScreen() {
     }
   }
 
+  async function handleVerifyCode() {
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setError("Enter the 6-digit code sent to your email.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+      setNotice("");
+      await verifySaasLoginEmailCode(challengeId, verificationCode);
+      router.replace("/superadmin");
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to verify the code. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResendCode() {
+    try {
+      setLoading(true);
+      setError("");
+      setNotice("");
+      const data = await resendSaasLoginEmailCode(challengeId);
+      setMaskedEmail(data.email || maskedEmail);
+      setVerificationCode("");
+      setNotice("A new sign-in code has been sent.");
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to resend the code. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -81,34 +129,45 @@ export default function LoginScreen() {
       <View style={styles.form}>
         <Text style={styles.title}>Rent Management</Text>
         <Text style={styles.subtitle}>
-          Sign in to manage your property
+          {challengeId ? `Enter the 6-digit code sent to ${maskedEmail}. It expires in 10 minutes.` : "Sign in to manage your property"}
         </Text>
 
-        <TextInput
-          value={loginId}
-          onChangeText={setLoginId}
-          placeholder="Login ID or email"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          style={styles.input}
-        />
+        {!challengeId ? <>
+          <TextInput
+            value={loginId}
+            onChangeText={setLoginId}
+            placeholder="Login ID or email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={styles.input}
+          />
 
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Enter password"
-          secureTextEntry
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Enter password"
+            secureTextEntry
+            style={styles.input}
+          />
+        </> : <TextInput
+          value={verificationCode}
+          onChangeText={(value) => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))}
+          placeholder="6-digit email code"
+          keyboardType="number-pad"
+          autoComplete="one-time-code"
+          maxLength={6}
           style={styles.input}
-        />
+        />}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-        <Pressable onPress={() => router.push("/forgot-password")} style={styles.forgotLink}>
+        {!challengeId ? <Pressable onPress={() => router.push("/forgot-password")} style={styles.forgotLink}>
           <Text style={styles.forgotText}>Forgot password?</Text>
-        </Pressable>
+        </Pressable> : null}
 
         <Pressable
-          onPress={handleLogin}
+          onPress={challengeId ? handleVerifyCode : handleLogin}
           disabled={loading}
           style={({ pressed }) => [
             styles.button,
@@ -119,13 +178,22 @@ export default function LoginScreen() {
           {loading ? (
             <ActivityIndicator color={colors.surface} />
           ) : (
-            <Text style={styles.buttonText}>Sign in</Text>
+            <Text style={styles.buttonText}>{challengeId ? "Verify code" : "Sign in"}</Text>
           )}
         </Pressable>
 
-        <Pressable onPress={() => router.push("/register-business")} style={styles.registerLink}>
+        {challengeId ? <>
+          <Pressable onPress={handleResendCode} disabled={loading} style={styles.registerLink}>
+            <Text style={styles.registerText}>Send a new code</Text>
+          </Pressable>
+          <Pressable onPress={() => { setChallengeId(""); setVerificationCode(""); setError(""); setNotice(""); }} style={styles.registerLink}>
+            <Text style={styles.registerText}>Back to sign in</Text>
+          </Pressable>
+        </> : null}
+
+        {!challengeId ? <Pressable onPress={() => router.push("/register-business")} style={styles.registerLink}>
           <Text style={styles.registerText}>Register your property business</Text>
-        </Pressable>
+        </Pressable> : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -167,6 +235,10 @@ const styles = StyleSheet.create({
   error: {
     marginBottom: 14,
     color: colors.danger,
+  },
+  notice: {
+    marginBottom: 14,
+    color: colors.success,
   },
   forgotLink: {
     alignSelf: "flex-end",

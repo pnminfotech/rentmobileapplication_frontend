@@ -16,6 +16,7 @@ import {
   HelpCircle,
   KeyRound,
   LogOut,
+  Mail,
   ShieldCheck,
 } from "lucide-react-native";
 
@@ -172,6 +173,12 @@ export default function SuperAdminProfileScreen() {
           title="Change Password"
           subtitle={action === "password" ? "Sending reset link..." : "Send reset link to registered email"}
           onPress={sendPasswordReset}
+        />
+        <SettingRow
+          Icon={Mail}
+          title="Change sign-in email"
+          subtitle="Verify your password and the new email address"
+          onPress={() => router.push("/superadmin/change-email")}
         />
         <SettingRow
           Icon={ShieldCheck}

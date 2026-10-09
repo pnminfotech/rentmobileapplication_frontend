@@ -1,9 +1,10 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image } from "expo-image";
 import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { ArrowLeft, Camera, Check, ChevronDown, MoveRight } from "lucide-react-native";
+import { ArrowLeft, Camera, Check, ChevronDown, Eye, MoveRight, X } from "lucide-react-native";
 
 import FormDateField, { toDateValue } from "../../src/components/FormDateField";
 import WebImageCropper from "../../src/components/WebImageCropper";
@@ -38,6 +39,20 @@ const CANTEEN_MODE_LABELS = {
   meal_package: "Meal package monthly",
 };
 
+function documentKeyForRelation(relation = "") {
+  const value = String(relation).toLowerCase();
+  if (value.includes("self") && value.includes("aadhaar")) return "selfAadhar";
+  if ((value.includes("parent") || value.includes("partner") || value.includes("relative")) && value.includes("aadhaar")) return "parentAadhar";
+  if (value.includes("photo") || value.includes("photograph") || value.includes("selfie")) return "photo";
+  return null;
+}
+
+function documentRelationForKey(key, type) {
+  if (key === "selfAadhar") return "Self Aadhaar Card";
+  if (key === "parentAadhar") return type === "room" ? "Partner Aadhaar Card" : "Parent Aadhaar Card";
+  return type === "bed" ? "Tenant Photo" : "Tenant Photograph (Selfie)";
+}
+
 function RelationPicker({ label, value, onChange }) {
   const [open, setOpen] = useState(false);
   return <><Text style={styles.label}>{label}</Text><Pressable onPress={() => setOpen((current) => !current)} style={styles.select}><Text style={styles.selectValue}>{value}</Text><ChevronDown size={19} color={colors.muted} /></Pressable>{open ? <View style={styles.options}>{RELATIONS.map((relation) => <Pressable key={relation} onPress={() => { onChange(relation); setOpen(false); }} style={[styles.option, relation === value && styles.optionSelected]}><Text style={styles.optionText}>{relation}</Text>{relation === value ? <Check size={18} color={colors.primary} /> : null}</Pressable>)}</View> : null}</>;
@@ -54,7 +69,10 @@ export default function TenantEditScreen() {
   const [form, setForm] = useState(null);
   const [canteenEnabled, setCanteenEnabled] = useState(false);
   const [canteenSettings, setCanteenSettings] = useState(null);
-  const [documentUpdates, setDocumentUpdates] = useState({});
+  const [documentUpdates, setDocumentUpdates] = useState({ selfAadhar: [], parentAadhar: [], photo: [] });
+  const [removedDocumentIds, setRemovedDocumentIds] = useState([]);
+  const [previewDocument, setPreviewDocument] = useState(null);
+  const [previewError, setPreviewError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -102,20 +120,63 @@ export default function TenantEditScreen() {
       aspect: isSelfie ? [1, 1] : [4, 3],
       quality: 0.85,
     };
-    const permission = isSelfie
+    const source = Platform.OS === "web"
+      ? "library"
+      : await new Promise((resolve) => Alert.alert(
+          "Add document",
+          "Choose how to add this document",
+          [
+            { text: "Camera", onPress: () => resolve("camera") },
+            { text: "Upload / Gallery", onPress: () => resolve("library") },
+            { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+          ]
+        ));
+    if (!source) return;
+
+    const permission = source === "camera"
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return Alert.alert("Permission needed", isSelfie ? "Allow camera access to take tenant selfie." : "Allow photo access to select this document.");
-    const result = isSelfie
-      ? await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType?.front || "front" })
+    if (!permission.granted) {
+      return Alert.alert(
+        "Permission needed",
+        source === "camera" ? "Allow camera access to take this document photo." : "Allow photo access to select this document."
+      );
+    }
+
+    const result = source === "camera"
+      ? await ImagePicker.launchCameraAsync({
+          ...options,
+          cameraType: isSelfie ? ImagePicker.CameraType?.front || "front" : ImagePicker.CameraType?.back || "back",
+        })
       : await ImagePicker.launchImageLibraryAsync(options);
     if (result.canceled) return;
     const selectedImage = result.assets[0];
     if (Platform.OS === "web") {
-      setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+      setCropRequest({ key, index: documentUpdates[key].length, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
       return;
     }
-    setCropRequest({ key, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+    setCropRequest({ key, index: documentUpdates[key].length, uri: selectedImage.uri, width: selectedImage.width, height: selectedImage.height, aspect: isSelfie ? 1 : 4 / 3 });
+  }
+
+  function removeSelectedDocument(key, index) {
+    setDocumentUpdates((current) => ({
+      ...current,
+      [key]: current[key].filter((_, itemIndex) => itemIndex !== index),
+    }));
+  }
+
+  function removeExistingDocument(document) {
+    const identity = String(document?.fileId || document?._id || "");
+    if (identity) setRemovedDocumentIds((current) => current.includes(identity) ? current : [...current, identity]);
+  }
+
+  function openDocumentPreview(document) {
+    if (!document?.url) {
+      Alert.alert("Document unavailable", "This document does not have a file URL.");
+      return;
+    }
+    setPreviewError(false);
+    setPreviewDocument(document);
   }
 
   async function save(confirmedDateChange = false) {
@@ -168,7 +229,12 @@ export default function TenantEditScreen() {
         } : { breakfast: 0, lunch: 0, dinner: 0 },
         canteenIncludedMeals: type === "bed" && canteenEnabled && form.hasCanteen ? selectedCanteenMeta.meals : [],
       });
-      if (Object.values(documentUpdates).some(Boolean)) await updateTenantDocuments(id, documentUpdates);
+      const pendingDocuments = Object.entries(documentUpdates).flatMap(([key, items]) =>
+        items.map((document) => ({ ...document, relation: documentRelationForKey(key, type) }))
+      );
+      if (pendingDocuments.length || removedDocumentIds.length) {
+        await updateTenantDocuments(id, pendingDocuments, removedDocumentIds);
+      }
       router.replace({ pathname: "/system/tenant-details", params: { id, returnTo } });
     } catch (err) { setError(err.response?.data?.message || "Unable to update tenant."); }
     finally { setSaving(false); }
@@ -285,11 +351,24 @@ export default function TenantEditScreen() {
         </>}
 
         <Text style={styles.sectionTitle}>Documents</Text>
-        <Text style={styles.documentHint}>Adjust the crop after selecting or taking a photo. Tap Cancel to discard or Done/Choose to save it.</Text>
+        <Text style={styles.documentHint}>Add multiple documents from your gallery or camera. Adjust the crop, then tap Done to use each image. Remove any file you no longer need.</Text>
         {documentList.map((document) => {
-          const uploaded = (tenant.documents || []).some((item) => item.relation === document.relation);
-          const selected = Boolean(documentUpdates[document.key]);
-          return <View key={document.key} style={styles.documentRow}><View style={styles.documentText}><Text style={styles.documentTitle}>{document.label}</Text><Text style={styles.documentMeta}>{selected ? "New image selected" : uploaded ? "Currently uploaded" : "Not uploaded"}</Text></View><Pressable onPress={() => chooseImage(document.key)} style={styles.documentButton}><Camera size={18} color={colors.primary} /><Text style={styles.documentButtonText}>{uploaded || selected ? "Replace" : "Choose"}</Text></Pressable></View>;
+          const existing = (tenant.documents || []).filter((item) => documentKeyForRelation(item.relation) === document.key);
+          const visibleExisting = existing.filter((item) => !removedDocumentIds.includes(String(item.fileId || item._id || "")));
+          const pending = documentUpdates[document.key] || [];
+          return <View key={document.key} style={styles.documentGroup}>
+            <Text style={styles.documentGroupTitle}>{document.label}</Text>
+            {visibleExisting.map((item, index) => <View key={String(item.fileId || item._id || index)} style={styles.documentRow}>
+              <View style={styles.documentText}><Text style={styles.documentTitle} numberOfLines={1}>{item.fileName || `${document.label} ${index + 1}`}</Text><Text style={styles.documentMeta}>Currently uploaded</Text></View>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Preview ${item.fileName || document.label}`} onPress={() => openDocumentPreview(item)} style={styles.previewDocumentButton}><Eye size={18} color={colors.primary} /></Pressable>
+              <Pressable onPress={() => removeExistingDocument(item)} style={styles.removeDocumentButton}><Text style={styles.removeDocumentText}>Remove</Text></Pressable>
+            </View>)}
+            {pending.map((item, index) => <View key={`${document.key}-new-${index}`} style={styles.documentRow}>
+              <View style={styles.documentText}><Text style={styles.documentTitle} numberOfLines={1}>{item.name || `${document.label} ${visibleExisting.length + index + 1}`}</Text><Text style={styles.documentMeta}>New image selected</Text></View>
+              <Pressable onPress={() => removeSelectedDocument(document.key, index)} style={styles.removeDocumentButton}><Text style={styles.removeDocumentText}>Remove</Text></Pressable>
+            </View>)}
+            <Pressable onPress={() => chooseImage(document.key)} style={styles.addDocumentButton}><Camera size={17} color={colors.primary} /><Text style={styles.addDocumentText}>+ Add another {document.label.toLowerCase()}</Text></Pressable>
+          </View>;
         })}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable onPress={save} disabled={saving} style={[styles.saveButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveText}>Save all changes</Text>}</Pressable>
@@ -306,11 +385,30 @@ export default function TenantEditScreen() {
             if (cropError) Alert.alert("Unable to crop image", cropError.message || "Please try again.");
           }}
           onConfirm={(image) => {
-            setDocumentUpdates((current) => ({ ...current, [cropRequest.key]: image }));
+            setDocumentUpdates((current) => {
+              const next = [...current[cropRequest.key]];
+              next[cropRequest.index] = image;
+              return { ...current, [cropRequest.key]: next };
+            });
             setCropRequest(null);
           }}
         />
       ) : null}
+      <Modal visible={Boolean(previewDocument)} transparent animationType="fade" onRequestClose={() => setPreviewDocument(null)}>
+        <View style={styles.previewOverlay}>
+          <View style={styles.previewCard}>
+            <View style={styles.previewHeader}>
+              <Text style={styles.previewTitle} numberOfLines={1}>{previewDocument?.fileName || previewDocument?.relation || "Tenant document"}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close preview" onPress={() => setPreviewDocument(null)} style={styles.previewClose}><X size={21} color={colors.text} /></Pressable>
+            </View>
+            {previewDocument?.url && !previewError ? (
+              <Image source={{ uri: previewDocument.url }} style={styles.previewImage} contentFit="contain" onError={() => setPreviewError(true)} />
+            ) : (
+              <View style={styles.previewUnavailable}><Text style={styles.previewUnavailableText}>This document could not be loaded. It may have been removed from ImageKit.</Text></View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -325,7 +423,9 @@ const styles = StyleSheet.create({
   options: { marginTop: 5, overflow: "hidden", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, option: { height: 46, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.surfaceSoft }, optionSelected: { backgroundColor: colors.primarySoft }, optionText: { flex: 1, color: colors.muted, fontWeight: "600" },
   assignment: { minHeight: 70, marginTop: 10, padding: 13, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, assignmentText: { flex: 1, paddingRight: 8 }, assignmentTitle: { color: colors.text, fontWeight: "700" }, assignmentMeta: { marginTop: 5, color: colors.muted, fontSize: 13 }, shiftButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primarySoft },
   toggle: { height: 48, padding: 3, flexDirection: "row", borderRadius: 7, backgroundColor: colors.border }, toggleOption: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 5 }, toggleSelected: { backgroundColor: colors.surface }, toggleText: { color: colors.muted, fontWeight: "600" }, toggleTextSelected: { color: colors.primary },
-  documentRow: { minHeight: 66, marginTop: 10, padding: 11, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentText: { flex: 1 }, documentTitle: { color: colors.text, fontWeight: "700" }, documentMeta: { marginTop: 4, color: colors.muted, fontSize: 12 }, documentButton: { minWidth: 92, height: 40, paddingHorizontal: 10, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primarySoft }, documentButtonText: { color: colors.primary, fontWeight: "700" },
+  documentGroup: { marginTop: 12, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surfaceSoft }, documentGroupTitle: { color: colors.text, fontWeight: "700" },
+  documentRow: { minHeight: 62, marginTop: 9, padding: 10, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.surface }, documentText: { flex: 1, minWidth: 0, paddingRight: 8 }, documentTitle: { color: colors.text, fontWeight: "700" }, documentMeta: { marginTop: 4, color: colors.muted, fontSize: 12 }, previewDocumentButton: { width: 36, height: 36, marginRight: 8, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: colors.primarySoft }, removeDocumentButton: { minHeight: 36, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: colors.dangerSoft }, removeDocumentText: { color: colors.danger, fontSize: 12, fontWeight: "700" }, addDocumentButton: { minHeight: 42, marginTop: 9, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderStyle: "dashed", borderColor: colors.primary, borderRadius: 7, backgroundColor: colors.primarySoft }, addDocumentText: { color: colors.primary, fontWeight: "700" },
+  previewOverlay: { flex: 1, padding: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 23, 42, 0.72)" }, previewCard: { width: "100%", maxWidth: 640, height: "82%", overflow: "hidden", borderRadius: 12, backgroundColor: colors.surface }, previewHeader: { minHeight: 54, paddingLeft: 15, paddingRight: 8, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.border }, previewTitle: { flex: 1, color: colors.text, fontSize: 15, fontWeight: "700" }, previewClose: { width: 40, height: 40, alignItems: "center", justifyContent: "center" }, previewImage: { flex: 1, width: "100%", backgroundColor: colors.screen }, previewUnavailable: { flex: 1, padding: 24, alignItems: "center", justifyContent: "center" }, previewUnavailableText: { color: colors.muted, textAlign: "center", lineHeight: 21 },
   dateChangeHint: { marginTop: 6, color: colors.muted, fontSize: 12, lineHeight: 17 }, error: { marginTop: 14, color: colors.danger }, saveButton: { height: 50, marginTop: 24, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: colors.primary }, saveText: { color: colors.surface, fontWeight: "700" }, disabled: { opacity: 0.5 },
   documentHint: { marginTop: -2, marginBottom: 8, color: colors.muted, fontSize: 12, lineHeight: 17 },
   helperText: { marginTop: -4, marginBottom: 8, color: colors.muted, fontSize: 11 },

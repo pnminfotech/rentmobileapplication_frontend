@@ -7,11 +7,39 @@ export async function loginSaas(email, password) {
     password,
   });
 
-  await saveAuthSession({
-    token: data.token,
-    user: data.user,
-  });
+  if (data.token) {
+    await saveAuthSession({
+      token: data.token,
+      user: data.user,
+    });
+  }
 
+  return data;
+}
+
+export async function verifySaasLoginEmailCode(challengeId, code) {
+  const { data } = await api.post("/saas/auth/login/verify-email", { challengeId, code });
+  await saveAuthSession({ token: data.token, user: data.user });
+  return data;
+}
+
+export async function resendSaasLoginEmailCode(challengeId) {
+  const { data } = await api.post("/saas/auth/login/resend-email-code", { challengeId });
+  return data;
+}
+
+export async function requestSuperadminEmailChange(newEmail, password) {
+  const { data } = await api.post("/saas/admin/security/email-change/request", { newEmail, password });
+  return data;
+}
+
+export async function verifySuperadminEmailChange(challengeId, code) {
+  const { data } = await api.post("/saas/admin/security/email-change/verify", { challengeId, code });
+  return data;
+}
+
+export async function resendSuperadminEmailChangeCode(challengeId) {
+  const { data } = await api.post("/saas/admin/security/email-change/resend", { challengeId });
   return data;
 }
 

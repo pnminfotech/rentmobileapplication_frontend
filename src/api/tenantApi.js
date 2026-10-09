@@ -122,23 +122,22 @@ export async function restoreTenant(tenantId, allocation) {
   return data;
 }
 
-export async function updateTenantDocuments(tenantId, documents) {
+export async function updateTenantDocuments(tenantId, documents, removeDocumentIds = []) {
   const formData = new FormData();
   formData.append("formId", tenantId);
-  for (const [field, document] of Object.entries(documents)) {
-    if (!document) continue;
+  for (const document of documents) {
     if (Platform.OS === "web") {
-      const response = await fetch(document.uri);
-      const blob = await response.blob();
-      formData.append(field, blob, document.name || `${field}.jpg`);
+      formData.append("documents", document.file, document.name || "tenant-document.jpg");
     } else {
-      formData.append(field, {
+      formData.append("documents", {
         uri: document.uri,
-        name: document.name || `${field}.jpg`,
-        type: "image/jpeg",
+        name: document.name || "tenant-document.jpg",
+        type: document.mimeType || "image/jpeg",
       });
     }
+    formData.append("relations", document.relation || "Document");
   }
+  if (removeDocumentIds.length) formData.append("removeFileIds", JSON.stringify(removeDocumentIds));
   const { data } = await api.post("/tenant-docs/with-docs", formData, {
     timeout: 60000,
   });
@@ -206,26 +205,25 @@ export async function uploadTenantInviteDocuments(documents, inviteToken) {
   return data.files || data.data?.files || [];
 }
 
-export async function createTenantWithDocuments(fields, documents) {
+export async function uploadTenantDocuments(documents, fields) {
   const formData = new FormData();
-  Object.entries(fields).forEach(([key, value]) => {
+  Object.entries(fields || {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
       formData.append(key, String(value));
     }
   });
-
   documents.forEach((document, index) => {
-    formData.append("documents", {
-      uri: document.uri,
-      name: document.name || `tenant-document-${index + 1}.jpg`,
-      type: "image/jpeg",
-    });
-    formData.append("relations", document.relation);
+    if (Platform.OS === "web") {
+      formData.append("documents", document.file, document.name || `tenant-document-${index + 1}.jpg`);
+    } else {
+      formData.append("documents", {
+        uri: document.uri,
+        name: document.name || `tenant-document-${index + 1}.jpg`,
+        type: document.mimeType || "image/jpeg",
+      });
+    }
+    formData.append("relations", document.relation || "Document");
   });
-
-  const { data } = await api.post("/forms-with-docs", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-    timeout: 60000,
-  });
+  const { data } = await api.post("/forms-with-docs", formData, { timeout: 60000 });
   return data;
 }

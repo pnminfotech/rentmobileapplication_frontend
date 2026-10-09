@@ -604,7 +604,9 @@ export default function TenantsScreen() {
   const pagedVacantRows = useMemo(() => vacantRows.slice(0, visibleVacancyCount), [vacantRows, visibleVacancyCount]);
   const groupedPagedVacantRows = useMemo(() => groupVacanciesByProperty(pagedVacantRows), [pagedVacantRows]);
 
-  const thisMonthPending = typeRows.reduce((sum, row) => sum + row.totalDue, 0);
+  // Keep the month card separate from arrears: balance is only this selected
+  // month's expected rent minus payments, while overdue is prior unpaid cycles.
+  const thisMonthPending = typeRows.reduce((sum, row) => sum + row.balance, 0);
   const typeOverdue = typeRows.reduce((sum, row) => sum + row.overdue, 0);
   const activeTypeLabel = tenantTypes.find((item) => item.value === activeType)?.label || "Tenants";
   const actionType = activeType === "all"
@@ -901,7 +903,7 @@ export default function TenantsScreen() {
           <View style={styles.summary}>
             <View style={styles.summaryItem}>
               <View style={[styles.summaryIcon, styles.summaryIconPending]}><CalendarDays size={20} color="#E77A12" /></View>
-              <View style={styles.summaryCopy}><Text style={styles.summaryLabel}>Rent pending</Text><Text style={styles.summaryValue}>{money(thisMonthPending)}</Text></View>
+              <View style={styles.summaryCopy}><Text style={styles.summaryLabel}>This month pending</Text><Text style={styles.summaryValue}>{money(thisMonthPending)}</Text></View>
             </View>
             <View style={styles.summaryItem}>
               <View style={[styles.summaryIcon, styles.summaryIconOverdue]}><ShieldCheck size={20} color="#E24A4A" /></View>
